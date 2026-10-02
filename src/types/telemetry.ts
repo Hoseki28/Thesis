@@ -2,7 +2,7 @@ export type Lang = 'en' | 'fil'
 
 export type TabId = 'overview' | 'sensors' | 'calibration' | 'logs'
 
-export type DataSource = 'simulated' | 'serial' | 'network' | 'manual'
+export type DataSource = 'simulated' | 'serial' | 'bluetooth' | 'network' | 'manual'
 
 export type ConnectionStatus = 'standby' | 'connecting' | 'connected' | 'disconnected' | 'error'
 
@@ -66,13 +66,16 @@ export interface CalibrationConfig {
 
 export interface HardwareState {
   status: ConnectionStatus
-  transport: 'none' | 'serial' | 'websocket' | 'http'
+  transport: 'none' | 'serial' | 'bluetooth' | 'websocket' | 'http'
   portInfo: string
+  deviceName?: string
   baudRate: number
   packetsReceived: number
   bytesReceived: number
   lastPacketTime: number | null
   lastError: string | null
+  latencyMs?: number
+  rssi?: number
   rawLogs: Array<{ id: string; timestamp: string; type: 'in' | 'out' | 'sys' | 'err'; text: string }>
 }
 

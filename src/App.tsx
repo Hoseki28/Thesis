@@ -5,7 +5,8 @@ import { OverviewTab } from './components/OverviewTab'
 import { SensorsTab } from './components/SensorsTab'
 import { ServiceTab } from './components/ServiceTab'
 import { LogsTab } from './components/LogsTab'
-import { IconDownload } from './components/Icons'
+import { ConnectionModal } from './components/ConnectionModal'
+import { IconDownload, IconCheckCircle } from './components/Icons'
 import {
   applyCalibration,
   loadCalibration,
@@ -97,6 +98,10 @@ export default function App() {
   const historyManagerRef = useRef<TelemetryHistoryManager>(new TelemetryHistoryManager(60))
   const [historyPoints, setHistoryPoints] = useState<TelemetryPoint[]>([])
 
+  // ESP32 Multi-Transport Connection Modal & Toast state
+  const [isConnectionModalOpen, setIsConnectionModalOpen] = useState<boolean>(false)
+  const [connectToast, setConnectToast] = useState<{ message: string; type: 'success' | 'info' } | null>(null)
+
   // Hardware state
   const [hardwareState, setHardwareState] = useState<HardwareState>({
     status: 'standby',
@@ -109,6 +114,27 @@ export default function App() {
     lastError: null,
     rawLogs: [],
   })
+
+  // Track connection change to show confirmation toast
+  const prevStatusRef = useRef(hardwareState.status)
+  useEffect(() => {
+    if (prevStatusRef.current !== 'connected' && hardwareState.status === 'connected') {
+      const transportName =
+        hardwareState.transport === 'serial'
+          ? 'USB Serial'
+          : hardwareState.transport === 'bluetooth'
+          ? 'Bluetooth BLE'
+          : 'Wi-Fi'
+      const msg =
+        lang === 'fil'
+          ? `Kumpirmado: Nakakabit na ang ESP32 via ${transportName}!`
+          : `Confirmed: ESP32 connected via ${transportName}!`
+      setConnectToast({ message: msg, type: 'success' })
+      const timer = setTimeout(() => setConnectToast(null), 4500)
+      return () => clearTimeout(timer)
+    }
+    prevStatusRef.current = hardwareState.status
+  }, [hardwareState.status, hardwareState.transport, lang])
 
   // Hardware Bridge ref
   const bridgeRef = useRef<HardwareBridge | null>(null)
@@ -280,8 +306,26 @@ export default function App() {
           status={hardwareState.status}
           hasAlert={hasAlert}
           transport={hardwareState.transport}
-          onOpenHardwareTab={() => setCurrentTab('logs')}
+          onOpenConnectionModal={() => setIsConnectionModalOpen(true)}
         />
+
+        {/* ── CONFIRMATION TOAST ────────────────────────────────────── */}
+        {connectToast && (
+          <div className="mx-3 mt-2.5 p-3 rounded-xl bg-emerald-600 text-white shadow-xl flex items-center justify-between gap-2 text-xs font-bold animate-fade-in border border-emerald-400/40">
+            <div className="flex items-center gap-2 min-w-0">
+              <IconCheckCircle size={18} className="flex-shrink-0 text-white" />
+              <span className="truncate">{connectToast.message}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setConnectToast(null)}
+              className="text-white/80 hover:text-white p-1 cursor-pointer min-h-[44px] min-w-[44px] flex items-center justify-center flex-shrink-0"
+              aria-label="Dismiss notification"
+            >
+              ✕
+            </button>
+          </div>
+        )}
 
         {/* ── PWA INSTALL BANNER ────────────────────────────────────── */}
         {installPrompt && !isAppInstalled && (
@@ -306,7 +350,7 @@ export default function App() {
             <button
               type="button"
               onClick={handleInstallClick}
-              className="py-1.5 px-3 rounded-lg bg-[#00E676]/20 hover:bg-[#00E676]/30 border border-[#00E676] text-[#00E676] text-[10px] font-bold uppercase tracking-wider cursor-pointer transition-colors"
+              className="py-1.5 px-3 rounded-lg bg-[#00E676]/20 hover:bg-[#00E676]/30 border border-[#00E676] text-[#00E676] text-[10px] font-bold uppercase tracking-wider cursor-pointer transition-colors min-h-[44px]"
             >
               {lang === 'fil' ? 'I-INSTALL' : 'INSTALL'}
             </button>
@@ -373,6 +417,18 @@ export default function App() {
             />
           )}
         </main>
+
+        {/* ── CONNECTION MODAL ─────────────────────────────────────── */}
+        {bridgeRef.current && (
+          <ConnectionModal
+            isOpen={isConnectionModalOpen}
+            onClose={() => setIsConnectionModalOpen(false)}
+            bridge={bridgeRef.current}
+            hardwareState={hardwareState}
+            lang={lang}
+            theme={theme}
+          />
+        )}
 
         {/* ── FIXED BOTTOM NAVIGATION ───────────────────────────────── */}
         <BottomNav

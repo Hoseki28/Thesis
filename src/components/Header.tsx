@@ -1,6 +1,17 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { ConnectionStatus, Lang } from '../types/telemetry'
-import { IconZap, IconTranslate, IconSun, IconMoon, IconPhone, IconCheck, IconCopy } from './Icons'
+import {
+  IconTranslate,
+  IconSun,
+  IconMoon,
+  IconPhone,
+  IconCheck,
+  IconCopy,
+  IconClock,
+  IconUsb,
+  IconBluetooth,
+  IconWifi,
+} from './Icons'
 
 interface HeaderProps {
   lang: Lang
@@ -10,7 +21,7 @@ interface HeaderProps {
   status: ConnectionStatus
   hasAlert: boolean
   transport: string
-  onOpenHardwareTab: () => void
+  onOpenConnectionModal: () => void
 }
 
 export function Header({
@@ -21,16 +32,27 @@ export function Header({
   status,
   hasAlert,
   transport,
-  onOpenHardwareTab,
+  onOpenConnectionModal,
 }: HeaderProps) {
   const isFil = lang === 'fil'
   const isDark = theme === 'dark'
   const isLive = status === 'connected'
+  const isConnecting = status === 'connecting'
   const [showLinkModal, setShowLinkModal] = useState<boolean>(false)
   const [copiedLink, setCopiedLink] = useState<string | null>(null)
 
+  // Live Digital Clock state
+  const [currentTime, setCurrentTime] = useState<Date>(new Date())
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCurrentTime(new Date())
+    }, 1000)
+    return () => clearInterval(timer)
+  }, [])
+
   const httpsUrl = 'https://design-energy-dashboard-pwa.vercel.app'
-  const localUrl = 'http://192.168.100.9:5173/'
+  const localUrl = 'http://192.168.100.16:5173/'
 
   const handleCopy = async (url: string, key: string) => {
     try {
@@ -42,34 +64,46 @@ export function Header({
     }
   }
 
+  // Format Philippine Standard Time
+  const timeFormatted = currentTime.toLocaleTimeString('en-GB', {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  })
+
+  const dateFormatted = currentTime.toLocaleDateString(isFil ? 'fil-PH' : 'en-US', {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+  })
+
   return (
     <>
       <header
-        className={`px-4 pt-3.5 pb-2.5 border-b sticky top-0 z-30 font-sans transition-colors ${
+        className={`border-b sticky top-0 z-30 font-sans transition-colors ${
           isDark ? 'bg-[#0B0F12] border-[#1E242B]' : 'bg-white border-zinc-200 shadow-sm'
         }`}
         role="banner"
       >
-        <div className="flex items-center justify-between">
-          {/* Left: 8-Pin QFP Microcontroller Chip with PCB Seebeck Traces + Title Stack */}
+        {/* Top Header Row */}
+        <div className="px-4 pt-3 pb-2 flex items-center justify-between">
+          {/* Left: Microcontroller Logo & Title */}
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-zinc-900/90 border border-zinc-800 flex items-center justify-center flex-shrink-0 shadow-sm p-0.5">
+            <div className="w-8 h-8 rounded-lg bg-zinc-900 border border-zinc-800 flex items-center justify-center flex-shrink-0 shadow-sm p-0.5">
               <svg
-                width="24"
-                height="24"
+                width="22"
+                height="22"
                 viewBox="0 0 32 32"
                 fill="none"
                 xmlns="http://www.w3.org/2000/svg"
                 className="text-emerald-400"
-                aria-label="8-pin QFP Microcontroller with Seebeck traces"
+                aria-label="Microcontroller chip icon"
               >
-                {/* PCB Seebeck Thermocouple Traces (Hot & Cold Differential Lines) */}
-                <path d="M4 8h5l2 3h10l2-3h5" stroke="#f59e0b" strokeWidth="1" strokeLinecap="round" opacity="0.75" />
-                <path d="M4 24h5l2-3h10l2 3h5" stroke="#38bdf8" strokeWidth="1" strokeLinecap="round" opacity="0.75" />
+                <path d="M4 8h5l2 3h10l2-3h5" stroke="#f59e0b" strokeWidth="1.2" strokeLinecap="round" opacity="0.8" />
+                <path d="M4 24h5l2-3h10l2 3h5" stroke="#38bdf8" strokeWidth="1.2" strokeLinecap="round" opacity="0.8" />
                 <line x1="2" y1="16" x2="6" y2="16" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" opacity="0.6" />
                 <line x1="26" y1="16" x2="30" y2="16" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" opacity="0.6" />
 
-                {/* 8-Pin QFP Package Leads (2 pins on each of 4 edges) */}
                 <line x1="6" y1="13" x2="9" y2="13" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
                 <line x1="6" y1="19" x2="9" y2="19" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
                 <line x1="23" y1="13" x2="26" y2="13" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
@@ -79,13 +113,8 @@ export function Header({
                 <line x1="13" y1="23" x2="13" y2="26" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
                 <line x1="19" y1="23" x2="19" y2="26" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
 
-                {/* QFP Chip Body */}
                 <rect x="9" y="9" width="14" height="14" rx="2" fill="#18181b" stroke="currentColor" strokeWidth="1.4" />
-
-                {/* Pin 1 Index Indicator */}
                 <circle cx="11.5" cy="11.5" r="0.9" fill="currentColor" />
-
-                {/* Internal Silicon Die / Thermocouple Core Junction */}
                 <rect x="12" y="12" width="8" height="8" rx="1" fill="#27272a" stroke="#10b981" strokeWidth="0.9" />
                 <path d="M14 16h4M16 14v4" stroke="#34d399" strokeWidth="1" strokeLinecap="round" />
               </svg>
@@ -99,8 +128,8 @@ export function Header({
                   v2.0
                 </span>
               </div>
-              <span className={`text-[10px] leading-tight block font-mono mt-0.5 ${isDark ? 'text-zinc-400' : 'text-zinc-500'}`}>
-                Node #01 • Upper Wawa Dam
+              <span className={`text-[10px] leading-tight block font-mono mt-0.5 ${isDark ? 'text-zinc-400' : 'text-zinc-600'}`}>
+                Node #01 • Wawa Dam
               </span>
             </div>
           </div>
@@ -111,10 +140,10 @@ export function Header({
             <button
               type="button"
               onClick={() => setShowLinkModal(true)}
-              className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
-                isDark ? 'text-[#9CA3AF] hover:text-white hover:bg-[#1E242B]' : 'text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100'
+              className={`p-2 rounded-lg transition-colors cursor-pointer min-h-[44px] min-w-[44px] flex items-center justify-center ${
+                isDark ? 'text-zinc-400 hover:text-white hover:bg-[#1E242B]' : 'text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100'
               }`}
-              title="Mobile PWA Hyperlink"
+              title="Mobile PWA Access"
               aria-label="Mobile Link"
             >
               <IconPhone size={16} />
@@ -124,9 +153,9 @@ export function Header({
             <button
               type="button"
               onClick={() => onLanguageChange(lang === 'en' ? 'fil' : 'en')}
-              className={`p-1.5 px-2 rounded-lg transition-colors cursor-pointer flex items-center gap-1 border ${
+              className={`p-2 px-2.5 rounded-lg transition-colors cursor-pointer flex items-center gap-1.5 border min-h-[44px] ${
                 isDark
-                  ? 'text-[#9CA3AF] hover:text-white hover:bg-[#1E242B] border-[#1E242B]'
+                  ? 'text-zinc-300 hover:text-white hover:bg-[#1E242B] border-[#1E242B]'
                   : 'text-zinc-700 hover:text-zinc-900 hover:bg-zinc-100 border-zinc-200'
               }`}
               title="Palitan ang Wika / Switch Language"
@@ -142,9 +171,9 @@ export function Header({
             <button
               type="button"
               onClick={onToggleTheme}
-              className={`p-1.5 rounded-lg transition-colors cursor-pointer border ${
+              className={`p-2 rounded-lg transition-colors cursor-pointer border min-h-[44px] min-w-[44px] flex items-center justify-center ${
                 isDark
-                  ? 'text-[#9CA3AF] hover:text-white hover:bg-[#1E242B] border-[#1E242B]'
+                  ? 'text-zinc-300 hover:text-white hover:bg-[#1E242B] border-[#1E242B]'
                   : 'text-zinc-700 hover:text-zinc-900 hover:bg-zinc-100 border-zinc-200'
               }`}
               title={isDark ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
@@ -153,6 +182,61 @@ export function Header({
               {isDark ? <IconSun size={16} className="text-amber-400" /> : <IconMoon size={16} className="text-zinc-700" />}
             </button>
           </div>
+        </div>
+
+        {/* ── SUB-BAR: LIVE CLOCK & ESP32 CONNECTION CONFIRMATION ─────── */}
+        <div className={`px-4 py-2 border-t flex items-center justify-between transition-colors ${
+          isDark ? 'bg-[#0E1216] border-[#1E242B]' : 'bg-zinc-50 border-zinc-200'
+        }`}>
+          {/* Live Digital Clock (PHT) */}
+          <div className="flex items-center gap-1.5">
+            <IconClock size={13} className="text-emerald-500 flex-shrink-0" />
+            <span className={`text-xs font-mono font-bold tabular-nums ${isDark ? 'text-white' : 'text-zinc-900'}`}>
+              {timeFormatted} <span className="text-[10px] text-emerald-500 font-normal">PHT</span>
+            </span>
+            <span className={`text-[10px] hidden xs:inline ${isDark ? 'text-zinc-400' : 'text-zinc-600'}`}>
+              • {dateFormatted}
+            </span>
+          </div>
+
+          {/* Interactive ESP32 Connection Pill Button */}
+          {isLive ? (
+            <button
+              type="button"
+              onClick={onOpenConnectionModal}
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-emerald-500/50 bg-emerald-950/40 hover:bg-emerald-950/60 text-emerald-300 text-[10px] font-mono font-bold uppercase transition-colors cursor-pointer min-h-[44px]"
+              title="ESP32 Nakakabit. Pindutin para pamahalaan."
+            >
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse flex-shrink-0" />
+              {transport === 'serial' && <IconUsb size={13} className="text-emerald-400 flex-shrink-0" />}
+              {transport === 'bluetooth' && <IconBluetooth size={13} className="text-sky-400 flex-shrink-0" />}
+              {transport === 'websocket' && <IconWifi size={13} className="text-amber-400 flex-shrink-0" />}
+              <span className="font-bold">ESP32 LIVE ({transport.toUpperCase()})</span>
+            </button>
+          ) : isConnecting ? (
+            <button
+              type="button"
+              onClick={onOpenConnectionModal}
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-amber-500/50 bg-amber-950/40 text-amber-300 text-[10px] font-mono font-bold uppercase transition-colors cursor-pointer min-h-[44px]"
+            >
+              <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping flex-shrink-0" />
+              <span>{isFil ? 'KUMUKONEKTA...' : 'CONNECTING...'}</span>
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={onOpenConnectionModal}
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[10px] font-mono font-bold uppercase transition-colors cursor-pointer min-h-[44px] ${
+                isDark
+                  ? 'border-zinc-700 bg-zinc-900/60 text-zinc-300 hover:border-emerald-500/50 hover:text-white'
+                  : 'border-zinc-300 bg-white text-zinc-700 hover:border-emerald-500 hover:text-zinc-900'
+              }`}
+              title={isFil ? 'Pindutin para ikabit ang ESP32' : 'Click to connect ESP32'}
+            >
+              <span className="w-2 h-2 rounded-full bg-zinc-400 flex-shrink-0" />
+              <span>{isFil ? 'IKABIT ANG ESP32' : 'CONNECT ESP32'}</span>
+            </button>
+          )}
         </div>
       </header>
 
@@ -175,14 +259,14 @@ export function Header({
               <button
                 type="button"
                 onClick={() => setShowLinkModal(false)}
-                className="w-6 h-6 rounded-md bg-[#1E242B] text-zinc-400 hover:text-white flex items-center justify-center text-xs font-bold cursor-pointer"
+                className="w-8 h-8 rounded-md bg-[#1E242B] text-zinc-400 hover:text-white flex items-center justify-center text-xs font-bold cursor-pointer min-h-[44px] min-w-[44px]"
                 aria-label="Close modal"
               >
                 ✕
               </button>
             </div>
 
-            <p className="text-xs text-[#9CA3AF]">
+            <p className="text-xs text-zinc-400">
               {isFil
                 ? 'Buksan ang dashboard na ito sa iyong cellphone browser para magamit bilang offline PWA app:'
                 : 'Access this telemetry dashboard directly on your smartphone browser or install as a PWA:'}
@@ -200,7 +284,7 @@ export function Header({
                 <button
                   type="button"
                   onClick={() => handleCopy(httpsUrl, 'https')}
-                  className="px-2 py-1 rounded bg-[#0B0F12] hover:bg-[#1E242B] text-[10px] text-[#00E676] font-bold flex items-center gap-1 cursor-pointer transition-colors"
+                  className="px-2.5 py-1.5 rounded bg-[#0B0F12] hover:bg-[#1E242B] text-[10px] text-[#00E676] font-bold flex items-center gap-1 cursor-pointer transition-colors min-h-[44px]"
                 >
                   {copiedLink === 'https' ? <IconCheck size={12} /> : <IconCopy size={12} />}
                   <span>{copiedLink === 'https' ? 'COPIED' : 'COPY'}</span>
@@ -220,7 +304,7 @@ export function Header({
                 <button
                   type="button"
                   onClick={() => handleCopy(localUrl, 'local')}
-                  className="px-2 py-1 rounded bg-[#0B0F12] hover:bg-[#1E242B] text-[10px] text-zinc-300 font-bold flex items-center gap-1 cursor-pointer transition-colors"
+                  className="px-2.5 py-1.5 rounded bg-[#0B0F12] hover:bg-[#1E242B] text-[10px] text-zinc-300 font-bold flex items-center gap-1 cursor-pointer transition-colors min-h-[44px]"
                 >
                   {copiedLink === 'local' ? <IconCheck size={12} /> : <IconCopy size={12} />}
                   <span>{copiedLink === 'local' ? 'COPIED' : 'COPY'}</span>
@@ -231,7 +315,7 @@ export function Header({
             <button
               type="button"
               onClick={() => setShowLinkModal(false)}
-              className="w-full py-2.5 rounded-xl bg-[#1E242B] hover:bg-[#272A30] text-zinc-200 text-xs font-bold uppercase tracking-wider transition-colors cursor-pointer"
+              className="w-full py-2.5 rounded-xl bg-[#1E242B] hover:bg-[#272A30] text-zinc-200 text-xs font-bold uppercase tracking-wider transition-colors cursor-pointer min-h-[44px]"
             >
               CLOSE
             </button>

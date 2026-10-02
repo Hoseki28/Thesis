@@ -510,6 +510,26 @@ export function IconGauge({ size = 18, className = '', strokeWidth = 1.75, ...pr
   )
 }
 
+export function IconBluetooth({ size = 18, className = '', strokeWidth = 1.8, ...props }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" className={className} {...props}>
+      <polyline points="6.5 6.5 17.5 17.5 12 23 12 1 17.5 6.5 6.5 17.5" />
+    </svg>
+  )
+}
+
+export function IconSignal({ size = 18, className = '', strokeWidth = 1.8, ...props }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" className={className} {...props}>
+      <path d="M2 20h.01" />
+      <path d="M7 20v-4" />
+      <path d="M12 20v-8" />
+      <path d="M17 20V8" />
+      <path d="M22 20V4" />
+    </svg>
+  )
+}
+
 // Lucide-compatible exports
 export {
   IconCheck as Check,
@@ -523,5 +543,7 @@ export {
   IconZap as Zap,
   IconSliders as Sliders,
   IconGauge as Gauge,
+  IconBluetooth as Bluetooth,
+  IconWifi as Wifi,
 }
 

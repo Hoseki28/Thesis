@@ -19,6 +19,11 @@ export type HardwareDataCallback = (raw: {
   source: TelemetryData['source']
 }) => void
 
+// Standard Nordic UART BLE Service UUIDs commonly used on ESP32
+const NORDIC_UART_SERVICE = '6e400001-b5a3-f393-e0a9-e50e24dcca9e'
+const NORDIC_UART_RX = '6e400002-b5a3-f393-e0a9-e50e24dcca9e' // ESP32 Receive (Write from Web)
+const NORDIC_UART_TX = '6e400003-b5a3-f393-e0a9-e50e24dcca9e' // ESP32 Transmit (Notify to Web)
+
 export class HardwareBridge {
   private state: HardwareState
   private port: any = null
@@ -28,6 +33,11 @@ export class HardwareBridge {
   private writableStreamClosed: any = null
   private socket: WebSocket | null = null
   private httpPollTimer: number | null = null
+
+  // Bluetooth variables
+  private bleDevice: any = null
+  private bleRxChar: any = null
+  private bleTxChar: any = null
 
   private onDataCallback?: HardwareDataCallback
   private onStateChangeCallback?: (state: HardwareState) => void
@@ -43,11 +53,13 @@ export class HardwareBridge {
       status: 'standby',
       transport: 'none',
       portInfo: 'None (Standby Mode)',
+      deviceName: undefined,
       baudRate: 115200,
       packetsReceived: 0,
       bytesReceived: 0,
       lastPacketTime: null,
       lastError: null,
+      latencyMs: undefined,
       rawLogs: [
         {
           id: 'init-1',
@@ -65,6 +77,10 @@ export class HardwareBridge {
 
   public isWebSerialSupported(): boolean {
     return typeof navigator !== 'undefined' && 'serial' in navigator
+  }
+
+  public isWebBluetoothSupported(): boolean {
+    return typeof navigator !== 'undefined' && 'bluetooth' in navigator
   }
 
   public setBaudRate(baud: number) {
@@ -96,9 +112,20 @@ export class HardwareBridge {
     }
   }
 
-  /**
-   * Connect to physical microcontroller via Web Serial API
-   */
+  private recordPacket() {
+    const now = Date.now()
+    if (this.state.lastPacketTime) {
+      this.state.latencyMs = Math.max(1, now - this.state.lastPacketTime)
+    } else {
+      this.state.latencyMs = 25 // default initial estimate
+    }
+    this.state.packetsReceived++
+    this.state.lastPacketTime = now
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // 1. WIRED USB SERIAL (Web Serial API)
+  // ─────────────────────────────────────────────────────────────────────────────
   public async connectSerial(baudRate?: number): Promise<boolean> {
     if (!this.isWebSerialSupported()) {
       this.state.status = 'error'
@@ -112,7 +139,7 @@ export class HardwareBridge {
     try {
       this.state.status = 'connecting'
       this.notifyState()
-      this.appendLog('sys', `Requesting serial port (Baud: ${baud})...`)
+      this.appendLog('sys', `Requesting USB serial port (Baud: ${baud})...`)
 
       // @ts-ignore - Web Serial API
       this.port = await navigator.serial.requestPort()
@@ -120,9 +147,10 @@ export class HardwareBridge {
 
       this.state.status = 'connected'
       this.state.transport = 'serial'
+      this.state.deviceName = 'ESP32 (USB Serial)'
       this.state.portInfo = `USB Serial (${baud} baud)`
       this.state.lastError = null
-      this.appendLog('sys', `Connected successfully to serial port at ${baud} baud.`)
+      this.appendLog('sys', `Connected successfully to USB serial port at ${baud} baud.`)
       this.notifyState()
 
       // Start read loop
@@ -163,8 +191,7 @@ export class HardwareBridge {
           for (const line of lines) {
             const cleanLine = line.trim()
             if (cleanLine.length > 0) {
-              this.state.packetsReceived++
-              this.state.lastPacketTime = Date.now()
+              this.recordPacket()
               this.appendLog('in', cleanLine)
               this.parseIncomingPayload(cleanLine, 'serial')
             }
@@ -180,9 +207,6 @@ export class HardwareBridge {
     }
   }
 
-  /**
-   * Disconnect from serial port
-   */
   public async disconnectSerial() {
     try {
       if (this.reader) {
@@ -199,14 +223,133 @@ export class HardwareBridge {
       this.state.status = 'standby'
       this.state.transport = 'none'
       this.state.portInfo = 'None (Standby Mode)'
+      this.state.deviceName = undefined
       this.appendLog('sys', 'Serial port disconnected. Switched to Standby.')
       this.notifyState()
     }
   }
 
-  /**
-   * Connect to ESP32 over WiFi WebSocket
-   */
+  // ─────────────────────────────────────────────────────────────────────────────
+  // 2. BLUETOOTH BLE (Web Bluetooth API)
+  // ─────────────────────────────────────────────────────────────────────────────
+  public async connectBluetooth(): Promise<boolean> {
+    if (!this.isWebBluetoothSupported()) {
+      this.state.status = 'error'
+      this.state.lastError = 'Web Bluetooth API is not supported in this browser. Please use Chrome or Edge.'
+      this.appendLog('err', this.state.lastError)
+      return false
+    }
+
+    try {
+      this.state.status = 'connecting'
+      this.notifyState()
+      this.appendLog('sys', 'Scanning for ESP32 Bluetooth device...')
+
+      // @ts-ignore - Web Bluetooth API
+      this.bleDevice = await navigator.bluetooth.requestDevice({
+        filters: [
+          { namePrefix: 'ESP32' },
+          { namePrefix: 'B-TEG' },
+          { namePrefix: 'Padayon' },
+          { namePrefix: 'Node' },
+          { services: [NORDIC_UART_SERVICE] },
+        ],
+        optionalServices: [NORDIC_UART_SERVICE, 'generic_access'],
+      }).catch(async () => {
+        // Fallback: accept all devices if user wants to select un-prefixed ESP32
+        // @ts-ignore
+        return await navigator.bluetooth.requestDevice({
+          acceptAllDevices: true,
+          optionalServices: [NORDIC_UART_SERVICE, 'generic_access'],
+        })
+      })
+
+      if (!this.bleDevice) {
+        throw new Error('Bluetooth device selection cancelled')
+      }
+
+      const devName = this.bleDevice.name || 'ESP32 BLE Node'
+      this.appendLog('sys', `Pairing with ${devName}... Connecting to GATT Server...`)
+
+      this.bleDevice.addEventListener('gattserverdisconnected', () => {
+        this.appendLog('sys', `Bluetooth device ${devName} disconnected.`)
+        this.disconnectBluetooth()
+      })
+
+      const server = await this.bleDevice.gatt.connect()
+      this.appendLog('sys', `GATT Server connected. Getting Telemetry UART Service...`)
+
+      const service = await server.getPrimaryService(NORDIC_UART_SERVICE).catch(() => null)
+      if (service) {
+        // TX Characteristic (ESP32 notifications -> Web Dashboard)
+        this.bleTxChar = await service.getCharacteristic(NORDIC_UART_TX).catch(() => null)
+        // RX Characteristic (Web Dashboard commands -> ESP32)
+        this.bleRxChar = await service.getCharacteristic(NORDIC_UART_RX).catch(() => null)
+
+        if (this.bleTxChar) {
+          await this.bleTxChar.startNotifications()
+          let bleBuffer = ''
+          this.bleTxChar.addEventListener('characteristicvaluechanged', (e: any) => {
+            const rawBytes = e.target.value
+            const decoder = new TextDecoder()
+            bleBuffer += decoder.decode(rawBytes)
+            this.state.bytesReceived += rawBytes.byteLength
+
+            const lines = bleBuffer.split('\n')
+            bleBuffer = lines.pop() || ''
+            for (const line of lines) {
+              const clean = line.trim()
+              if (clean.length > 0) {
+                this.recordPacket()
+                this.appendLog('in', clean)
+                this.parseIncomingPayload(clean, 'bluetooth')
+              }
+            }
+          })
+        }
+      }
+
+      this.state.status = 'connected'
+      this.state.transport = 'bluetooth'
+      this.state.deviceName = devName
+      this.state.portInfo = `BLE: ${devName}`
+      this.state.lastError = null
+      this.appendLog('sys', `ESP32 Bluetooth connection confirmed! Receiving telemetry stream.`)
+      this.notifyState()
+      return true
+    } catch (err: any) {
+      this.state.status = 'standby'
+      this.state.transport = 'none'
+      this.state.lastError = err?.message || 'Bluetooth connection failed'
+      this.appendLog('err', `BLE Error: ${this.state.lastError}`)
+      this.notifyState()
+      return false
+    }
+  }
+
+  public disconnectBluetooth() {
+    try {
+      if (this.bleDevice && this.bleDevice.gatt && this.bleDevice.gatt.connected) {
+        this.bleDevice.gatt.disconnect()
+      }
+      this.bleDevice = null
+      this.bleRxChar = null
+      this.bleTxChar = null
+    } catch (err) {
+      console.warn('Error disconnecting BLE', err)
+    } finally {
+      this.state.status = 'standby'
+      this.state.transport = 'none'
+      this.state.portInfo = 'None (Standby Mode)'
+      this.state.deviceName = undefined
+      this.appendLog('sys', 'Bluetooth disconnected. Switched to Standby.')
+      this.notifyState()
+    }
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // 3. WI-FI NETWORK (WebSocket & Local IP)
+  // ─────────────────────────────────────────────────────────────────────────────
   public connectWebSocket(url: string = 'ws://192.168.4.1/ws') {
     try {
       if (this.socket) {
@@ -214,7 +357,7 @@ export class HardwareBridge {
       }
 
       this.state.status = 'connecting'
-      this.appendLog('sys', `Connecting to WebSocket: ${url}`)
+      this.appendLog('sys', `Connecting to WiFi WebSocket: ${url}`)
       this.notifyState()
 
       this.socket = new WebSocket(url)
@@ -222,6 +365,7 @@ export class HardwareBridge {
       this.socket.onopen = () => {
         this.state.status = 'connected'
         this.state.transport = 'websocket'
+        this.state.deviceName = 'ESP32 (WiFi Station/AP)'
         this.state.portInfo = `WiFi WebSocket (${url})`
         this.appendLog('sys', `Connected to WebSocket: ${url}`)
         this.notifyState()
@@ -230,14 +374,14 @@ export class HardwareBridge {
       this.socket.onmessage = (event) => {
         const text = String(event.data).trim()
         if (text) {
-          this.state.packetsReceived++
-          this.state.lastPacketTime = Date.now()
+          this.state.bytesReceived += text.length
+          this.recordPacket()
           this.appendLog('in', text)
           this.parseIncomingPayload(text, 'network')
         }
       }
 
-      this.socket.onerror = (err) => {
+      this.socket.onerror = () => {
         this.state.lastError = 'WebSocket connection error'
         this.appendLog('err', 'WebSocket connection failed.')
         this.notifyState()
@@ -247,6 +391,7 @@ export class HardwareBridge {
         this.state.status = 'standby'
         this.state.transport = 'none'
         this.state.portInfo = 'None (Standby Mode)'
+        this.state.deviceName = undefined
         this.appendLog('sys', 'WebSocket closed. Reverted to Standby.')
         this.notifyState()
       }
@@ -265,7 +410,18 @@ export class HardwareBridge {
     this.state.status = 'standby'
     this.state.transport = 'none'
     this.state.portInfo = 'None (Standby Mode)'
+    this.state.deviceName = undefined
     this.notifyState()
+  }
+
+  public disconnectAll() {
+    if (this.state.transport === 'serial') {
+      this.disconnectSerial()
+    } else if (this.state.transport === 'bluetooth') {
+      this.disconnectBluetooth()
+    } else if (this.state.transport === 'websocket') {
+      this.disconnectWebSocket()
+    }
   }
 
   /**
@@ -302,7 +458,7 @@ export class HardwareBridge {
       // 2. Try parsing Comma Separated CSV:
       // stoveTemp, ambientTemp, humidity, batteryV, tegVoltage, tegCurrent, lights, fans
       if (line.includes(',')) {
-        const parts = line.split(',').map(p => p.trim())
+        const parts = line.split(',').map((p) => p.trim())
         if (parts.length >= 4) {
           const parsed = {
             rawStoveTemp: parseFloat(parts[0]) || 0,
@@ -325,21 +481,20 @@ export class HardwareBridge {
           }
         }
       }
-    } catch (err) {
-      // Non-telemetry log message from microcontroller (e.g. "Booting ESP32...")
-      // Already logged in terminal
+    } catch {
+      // Non-telemetry microcontroller string log
     }
   }
 
   /**
-   * Send a command string to microcontroller over Serial or WebSocket
+   * Send a command string to microcontroller over Serial, BLE, or WebSocket
    */
   public async sendCommand(command: string): Promise<boolean> {
     const formatted = command.endsWith('\n') ? command : command + '\n'
     this.appendLog('out', command.trim())
 
     try {
-      // Serial writer
+      // 1. Serial writer
       if (this.port && this.port.writable) {
         const encoder = new TextEncoder()
         const writer = this.port.writable.getWriter()
@@ -348,7 +503,14 @@ export class HardwareBridge {
         return true
       }
 
-      // WebSocket sender
+      // 2. Bluetooth writer
+      if (this.bleRxChar) {
+        const encoder = new TextEncoder()
+        await this.bleRxChar.writeValue(encoder.encode(formatted))
+        return true
+      }
+
+      // 3. WebSocket sender
       if (this.socket && this.socket.readyState === WebSocket.OPEN) {
         this.socket.send(formatted)
         return true
@@ -362,17 +524,11 @@ export class HardwareBridge {
     }
   }
 
-  /**
-   * Helper to toggle hardware relay
-   */
   public async sendRelayCommand(relay: 'dcBus' | 'lights' | 'fans' | 'aux', state: boolean) {
     const cmd = JSON.stringify({ cmd: 'RELAY', relay, state: state ? 1 : 0 })
     return this.sendCommand(cmd)
   }
 
-  /**
-   * Send calibration offsets to hardware EEPROM
-   */
   public async sendCalibrationCommand(calJson: object) {
     const cmd = JSON.stringify({ cmd: 'CALIB', config: calJson })
     return this.sendCommand(cmd)

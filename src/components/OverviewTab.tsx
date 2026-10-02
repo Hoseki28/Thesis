@@ -21,7 +21,6 @@ interface OverviewTabProps {
   hasAlert: boolean
   tooHot: boolean
   lowHeat: boolean
-  lowBattery: boolean
   onToggleFans: () => void
   onToggleDcBus: () => void
   onScenarioChange: (preset: ScenarioPreset) => void
@@ -56,19 +55,19 @@ export function OverviewTab({
   // System status text and colors
   const statusText = isFil
     ? tooHot
-      ? 'BABALA / SOBRANG INIT NG KALAN'
+      ? 'BABALA: SOBRANG INIT NG KALAN'
       : lowBattery
-      ? 'BABALA / MABABANG BATERYA CUTOFF'
+      ? 'BABALA: MABABANG BATERYA CUTOFF'
       : lowHeat
-      ? 'KULANG SA INIT / MAHINANG APOY'
-      : 'MAAYOS ANG SISTEMA / GUMAGANA'
+      ? 'KULANG SA INIT: MAHINANG APOY'
+      : 'MAAYOS ANG SISTEMA: GUMAGANA'
     : tooHot
-    ? 'SYSTEM ALERT / CORE OVERHEAT'
+    ? 'SYSTEM ALERT: CORE OVERHEAT'
     : lowBattery
-    ? 'SYSTEM ALERT / LOW BATTERY CUTOFF'
+    ? 'SYSTEM ALERT: LOW BATTERY CUTOFF'
     : lowHeat
-    ? 'SYSTEM DEFICIT / LOW FLAME'
-    : 'SYSTEM GOOD / RUNNING'
+    ? 'SYSTEM DEFICIT: LOW FLAME'
+    : 'SYSTEM GOOD: RUNNING'
 
   const statusBorder = hasAlert
     ? tooHot || lowBattery
@@ -82,10 +81,18 @@ export function OverviewTab({
     <div className="flex flex-col gap-3 font-sans">
       {/* ── 1. SYSTEM STATUS BANNER ───────────────────────────────────── */}
       <div
-        className={`w-full rounded-xl p-3 flex items-center gap-2.5 font-bold text-xs uppercase tracking-wider border transition-colors shadow-sm ${statusBorder}`}
+        className={`w-full rounded-xl p-3 flex items-center justify-between font-bold text-xs uppercase tracking-wider border transition-colors shadow-sm ${statusBorder}`}
       >
-        <IconShieldCheck size={18} className="flex-shrink-0" />
-        <span>{statusText}</span>
+        <div className="flex items-center gap-2.5">
+          <IconShieldCheck size={18} className="flex-shrink-0" />
+          <span>{statusText}</span>
+        </div>
+
+        {isLive && (
+          <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 font-bold uppercase">
+            LIVE HARDWARE
+          </span>
+        )}
       </div>
 
       {/* ── 2. DC MAIN POWER & CURRENT LOAD CARD ─────────────────────── */}
