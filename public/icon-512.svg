@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0F172A" />
+      <stop offset="100%" stop-color="#020617" />
+    </linearGradient>
+    <linearGradient id="tegGrad" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#EA580C" />
+      <stop offset="50%" stop-color="#F59E0B" />
+      <stop offset="100%" stop-color="#10B981" />
+    </linearGradient>
+    <linearGradient id="flameGrad" x1="0%" y1="100%" x2="0%" y2="0%">
+      <stop offset="0%" stop-color="#DC2626" />
+      <stop offset="60%" stop-color="#EA580C" />
+      <stop offset="100%" stop-color="#FBBF24" />
+    </linearGradient>
+  </defs>
+
+  <!-- Background rounded squircle -->
+  <rect width="512" height="512" rx="115" fill="url(#bgGrad)" stroke="#334155" stroke-width="8" />
+
+  <!-- Inner border glow -->
+  <rect x="24" y="24" width="464" height="464" rx="95" fill="none" stroke="#2563EB" stroke-width="3" opacity="0.4" />
+
+  <!-- Biomass Flame & Lightning Bolt Fusion Symbol -->
+  <g transform="translate(136, 100)">
+    <!-- Stove Flame Base -->
+    <path d="M 120 280 C 40 280 20 180 80 120 C 70 170 110 180 120 150 C 140 100 90 40 120 0 C 150 50 220 120 200 200 C 220 170 210 140 220 110 C 240 170 220 280 120 280 Z" fill="url(#flameGrad)" opacity="0.85" />
+    <!-- Electric Lightning Bolt (TEG) -->
+    <path d="M 140 30 L 70 160 L 130 160 L 90 280 L 190 130 L 130 130 Z" fill="#FFFFFF" filter="drop-shadow(0px 0px 8px rgba(251, 191, 36, 0.8))" />
+  </g>
+
+  <!-- Typography: PADAYON -->
+  <text x="256" y="440" font-family="system-ui, -apple-system, sans-serif" font-weight="900" font-size="44" fill="#F1F5F9" letter-spacing="6" text-anchor="middle">PADAYON</text>
+  <text x="256" y="475" font-family="system-ui, -apple-system, sans-serif" font-weight="700" font-size="20" fill="#10B981" letter-spacing="3" text-anchor="middle">POWER MONITOR</text>
+</svg>

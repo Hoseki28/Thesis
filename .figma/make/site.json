@@ -1,0 +1,10 @@
+{
+  "description": "Monitor and manage energy output and thermal dynamics of a Smart Biomass-TEG System at Padayon Campsite, ensuring efficient power usage and alerts.",
+  "robots": {
+    "index": false
+  },
+  "accessibility": {
+    "addBypassLinks": false,
+    "ignoreReducedMotion": false
+  }
+}

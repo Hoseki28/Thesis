@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192" width="192" height="192">
+  <defs>
+    <linearGradient id="bgGrad192" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0F172A" />
+      <stop offset="100%" stop-color="#020617" />
+    </linearGradient>
+    <linearGradient id="flameGrad192" x1="0%" y1="100%" x2="0%" y2="0%">
+      <stop offset="0%" stop-color="#DC2626" />
+      <stop offset="60%" stop-color="#EA580C" />
+      <stop offset="100%" stop-color="#FBBF24" />
+    </linearGradient>
+  </defs>
+
+  <rect width="192" height="192" rx="42" fill="url(#bgGrad192)" stroke="#334155" stroke-width="4" />
+
+  <g transform="translate(48, 28)">
+    <path d="M 48 112 C 16 112 8 72 32 48 C 28 68 44 72 48 60 C 56 40 36 16 48 0 C 60 20 88 48 80 80 C 88 68 84 56 88 44 C 96 68 88 112 48 112 Z" fill="url(#flameGrad192)" opacity="0.85" />
+    <path d="M 56 12 L 28 64 L 52 64 L 36 112 L 76 52 L 52 52 Z" fill="#FFFFFF" />
+  </g>
+
+  <text x="96" y="170" font-family="system-ui, -apple-system, sans-serif" font-weight="900" font-size="16" fill="#F1F5F9" letter-spacing="2" text-anchor="middle">PADAYON</text>
+</svg>
