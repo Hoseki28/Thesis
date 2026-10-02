@@ -64,11 +64,12 @@ export function Header({
     }
   }
 
-  // Format Philippine Standard Time
-  const timeFormatted = currentTime.toLocaleTimeString('en-GB', {
-    hour: '2-digit',
+  // Format 12-hour AM/PM Standard Time (non-military)
+  const timeFormatted = currentTime.toLocaleTimeString('en-US', {
+    hour: 'numeric',
     minute: '2-digit',
     second: '2-digit',
+    hour12: true,
   })
 
   const dateFormatted = currentTime.toLocaleDateString(isFil ? 'fil-PH' : 'en-US', {
