@@ -92,3 +92,15 @@ export interface TelemetryPoint {
 }
 
 export type ScenarioPreset = 'normal' | 'lowHeat' | 'overheat' | 'lowBatt' | 'tegPeak' | 'custom'
+
+export type SystemLogLevel = 'info' | 'warning' | 'error'
+
+export interface SystemLogEntry {
+  id: string
+  timestamp: string // Strictly YYYY-MM-DD HH:mm (Asia/Manila)
+  timestampMs: number
+  level: SystemLogLevel
+  message: string
+  messageFil?: string
+  source?: 'system' | 'esp32' | 'threshold' | 'user'
+}

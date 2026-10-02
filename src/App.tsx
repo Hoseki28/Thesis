@@ -16,11 +16,14 @@ import {
 import { HardwareBridge } from './services/hardwareBridge'
 import { SimulationEngine } from './services/simulationEngine'
 import { TelemetryHistoryManager } from './services/telemetryHistory'
+import { systemLogManager } from './services/systemLogService'
 import {
   CalibrationConfig,
   HardwareState,
   Lang,
   ScenarioPreset,
+  SystemLogEntry,
+  SystemLogLevel,
   TabId,
   TelemetryData,
   TelemetryPoint,
@@ -115,26 +118,61 @@ export default function App() {
     rawLogs: [],
   })
 
-  // Track connection change to show confirmation toast
+  // System logs dynamic state
+  const [systemLogs, setSystemLogs] = useState<SystemLogEntry[]>(() => systemLogManager.getLogs())
+
+  useEffect(() => {
+    return systemLogManager.subscribe((updatedLogs) => {
+      setSystemLogs(updatedLogs)
+    })
+  }, [])
+
+  // Track connection change to show confirmation toast and system log
   const prevStatusRef = useRef(hardwareState.status)
   useEffect(() => {
-    if (prevStatusRef.current !== 'connected' && hardwareState.status === 'connected') {
+    if (prevStatusRef.current !== hardwareState.status) {
       const transportName =
         hardwareState.transport === 'serial'
           ? 'USB Serial'
           : hardwareState.transport === 'bluetooth'
           ? 'Bluetooth BLE'
-          : 'Wi-Fi'
-      const msg =
-        lang === 'fil'
-          ? `Kumpirmado: Nakakabit na ang ESP32 via ${transportName}!`
-          : `Confirmed: ESP32 connected via ${transportName}!`
-      setConnectToast({ message: msg, type: 'success' })
-      const timer = setTimeout(() => setConnectToast(null), 4500)
-      return () => clearTimeout(timer)
+          : hardwareState.transport === 'websocket'
+          ? 'Wi-Fi'
+          : 'None'
+
+      if (hardwareState.status === 'connected') {
+        const msg =
+          lang === 'fil'
+            ? `Kumpirmado: Nakakabit na ang ESP32 via ${transportName}!`
+            : `Confirmed: ESP32 connected via ${transportName}!`
+        setConnectToast({ message: msg, type: 'success' })
+        const timer = setTimeout(() => setConnectToast(null), 4500)
+
+        systemLogManager.addSystemLog(
+          `ESP32 hardware link established via ${transportName} (${hardwareState.portInfo})`,
+          'info',
+          `Nakakabit na ang ESP32 via ${transportName} (${hardwareState.portInfo})`,
+          'esp32'
+        )
+        return () => clearTimeout(timer)
+      } else if (prevStatusRef.current === 'connected' && hardwareState.status === 'standby') {
+        systemLogManager.addSystemLog(
+          'ESP32 disconnected. Telemetry reverted to simulation mode.',
+          'warning',
+          'Naputol ang ESP32. Bumalik sa simulation mode ang telemetry.',
+          'esp32'
+        )
+      } else if (hardwareState.status === 'error') {
+        systemLogManager.addSystemLog(
+          `ESP32 interface fault: ${hardwareState.lastError || 'Unknown connection error'}`,
+          'error',
+          `Problema sa koneksyon ng ESP32: ${hardwareState.lastError || 'Error sa koneksyon'}`,
+          'esp32'
+        )
+      }
     }
     prevStatusRef.current = hardwareState.status
-  }, [hardwareState.status, hardwareState.transport, lang])
+  }, [hardwareState.status, hardwareState.transport, hardwareState.portInfo, hardwareState.lastError, lang])
 
   // Hardware Bridge ref
   const bridgeRef = useRef<HardwareBridge | null>(null)
@@ -289,6 +327,50 @@ export default function App() {
   const hasAlert = tooHot || lowHeat || lowBattery
   const isLive = hardwareState.status === 'connected'
 
+  // Edge-triggered threshold breaches logging (prevents spamming every second)
+  const prevOverheatRef = useRef(false)
+  const prevLowBattRef = useRef(false)
+  const prevLowHeatRef = useRef(false)
+
+  useEffect(() => {
+    if (!prevOverheatRef.current && tooHot) {
+      systemLogManager.addSystemLog(
+        `Overheat breach: Stove temp reached ${telemetry.stoveTemp.toFixed(1)}°C (Limit: ${calibration.stoveOverheatThreshold}°C)`,
+        'error',
+        `Babala sa init: Umabot sa ${telemetry.stoveTemp.toFixed(1)}°C ang kalan (Limit: ${calibration.stoveOverheatThreshold}°C)`,
+        'threshold'
+      )
+    } else if (prevOverheatRef.current && !tooHot) {
+      systemLogManager.addSystemLog(
+        `Thermal recovery: Stove temperature stabilized at ${telemetry.stoveTemp.toFixed(1)}°C`,
+        'info',
+        `Bumaba na sa normal ang temperatura ng kalan (${telemetry.stoveTemp.toFixed(1)}°C)`,
+        'threshold'
+      )
+    }
+    prevOverheatRef.current = tooHot
+
+    if (!prevLowBattRef.current && lowBattery) {
+      systemLogManager.addSystemLog(
+        `Battery threshold alert: SOC dropped to ${telemetry.batteryPct}% (${telemetry.batteryVoltage.toFixed(2)}V)`,
+        'error',
+        `Mababang lebel ng baterya: Bumababa sa ${telemetry.batteryPct}% (${telemetry.batteryVoltage.toFixed(2)}V)`,
+        'threshold'
+      )
+    }
+    prevLowBattRef.current = lowBattery
+
+    if (!prevLowHeatRef.current && lowHeat) {
+      systemLogManager.addSystemLog(
+        `Low heat alert: Stove temp fell to ${telemetry.stoveTemp.toFixed(1)}°C (Threshold: ${calibration.stoveLowHeatThreshold}°C)`,
+        'warning',
+        `Mababang init ng kalan: Bumababa sa ${telemetry.stoveTemp.toFixed(1)}°C`,
+        'threshold'
+      )
+    }
+    prevLowHeatRef.current = lowHeat
+  }, [tooHot, lowHeat, lowBattery, telemetry.stoveTemp, telemetry.batteryPct, telemetry.batteryVoltage, calibration.stoveOverheatThreshold, calibration.stoveLowHeatThreshold])
+
   return (
     <div className={`flex justify-center items-start min-h-screen transition-colors duration-200 ${
       theme === 'dark' ? 'bg-[#0B0F12] text-zinc-100' : 'bg-[#F3F4F6] text-zinc-900'
@@ -410,8 +492,10 @@ export default function App() {
               bridge={bridgeRef.current}
               hardwareState={hardwareState}
               historyManager={historyManagerRef.current}
-              points={historyPoints}
-              stats={historyManagerRef.current.getStats()}
+              logs={systemLogs}
+              onAddLog={(msg, lvl, fil) => systemLogManager.addSystemLog(msg, lvl, fil)}
+              onClearLogs={() => systemLogManager.clearLogs()}
+              onExportCsv={() => systemLogManager.exportCsv('padayon_system_logs')}
               lang={lang}
               theme={theme}
             />
