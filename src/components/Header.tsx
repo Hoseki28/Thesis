@@ -11,7 +11,6 @@ import {
   IconUsb,
   IconBluetooth,
   IconWifi,
-  IconFileText,
 } from './Icons'
 
 interface HeaderProps {
@@ -138,20 +137,6 @@ export function Header({
 
           {/* Right: Quick Action Controls */}
           <div className="flex items-center gap-1.5">
-            {/* System Documentation / PDF Manual Link */}
-            <a
-              href="/system_documentation.html"
-              target="_blank"
-              rel="noopener noreferrer"
-              className={`p-2 rounded-lg transition-colors cursor-pointer min-h-[44px] min-w-[44px] flex items-center justify-center ${
-                isDark ? 'text-zinc-400 hover:text-white hover:bg-[#1E242B]' : 'text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100'
-              }`}
-              title={isFil ? "Dokumentasyon ng Sistema at PDF Manual" : "System Documentation & PDF Manual"}
-              aria-label="Documentation PDF"
-            >
-              <IconFileText size={16} className="text-[#00E676]" />
-            </a>
-
             {/* Phone Modal Link */}
             <button
               type="button"
