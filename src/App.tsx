@@ -178,6 +178,8 @@ export default function App() {
   const bridgeRef = useRef<HardwareBridge | null>(null)
   // Simulation Engine ref
   const simRef = useRef<SimulationEngine | null>(null)
+  // Calibration ref to avoid stale closure in hardware listeners
+  const calibrationRef = useRef<CalibrationConfig>(calibration)
 
   // Active Telemetry State
   const [telemetry, setTelemetry] = useState<TelemetryData>(() => {
@@ -199,6 +201,13 @@ export default function App() {
     )
   })
 
+  useEffect(() => {
+    calibrationRef.current = calibration
+    if (simRef.current) {
+      simRef.current.updateCalibration(calibration)
+    }
+  }, [calibration])
+
   // Initialize Services
   useEffect(() => {
     // 1. Initialize Hardware Bridge
@@ -214,7 +223,7 @@ export default function App() {
             operatingHours: prev.operatingHours,
             systemHealthPct: prev.systemHealthPct,
           }
-          const calibrated = applyCalibration(merged, calibration)
+          const calibrated = applyCalibration(merged, calibrationRef.current)
           historyManagerRef.current.addPoint(calibrated)
           setHistoryPoints(historyManagerRef.current.getPoints())
           return calibrated
@@ -227,7 +236,7 @@ export default function App() {
     bridgeRef.current = bridge
 
     // 2. Initialize Simulation Engine
-    const sim = new SimulationEngine(calibration, (simulatedData) => {
+    const sim = new SimulationEngine(calibrationRef.current, (simulatedData) => {
       if (bridge.getState().status !== 'connected') {
         setTelemetry(simulatedData)
         historyManagerRef.current.addPoint(simulatedData)
@@ -239,17 +248,9 @@ export default function App() {
 
     return () => {
       sim.stop()
-      bridge.disconnectSerial()
-      bridge.disconnectWebSocket()
+      bridge.disconnectAll()
     }
   }, [])
-
-  // Update calibration in engine when config changes
-  useEffect(() => {
-    if (simRef.current) {
-      simRef.current.updateCalibration(calibration)
-    }
-  }, [calibration])
 
   // Change simulation speed
   useEffect(() => {
@@ -357,6 +358,13 @@ export default function App() {
         `Mababang lebel ng baterya: Bumababa sa ${telemetry.batteryPct}% (${telemetry.batteryVoltage.toFixed(2)}V)`,
         'threshold'
       )
+    } else if (prevLowBattRef.current && !lowBattery) {
+      systemLogManager.addSystemLog(
+        `Battery recovery: SOC restored to ${telemetry.batteryPct}% (${telemetry.batteryVoltage.toFixed(2)}V)`,
+        'info',
+        `Naka-recover ang baterya: Umabot sa ${telemetry.batteryPct}% (${telemetry.batteryVoltage.toFixed(2)}V)`,
+        'threshold'
+      )
     }
     prevLowBattRef.current = lowBattery
 
@@ -365,6 +373,13 @@ export default function App() {
         `Low heat alert: Stove temp fell to ${telemetry.stoveTemp.toFixed(1)}°C (Threshold: ${calibration.stoveLowHeatThreshold}°C)`,
         'warning',
         `Mababang init ng kalan: Bumababa sa ${telemetry.stoveTemp.toFixed(1)}°C`,
+        'threshold'
+      )
+    } else if (prevLowHeatRef.current && !lowHeat) {
+      systemLogManager.addSystemLog(
+        `Heat recovery: Stove temp nominal at ${telemetry.stoveTemp.toFixed(1)}°C`,
+        'info',
+        `Bumalik sa sapat na init ang kalan (${telemetry.stoveTemp.toFixed(1)}°C)`,
         'threshold'
       )
     }

@@ -52,7 +52,10 @@ export function Header({
   }, [])
 
   const httpsUrl = 'https://design-energy-dashboard-pwa.vercel.app'
-  const localUrl = 'http://192.168.100.16:5173/'
+  const localUrl =
+    typeof window !== 'undefined' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1'
+      ? `${window.location.protocol}//${window.location.hostname}:${window.location.port || '5173'}/`
+      : 'http://192.168.100.16:5173/'
 
   const handleCopy = async (url: string, key: string) => {
     try {
@@ -64,8 +67,9 @@ export function Header({
     }
   }
 
-  // Format 12-hour AM/PM Standard Time (non-military)
+  // Format 12-hour AM/PM Standard Time strictly in Asia/Manila (PHT)
   const timeFormatted = currentTime.toLocaleTimeString('en-US', {
+    timeZone: 'Asia/Manila',
     hour: 'numeric',
     minute: '2-digit',
     second: '2-digit',
@@ -73,6 +77,7 @@ export function Header({
   })
 
   const dateFormatted = currentTime.toLocaleDateString(isFil ? 'fil-PH' : 'en-US', {
+    timeZone: 'Asia/Manila',
     weekday: 'short',
     month: 'short',
     day: 'numeric',
@@ -81,7 +86,7 @@ export function Header({
   return (
     <>
       <header
-        className={`border-b sticky top-0 z-30 font-sans transition-colors ${
+        className={`border-b sticky top-0 z-30 font-sans transition-colors pt-[env(safe-area-inset-top,0px)] ${
           isDark ? 'bg-[#0B0F12] border-[#1E242B]' : 'bg-white border-zinc-200 shadow-sm'
         }`}
         role="banner"

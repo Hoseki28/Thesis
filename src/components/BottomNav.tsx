@@ -28,7 +28,7 @@ export function BottomNav({ currentTab, onSelectTab, lang = 'en', theme = 'dark'
   return (
     <nav
       aria-label="Mobile Navigation Bar"
-      className={`fixed bottom-0 left-0 right-0 max-w-md mx-auto z-40 border-t px-3 py-2 shadow-2xl h-16 flex items-center justify-around font-sans transition-colors ${
+      className={`fixed bottom-0 left-0 right-0 max-w-md mx-auto z-40 border-t px-3 py-2 shadow-2xl h-[calc(4rem+env(safe-area-inset-bottom,0px))] pb-[calc(0.5rem+env(safe-area-inset-bottom,0px))] flex items-center justify-around font-sans transition-colors ${
         isDark ? 'bg-[#0B0F12] border-[#1E242B]' : 'bg-white border-zinc-200'
       }`}
     >
