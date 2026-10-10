@@ -13,11 +13,14 @@ export interface TelemetryStats {
 export class TelemetryHistoryManager {
   private points: TelemetryPoint[] = []
   private maxPoints: number = 60
+  // Expanded buffer size for 8-10 continuous hours of 1 Hz testing (up to 36,000 points)
   private fullLog: Array<TelemetryData & { isoTime: string }> = []
+  private maxFullLog: number = 36000
   private stats: TelemetryStats
 
-  constructor(maxPoints: number = 60) {
+  constructor(maxPoints: number = 60, maxFullLog: number = 36000) {
     this.maxPoints = maxPoints
+    this.maxFullLog = maxFullLog
     this.stats = {
       peakStoveTemp: 0,
       peakTegPower: 0,
@@ -36,16 +39,41 @@ export class TelemetryHistoryManager {
       second: '2-digit',
     })
 
+    // Bounds and NaN sanitization
+    const safeStoveTemp = Number.isFinite(data.stoveTemp) ? data.stoveTemp : 0
+    const safeColdFaceTemp = Number.isFinite(data.coldFaceTemp) ? data.coldFaceTemp : 25
+    const safeDeltaT = Number.isFinite(data.deltaT) ? data.deltaT : Math.max(0, safeStoveTemp - safeColdFaceTemp)
+    const safeAmbientTemp = Number.isFinite(data.ambientTemp) ? data.ambientTemp : 28
+    const safeHumidity = Number.isFinite(data.humidity) ? data.humidity : 60
+    const safeBattPct = Number.isFinite(data.batteryPct) ? data.batteryPct : 50
+    const safeBattV = Number.isFinite(data.batteryVoltage) ? data.batteryVoltage : 12.0
+    const safeBattISigned = Number.isFinite(data.batteryCurrentSigned) ? data.batteryCurrentSigned : 0
+    const safeTegV = Number.isFinite(data.tegVoltage) ? data.tegVoltage : 0
+    const safeTegI = Number.isFinite(data.tegCurrent) ? data.tegCurrent : 0
+    const safeTegPower = Number.isFinite(data.tegPower) ? data.tegPower : 0
+    const safeLoadPower = Number.isFinite(data.loadPower) ? data.loadPower : 0
+
     const pt: TelemetryPoint = {
       time: timeStr,
       timestamp: data.timestamp,
-      stoveTemp: data.stoveTemp,
-      ambientTemp: data.ambientTemp,
-      humidity: data.humidity,
-      batteryPct: data.batteryPct,
-      batteryVoltage: data.batteryVoltage,
-      tegPower: data.tegPower,
-      loadPower: data.loadPower,
+      stoveTemp: safeStoveTemp,
+      coldFaceTemp: safeColdFaceTemp,
+      deltaT: safeDeltaT,
+      ambientTemp: safeAmbientTemp,
+      humidity: safeHumidity,
+      batteryPct: safeBattPct,
+      batteryVoltage: safeBattV,
+      batteryCurrentSigned: safeBattISigned,
+      tegVoltage: safeTegV,
+      tegCurrent: safeTegI,
+      tegPower: safeTegPower,
+      loadPower: safeLoadPower,
+      criticalLoadActive: data.criticalLoadActive ?? true,
+      auxLoadActive: data.auxLoadActive ?? false,
+      auxLockout: data.auxLockout ?? false,
+      feedstock: data.feedstock || 'unassigned',
+      runId: data.runId || 'RUN-01',
+      sensorFault: data.sensorFault ?? false,
     }
 
     this.points.push(pt)
@@ -53,25 +81,39 @@ export class TelemetryHistoryManager {
       this.points.shift()
     }
 
-    // Keep full log for CSV export (up to 5,000 samples)
-    this.fullLog.push({
+    // Keep full log for Chapter 4 CSV export without dropping 6-8 hr burn test records
+    const sanitizedRecord: TelemetryData & { isoTime: string } = {
       ...data,
+      stoveTemp: safeStoveTemp,
+      coldFaceTemp: safeColdFaceTemp,
+      deltaT: safeDeltaT,
+      ambientTemp: safeAmbientTemp,
+      humidity: safeHumidity,
+      batteryPct: safeBattPct,
+      batteryVoltage: safeBattV,
+      batteryCurrentSigned: safeBattISigned,
+      tegVoltage: safeTegV,
+      tegCurrent: safeTegI,
+      tegPower: safeTegPower,
+      loadPower: safeLoadPower,
       isoTime: new Date(data.timestamp).toISOString(),
-    })
-    if (this.fullLog.length > 5000) {
+    }
+
+    this.fullLog.push(sanitizedRecord)
+    if (this.fullLog.length > this.maxFullLog) {
       this.fullLog.shift()
     }
 
-    // Update session statistics
+    // Update session statistics safely
     this.stats.sampleCount++
-    if (data.stoveTemp > this.stats.peakStoveTemp) this.stats.peakStoveTemp = data.stoveTemp
-    if (data.tegPower > this.stats.peakTegPower) this.stats.peakTegPower = data.tegPower
-    if (data.batteryPct < this.stats.minBatteryPct) this.stats.minBatteryPct = data.batteryPct
+    if (safeStoveTemp > this.stats.peakStoveTemp) this.stats.peakStoveTemp = safeStoveTemp
+    if (safeTegPower > this.stats.peakTegPower) this.stats.peakTegPower = safeTegPower
+    if (safeBattPct < this.stats.minBatteryPct) this.stats.minBatteryPct = safeBattPct
 
     // Integrate Wh (assuming ~1 second per tick = watts * (1/3600))
-    this.stats.totalEnergyGeneratedWh += (data.tegPower / 3600)
+    this.stats.totalEnergyGeneratedWh += (safeTegPower / 3600)
     this.stats.avgAmbientTemp =
-      ((this.stats.avgAmbientTemp * (this.stats.sampleCount - 1)) + data.ambientTemp) / this.stats.sampleCount
+      ((this.stats.avgAmbientTemp * (this.stats.sampleCount - 1)) + safeAmbientTemp) / this.stats.sampleCount
   }
 
   public getPoints(): TelemetryPoint[] {
@@ -97,48 +139,56 @@ export class TelemetryHistoryManager {
   }
 
   /**
-   * Export all recorded telemetry points to a CSV file for thesis analysis
+   * Export all recorded telemetry points to a CSV file for Chapter 4 thesis analysis.
+   * Conforms strictly to thesis requirements:
+   * Timestamp,Run_ID,Feedstock,Hot_Side_C,Cold_Side_C,Delta_T_C,Ambient_C,TEG_Voltage_V,TEG_Current_mA,TEG_Power_W,Batt_Voltage_V,Batt_Current_mA,Load_Power_W,SoC_Pct,Aux_Load_State
    */
-  public exportCsv(filenamePrefix: string = 'padayon_telemetry'): boolean {
+  public exportCsv(feedstock?: string, runId?: string, filenamePrefix: string = 'padayon_biomass_teg'): boolean {
     if (this.fullLog.length === 0) {
       return false
     }
 
     const headers = [
-      'Timestamp_ISO',
-      'Epoch_MS',
-      'Data_Source',
-      'Stove_Temp_C',
-      'Ambient_Temp_C',
-      'Humidity_Pct',
-      'Battery_Voltage_V',
-      'Battery_Pct',
+      'Timestamp',
+      'Run_ID',
+      'Feedstock',
+      'Hot_Side_C',
+      'Cold_Side_C',
+      'Delta_T_C',
+      'Ambient_C',
       'TEG_Voltage_V',
-      'TEG_Current_A',
+      'TEG_Current_mA',
       'TEG_Power_W',
+      'Batt_Voltage_V',
+      'Batt_Current_mA',
       'Load_Power_W',
-      'Net_Current_A',
-      'Lights_Relay',
-      'Fans_Relay',
+      'SoC_Pct',
+      'Aux_Load_State',
     ]
 
-    const rows = this.fullLog.map((row) => [
-      row.isoTime,
-      row.timestamp,
-      row.source,
-      row.stoveTemp.toFixed(1),
-      row.ambientTemp.toFixed(1),
-      row.humidity.toFixed(0),
-      row.batteryVoltage.toFixed(2),
-      row.batteryPct,
-      row.tegVoltage.toFixed(2),
-      row.tegCurrent.toFixed(2),
-      row.tegPower.toFixed(2),
-      row.loadPower.toFixed(2),
-      row.netCurrent.toFixed(2),
-      row.relays.lights ? 1 : 0,
-      row.relays.fans ? 1 : 0,
-    ])
+    const rows = this.fullLog.map((row) => {
+      const activeFeedstock = feedstock || row.feedstock || 'unassigned'
+      const activeRunId = runId || row.runId || 'RUN-01'
+      const auxState = row.auxLoadActive ? 'ON' : row.auxLockout ? 'LOCKED_OUT' : 'OFF'
+
+      return [
+        row.isoTime,
+        activeRunId,
+        activeFeedstock,
+        row.stoveTemp.toFixed(1),
+        row.coldFaceTemp.toFixed(1),
+        row.deltaT.toFixed(1),
+        row.ambientTemp.toFixed(1),
+        row.tegVoltage.toFixed(2),
+        Math.round(row.tegCurrent * 1000), // Converted to mA
+        row.tegPower.toFixed(2),
+        row.batteryVoltage.toFixed(2),
+        Math.round(row.batteryCurrentSigned * 1000), // Converted to signed mA
+        row.loadPower.toFixed(2),
+        Math.round(row.batteryPct),
+        auxState,
+      ]
+    })
 
     const csvContent = [headers.join(','), ...rows.map((r) => r.join(','))].join('\n')
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
@@ -146,8 +196,9 @@ export class TelemetryHistoryManager {
 
     const link = document.createElement('a')
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
+    const effectiveTag = feedstock ? `_${feedstock}` : ''
     link.setAttribute('href', url)
-    link.setAttribute('download', `${filenamePrefix}_${timestamp}.csv`)
+    link.setAttribute('download', `${filenamePrefix}${effectiveTag}_${timestamp}.csv`)
     document.body.appendChild(link)
     link.click()
     document.body.removeChild(link)

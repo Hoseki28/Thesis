@@ -277,6 +277,17 @@ export default function App() {
 
   // Appliance relay toggling (Fan)
   const handleToggleFans = async () => {
+    // Safety Lockout: Prevent activating auxiliary loads if battery is at/below cutoff
+    if (telemetry.batteryPct <= calibration.batteryCutoffPct && !telemetry.relays.fans) {
+      systemLogManager.addSystemLog(
+        `Safety Lockout: Cannot activate auxiliary cooling fans while battery is below cutoff (${telemetry.batteryPct}% <= ${calibration.batteryCutoffPct}%)`,
+        'warning',
+        `Naka-lockout: Hindi maaaring paganahin ang fan habang mababa ang baterya (${telemetry.batteryPct}% <= ${calibration.batteryCutoffPct}%)`,
+        'threshold'
+      )
+      return
+    }
+
     const next = !telemetry.relays.fans
     if (hardwareState.status === 'connected' && bridgeRef.current) {
       await bridgeRef.current.sendRelayCommand('fans', next)
@@ -286,6 +297,7 @@ export default function App() {
     setTelemetry((prev) => ({
       ...prev,
       relays: { ...prev.relays, fans: next },
+      auxLoadActive: next && !prev.auxLockout,
     }))
   }
 
@@ -301,6 +313,43 @@ export default function App() {
       ...prev,
       relays: { ...prev.relays, dcBus: next },
     }))
+  }
+
+  // Fuel Hopper Servo Pulse Feed (Downlink Command {"cmd": "FEED_SERVO"})
+  const handlePulseFeed = async () => {
+    systemLogManager.addSystemLog(
+      'Manual fuel pulse triggered: Dispatched downlink command {"cmd": "FEED_SERVO"} to fuel hopper feed servo',
+      'info',
+      'Manu-manong pagpapakain ng gatong: Ipinadala ang utos na {"cmd": "FEED_SERVO"} sa servo ng hopper',
+      'action'
+    )
+
+    if (hardwareState.status === 'connected' && bridgeRef.current) {
+      await bridgeRef.current.sendPulseFeedCommand()
+    } else if (simRef.current) {
+      simRef.current.pulseServo()
+    }
+
+    // Set momentary visual active state on telemetry.fuelSystem
+    setTelemetry((prev) => ({
+      ...prev,
+      fuelSystem: {
+        ...prev.fuelSystem,
+        hopperServoActive: true,
+        feedCycles: (prev.fuelSystem?.feedCycles || 0) + 1,
+      },
+    }))
+
+    // Reset visual feed servo pulse after 2 seconds
+    setTimeout(() => {
+      setTelemetry((prev) => ({
+        ...prev,
+        fuelSystem: {
+          ...prev.fuelSystem,
+          hopperServoActive: false,
+        },
+      }))
+    }, 2000)
   }
 
   // Calibration Actions
@@ -353,11 +402,24 @@ export default function App() {
 
     if (!prevLowBattRef.current && lowBattery) {
       systemLogManager.addSystemLog(
-        `Battery threshold alert: SOC dropped to ${telemetry.batteryPct}% (${telemetry.batteryVoltage.toFixed(2)}V)`,
+        `Battery threshold alert: SOC dropped to ${telemetry.batteryPct}% (${telemetry.batteryVoltage.toFixed(2)}V). Automated secondary load shedding activated.`,
         'error',
-        `Mababang lebel ng baterya: Bumababa sa ${telemetry.batteryPct}% (${telemetry.batteryVoltage.toFixed(2)}V)`,
+        `Mababang lebel ng baterya: Bumababa sa ${telemetry.batteryPct}% (${telemetry.batteryVoltage.toFixed(2)}V). Awtomatikong pinatay ang secondary loads.`,
         'threshold'
       )
+      // Automated load shedding dispatch to hardware & simulation
+      if (hardwareState.status === 'connected' && bridgeRef.current) {
+        bridgeRef.current.sendRelayCommand('fans', false)
+        bridgeRef.current.sendRelayCommand('aux', false)
+      } else if (simRef.current) {
+        if (telemetry.relays.fans) simRef.current.toggleRelay('fans')
+      }
+      setTelemetry((prev) => ({
+        ...prev,
+        relays: { ...prev.relays, fans: false, aux: false },
+        auxLoadActive: false,
+        auxLockout: true,
+      }))
     } else if (prevLowBattRef.current && !lowBattery) {
       systemLogManager.addSystemLog(
         `Battery recovery: SOC restored to ${telemetry.batteryPct}% (${telemetry.batteryVoltage.toFixed(2)}V)`,
@@ -471,6 +533,7 @@ export default function App() {
               lowBattery={lowBattery}
               onToggleFans={handleToggleFans}
               onToggleDcBus={handleToggleDcBus}
+              onPulseFeed={handlePulseFeed}
               onScenarioChange={handleScenarioChange}
               onSimSpeedChange={setSimSpeed}
               onManualSlider={handleManualSlider}
@@ -510,7 +573,15 @@ export default function App() {
               logs={systemLogs}
               onAddLog={(msg, lvl, fil) => systemLogManager.addSystemLog(msg, lvl, fil)}
               onClearLogs={() => systemLogManager.clearLogs()}
-              onExportCsv={() => systemLogManager.exportCsv('padayon_system_logs')}
+              onExportCsv={() => {
+                const exported = historyManagerRef.current.exportCsv(
+                  telemetry.feedstock || 'wood_waste',
+                  telemetry.runId || 'RUN-01'
+                )
+                if (!exported) {
+                  systemLogManager.exportCsv('padayon_system_logs')
+                }
+              }}
               lang={lang}
               theme={theme}
             />

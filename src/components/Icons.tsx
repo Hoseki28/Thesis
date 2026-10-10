@@ -384,6 +384,29 @@ export function IconCheckCircle({ size = 18, className = '', ...props }: IconPro
   )
 }
 
+export function IconGas({ size = 18, className = '', ...props }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className={className} {...props}>
+      <path d="M12 2a5 5 0 0 0-5 5c0 2.5 2 4.5 5 8 3-3.5 5-5.5 5-8a5 5 0 0 0-5-5z" />
+      <path d="M8 18h8" />
+      <path d="M10 22h4" />
+      <circle cx="12" cy="7" r="1.5" />
+    </svg>
+  )
+}
+
+export function IconFeedServo({ size = 18, className = '', ...props }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className={className} {...props}>
+      <rect x="2" y="6" width="20" height="12" rx="2" />
+      <circle cx="7" cy="12" r="2.5" />
+      <path d="M14 9h5" />
+      <path d="M14 12h3" />
+      <path d="M14 15h4" />
+    </svg>
+  )
+}
+
 export function IconTranslate({ size = 18, className = '', ...props }: IconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className={className} {...props}>

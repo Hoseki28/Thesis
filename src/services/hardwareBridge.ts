@@ -1,10 +1,12 @@
-import { HardwareState, TelemetryData } from '../types/telemetry'
+import { FeedstockType, HardwareState, TelemetryData } from '../types/telemetry'
 
 export type HardwareDataCallback = (raw: {
   rawStoveTemp: number
+  rawColdFaceTemp?: number
   rawAmbientTemp: number
   rawHumidity: number
   rawBatteryVoltage: number
+  rawBatteryCurrent?: number
   rawTegVoltage: number
   rawTegCurrent: number
   relays: {
@@ -13,6 +15,16 @@ export type HardwareDataCallback = (raw: {
     fans: boolean
     aux: boolean
   }
+  isPhysicalCurrent?: boolean
+  feedstock?: FeedstockType
+  runId?: string
+  fuelMassKg?: number
+  rawCoPpm?: number
+  hopperServoActive?: boolean
+  feedCycles?: number
+  coolingFanPwm?: number
+  channelCurrentsMa?: [number, number, number, number]
+  sensorFault?: boolean
   operatingHours?: number
   systemHealthPct?: number
   timestamp: number
@@ -32,7 +44,14 @@ export class HardwareBridge {
   private readableStreamClosed: any = null
   private writableStreamClosed: any = null
   private socket: WebSocket | null = null
-  private httpPollTimer: number | null = null
+
+  // WebSocket frame buffering and reconnection state
+  private wsBuffer: string = ''
+  private wsReconnectTimer: any = null
+  private wsReconnectAttempts: number = 0
+  private wsMaxReconnectAttempts: number = 8
+  private wsTargetUrl: string = 'ws://192.168.4.1/ws'
+  private isIntentionalDisconnect: boolean = false
 
   // Bluetooth variables
   private bleDevice: any = null
@@ -60,6 +79,9 @@ export class HardwareBridge {
       lastPacketTime: null,
       lastError: null,
       latencyMs: undefined,
+      reconnectAttempts: 0,
+      isAutoReconnecting: false,
+      sensorFault: false,
       rawLogs: [
         {
           id: 'init-1',
@@ -185,7 +207,6 @@ export class HardwareBridge {
           this.state.bytesReceived += value.length
 
           const lines = buffer.split('\n')
-          // Keep incomplete tail
           buffer = lines.pop() || ''
 
           for (const line of lines) {
@@ -348,62 +369,163 @@ export class HardwareBridge {
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
-  // 3. WI-FI NETWORK (WebSocket & Local IP)
+  // 3. WI-FI NETWORK (WebSocket & Local IP with Auto-Reconnection & Frame Buffering)
   // ─────────────────────────────────────────────────────────────────────────────
-  public connectWebSocket(url: string = 'ws://192.168.4.1/ws') {
+  public connectWebSocket(url: string = 'ws://192.168.4.1/ws', isAutoRetry: boolean = false) {
+    this.wsTargetUrl = url
+    if (!isAutoRetry) {
+      this.isIntentionalDisconnect = false
+      this.wsReconnectAttempts = 0
+      if (this.wsReconnectTimer) {
+        clearTimeout(this.wsReconnectTimer)
+        this.wsReconnectTimer = null
+      }
+    }
+
     try {
       if (this.socket) {
+        this.socket.onclose = null
+        this.socket.onerror = null
+        this.socket.onmessage = null
+        this.socket.onopen = null
         this.socket.close()
+        this.socket = null
       }
 
       this.state.status = 'connecting'
-      this.appendLog('sys', `Connecting to WiFi WebSocket: ${url}`)
+      this.state.reconnectAttempts = this.wsReconnectAttempts
+      this.state.isAutoReconnecting = this.wsReconnectAttempts > 0
+      if (!isAutoRetry) {
+        this.appendLog('sys', `Connecting to WiFi WebSocket: ${url}`)
+      } else {
+        this.appendLog('sys', `Auto-reconnecting to WiFi WebSocket (Attempt ${this.wsReconnectAttempts}/${this.wsMaxReconnectAttempts})...`)
+      }
       this.notifyState()
 
       this.socket = new WebSocket(url)
+      this.wsBuffer = ''
 
       this.socket.onopen = () => {
+        this.wsReconnectAttempts = 0
+        if (this.wsReconnectTimer) {
+          clearTimeout(this.wsReconnectTimer)
+          this.wsReconnectTimer = null
+        }
+
         this.state.status = 'connected'
         this.state.transport = 'websocket'
         this.state.deviceName = 'ESP32 (WiFi Station/AP)'
         this.state.portInfo = `WiFi WebSocket (${url})`
+        this.state.lastError = null
+        this.state.reconnectAttempts = 0
+        this.state.isAutoReconnecting = false
         this.appendLog('sys', `Connected to WebSocket: ${url}`)
         this.notifyState()
       }
 
       this.socket.onmessage = (event) => {
-        const text = String(event.data).trim()
-        if (text) {
-          this.state.bytesReceived += text.length
-          this.recordPacket()
-          this.appendLog('in', text)
-          this.parseIncomingPayload(text, 'network')
+        const rawChunk = String(event.data)
+        if (!rawChunk) return
+
+        this.state.bytesReceived += rawChunk.length
+        this.wsBuffer += rawChunk
+
+        // Reassemble fragmented frames split across packets or concatenated by newline
+        const lines = this.wsBuffer.split('\n')
+        // Incomplete tail remains in buffer
+        this.wsBuffer = lines.pop() || ''
+
+        for (const line of lines) {
+          const clean = line.trim()
+          if (clean.length > 0) {
+            this.recordPacket()
+            this.appendLog('in', clean)
+            this.parseIncomingPayload(clean, 'network')
+          }
+        }
+
+        // Handle case where ESP32 sends raw JSON without newlines: '}{' delimiter
+        if (this.wsBuffer.includes('}{')) {
+          const splitObjects = this.wsBuffer.replace(/\}\{/g, '}\n{').split('\n')
+          this.wsBuffer = splitObjects.pop() || ''
+          for (const item of splitObjects) {
+            const clean = item.trim()
+            if (clean.length > 0) {
+              this.recordPacket()
+              this.appendLog('in', clean)
+              this.parseIncomingPayload(clean, 'network')
+            }
+          }
         }
       }
 
       this.socket.onerror = () => {
         this.state.lastError = 'WebSocket connection error'
-        this.appendLog('err', 'WebSocket connection failed.')
+        this.appendLog('err', 'WebSocket link connection error.')
         this.notifyState()
       }
 
       this.socket.onclose = () => {
-        this.state.status = 'standby'
-        this.state.transport = 'none'
-        this.state.portInfo = 'None (Standby Mode)'
-        this.state.deviceName = undefined
-        this.appendLog('sys', 'WebSocket closed. Reverted to Standby.')
-        this.notifyState()
+        this.socket = null
+        if (this.isIntentionalDisconnect) {
+          this.state.status = 'standby'
+          this.state.transport = 'none'
+          this.state.portInfo = 'None (Standby Mode)'
+          this.state.deviceName = undefined
+          this.state.isAutoReconnecting = false
+          this.appendLog('sys', 'WebSocket closed by operator. Reverted to Standby.')
+          this.notifyState()
+          return
+        }
+
+        // Handle unintentional connection drops with exponential backoff auto-reconnect
+        if (this.wsReconnectAttempts < this.wsMaxReconnectAttempts) {
+          this.wsReconnectAttempts++
+          // Exponential backoff: 1.5s, 2.25s, 3.37s, 5.06s... up to 15s max
+          const backoffDelay = Math.min(15000, Math.round(1500 * Math.pow(1.5, this.wsReconnectAttempts - 1)))
+          
+          this.state.status = 'connecting'
+          this.state.reconnectAttempts = this.wsReconnectAttempts
+          this.state.isAutoReconnecting = true
+          this.appendLog(
+            'sys',
+            `WiFi AP dropped. Retrying link in ${(backoffDelay / 1000).toFixed(1)}s (Attempt ${this.wsReconnectAttempts}/${this.wsMaxReconnectAttempts})...`
+          )
+          this.notifyState()
+
+          this.wsReconnectTimer = setTimeout(() => {
+            if (!this.isIntentionalDisconnect) {
+              this.connectWebSocket(this.wsTargetUrl, true)
+            }
+          }, backoffDelay)
+        } else {
+          // Reconnection attempts exhausted
+          this.state.status = 'standby'
+          this.state.transport = 'none'
+          this.state.portInfo = 'None (Standby Mode)'
+          this.state.deviceName = undefined
+          this.state.isAutoReconnecting = false
+          this.state.lastError = 'Auto-reconnect exhausted. Reverted to Standby.'
+          this.appendLog('err', 'WiFi auto-reconnect attempts exhausted. Switched to Standby.')
+          this.notifyState()
+        }
       }
     } catch (err: any) {
       this.state.status = 'standby'
-      this.appendLog('err', `WebSocket Error: ${err?.message || err}`)
+      this.appendLog('err', `WebSocket Exception: ${err?.message || err}`)
       this.notifyState()
     }
   }
 
   public disconnectWebSocket() {
+    this.isIntentionalDisconnect = true
+    this.wsReconnectAttempts = 0
+    if (this.wsReconnectTimer) {
+      clearTimeout(this.wsReconnectTimer)
+      this.wsReconnectTimer = null
+    }
     if (this.socket) {
+      this.socket.onclose = null
       this.socket.close()
       this.socket = null
     }
@@ -411,10 +533,17 @@ export class HardwareBridge {
     this.state.transport = 'none'
     this.state.portInfo = 'None (Standby Mode)'
     this.state.deviceName = undefined
+    this.state.reconnectAttempts = 0
+    this.state.isAutoReconnecting = false
     this.notifyState()
   }
 
   public disconnectAll() {
+    this.isIntentionalDisconnect = true
+    if (this.wsReconnectTimer) {
+      clearTimeout(this.wsReconnectTimer)
+      this.wsReconnectTimer = null
+    }
     if (this.state.transport === 'serial') {
       this.disconnectSerial()
     } else if (this.state.transport === 'bluetooth') {
@@ -425,21 +554,121 @@ export class HardwareBridge {
   }
 
   /**
-   * Parse incoming telemetry payload (JSON or CSV)
+   * Parse and sanitize incoming telemetry payload (JSON or CSV)
+   * Enforces strict NaN checking, operational boundary limits, and sensorFault flags.
    */
   private parseIncomingPayload(line: string, source: TelemetryData['source']) {
     try {
+      let sensorFault = false
+
       // 1. Try parsing JSON format:
-      // {"stoveTemp":185.2,"ambientTemp":29.1,"humidity":65,"batteryV":12.4,"tegVoltage":4.5,"tegCurrent":0.8,"relays":{"lights":1,"fans":0}}
+      // {"stoveTemp":185.2,"coldFaceTemp":26.4,"ambientTemp":29.1,"humidity":65,"batteryV":12.4,"tegVoltage":4.5,"tegCurrent":0.8,"feedstock":"wood_waste"}
       if (line.startsWith('{') && line.endsWith('}')) {
         const json = JSON.parse(line)
+
+        // Parse & Sanitize Stove Temperature (MAX6675 / Thermocouple)
+        // Operational window: 0°C to 350°C. Fault if NaN, negative, or > 350°C (open circuit)
+        const rawStoveVal = Number(json.stoveTemp ?? json.stove_temp ?? json.stove ?? json.hot_side)
+        let safeStove = 25
+        if (Number.isFinite(rawStoveVal) && rawStoveVal >= 0 && rawStoveVal <= 350) {
+          safeStove = rawStoveVal
+        } else {
+          sensorFault = true
+          safeStove = Number.isFinite(rawStoveVal) ? Math.min(350, Math.max(0, rawStoveVal)) : 25
+        }
+
+        // Parse & Sanitize Cold Face Temperature (Heatsink water block)
+        // Operational window: 5°C to 95°C
+        const rawColdVal = Number(json.coldFaceTemp ?? json.cold_temp ?? json.cold_side ?? json.t_cold)
+        let safeColdFace: number | undefined = undefined
+        if (Number.isFinite(rawColdVal) && rawColdVal >= 5 && rawColdVal <= 95) {
+          safeColdFace = rawColdVal
+        } else if (Number.isFinite(rawColdVal)) {
+          sensorFault = true
+          safeColdFace = Math.min(95, Math.max(5, rawColdVal))
+        }
+
+        // Parse & Sanitize Ambient Air Temperature (DHT11)
+        const rawAmbientVal = Number(json.ambientTemp ?? json.ambient_temp ?? json.dht_temp)
+        let safeAmbient = 28
+        if (Number.isFinite(rawAmbientVal) && rawAmbientVal >= -10 && rawAmbientVal <= 65) {
+          safeAmbient = rawAmbientVal
+        } else {
+          sensorFault = true
+          safeAmbient = 28
+        }
+
+        // Parse & Sanitize Humidity (DHT11 RH %)
+        const rawHumVal = Number(json.humidity ?? json.dht_hum)
+        const safeHumidity = Number.isFinite(rawHumVal) ? Math.min(100, Math.max(0, rawHumVal)) : 60
+
+        // Parse & Sanitize Battery Voltage (ADC)
+        const rawBattVVal = Number(json.batteryV ?? json.battery_voltage ?? json.v_batt)
+        let safeBattV = 12.0
+        if (Number.isFinite(rawBattVVal) && rawBattVVal >= 7.0 && rawBattVVal <= 16.5) {
+          safeBattV = rawBattVVal
+        } else {
+          sensorFault = true
+          safeBattV = Number.isFinite(rawBattVVal) ? Math.min(16.5, Math.max(7.0, rawBattVVal)) : 12.0
+        }
+
+        // Parse & Sanitize TEG Electrical Readings
+        const rawTegVVal = Number(json.tegVoltage ?? json.v_teg)
+        const safeTegV = Number.isFinite(rawTegVVal) && rawTegVVal >= 0 && rawTegVVal <= 28.0 ? rawTegVVal : 0
+
+        const rawTegIVal = Number(json.tegCurrent ?? json.i_teg)
+        const safeTegI = Number.isFinite(rawTegIVal) && rawTegIVal >= 0 && rawTegIVal <= 5.0 ? rawTegIVal : 0
+
+        // Parse Physical Battery Current (if shunt/Hall is present)
+        const rawBattIVal = Number(json.batteryCurrent ?? json.i_batt ?? json.battery_current)
+        const safeBattI = Number.isFinite(rawBattIVal) ? rawBattIVal : undefined
+        const isPhysicalCurrent = safeBattI !== undefined
+
+        // Feedstock & Run ID metadata
+        const feedstock: FeedstockType =
+          json.feedstock === 'wood_waste' || json.feedstock === 'coconut_husk'
+            ? json.feedstock
+            : 'unassigned'
+        const runId = typeof json.runId === 'string' ? json.runId : typeof json.run_id === 'string' ? json.run_id : 'RUN-01'
+        const fuelMassKg = Number.isFinite(Number(json.fuelMassKg ?? json.fuel_mass)) ? Number(json.fuelMassKg ?? json.fuel_mass) : 1.5
+
+        // MQ-7 Carbon Monoxide PPM
+        const rawCoVal = Number(json.co_ppm ?? json.coPpm ?? json.co ?? json.mq7_ppm)
+        const safeCoPpm = Number.isFinite(rawCoVal) && rawCoVal >= 0 && rawCoVal <= 1000 ? rawCoVal : 14
+
+        // Fuel Hopper Servo Actuation
+        const hopperServoActive = Boolean(json.hopperServoActive ?? json.hopper_servo ?? json.servo_active)
+        const feedCycles = Number.isFinite(Number(json.feedCycles ?? json.feed_cycles)) ? Number(json.feedCycles ?? json.feed_cycles) : undefined
+
+        // Cold-Side Fan PWM
+        const coolingFanPwm = Number.isFinite(Number(json.fan_pwm ?? json.coolingFanPwm)) ? Number(json.fan_pwm ?? json.coolingFanPwm) : undefined
+
+        // 4-Channel Load Currents (mA)
+        const channelCurrentsMa = Array.isArray(json.channel_currents)
+          ? (json.channel_currents.map((v: any) => Number(v) || 0) as [number, number, number, number])
+          : undefined
+
+        this.state.sensorFault = sensorFault
+
         const parsed = {
-          rawStoveTemp: Number(json.stoveTemp ?? json.stove_temp ?? json.stove ?? 0),
-          rawAmbientTemp: Number(json.ambientTemp ?? json.ambient_temp ?? json.dht_temp ?? 25),
-          rawHumidity: Number(json.humidity ?? json.dht_hum ?? 60),
-          rawBatteryVoltage: Number(json.batteryV ?? json.battery_voltage ?? json.v_batt ?? 12.0),
-          rawTegVoltage: Number(json.tegVoltage ?? json.v_teg ?? 0),
-          rawTegCurrent: Number(json.tegCurrent ?? json.i_teg ?? 0),
+          rawStoveTemp: safeStove,
+          rawColdFaceTemp: safeColdFace,
+          rawAmbientTemp: safeAmbient,
+          rawHumidity: safeHumidity,
+          rawBatteryVoltage: safeBattV,
+          rawBatteryCurrent: safeBattI,
+          rawTegVoltage: safeTegV,
+          rawTegCurrent: safeTegI,
+          rawCoPpm: safeCoPpm,
+          hopperServoActive,
+          feedCycles,
+          coolingFanPwm,
+          channelCurrentsMa,
+          isPhysicalCurrent,
+          feedstock,
+          runId,
+          fuelMassKg,
+          sensorFault,
           relays: {
             dcBus: Boolean(json.relays?.dcBus ?? json.dcBus ?? true),
             lights: Boolean(json.relays?.lights ?? json.lights ?? true),
@@ -449,6 +678,7 @@ export class HardwareBridge {
           timestamp: Date.now(),
           source,
         }
+
         if (this.onDataCallback) {
           this.onDataCallback(parsed)
         }
@@ -456,26 +686,42 @@ export class HardwareBridge {
       }
 
       // 2. Try parsing Comma Separated CSV:
-      // stoveTemp, ambientTemp, humidity, batteryV, tegVoltage, tegCurrent, lights, fans
+      // stoveTemp, coldFaceTemp, ambientTemp, humidity, batteryV, tegVoltage, tegCurrent, lights, fans
       if (line.includes(',')) {
         const parts = line.split(',').map((p) => p.trim())
         if (parts.length >= 4) {
+          const rawStove = parseFloat(parts[0])
+          const rawCold = parseFloat(parts[1])
+          const rawAmb = parseFloat(parts[2])
+          const rawHum = parseFloat(parts[3])
+          const rawBattV = parseFloat(parts[4])
+          const rawTegV = parseFloat(parts[5])
+          const rawTegI = parseFloat(parts[6])
+
+          const safeStove = Number.isFinite(rawStove) && rawStove >= 0 && rawStove <= 350 ? rawStove : 25
+          if (!Number.isFinite(rawStove) || rawStove > 350) sensorFault = true
+
+          this.state.sensorFault = sensorFault
+
           const parsed = {
-            rawStoveTemp: parseFloat(parts[0]) || 0,
-            rawAmbientTemp: parseFloat(parts[1]) || 25,
-            rawHumidity: parseFloat(parts[2]) || 60,
-            rawBatteryVoltage: parseFloat(parts[3]) || 12.0,
-            rawTegVoltage: parseFloat(parts[4]) || 0,
-            rawTegCurrent: parseFloat(parts[5]) || 0,
+            rawStoveTemp: safeStove,
+            rawColdFaceTemp: Number.isFinite(rawCold) ? rawCold : undefined,
+            rawAmbientTemp: Number.isFinite(rawAmb) ? rawAmb : 28,
+            rawHumidity: Number.isFinite(rawHum) ? Math.min(100, Math.max(0, rawHum)) : 60,
+            rawBatteryVoltage: Number.isFinite(rawBattV) && rawBattV >= 7.0 ? rawBattV : 12.0,
+            rawTegVoltage: Number.isFinite(rawTegV) && rawTegV >= 0 ? rawTegV : 0,
+            rawTegCurrent: Number.isFinite(rawTegI) && rawTegI >= 0 ? rawTegI : 0,
+            sensorFault,
             relays: {
               dcBus: true,
-              lights: parts[6] === '1' || parts[6]?.toLowerCase() === 'true',
-              fans: parts[7] === '1' || parts[7]?.toLowerCase() === 'true',
-              aux: parts[8] === '1' || parts[8]?.toLowerCase() === 'true',
+              lights: parts[7] === '1' || parts[7]?.toLowerCase() === 'true',
+              fans: parts[8] === '1' || parts[8]?.toLowerCase() === 'true',
+              aux: parts[9] === '1' || parts[9]?.toLowerCase() === 'true',
             },
             timestamp: Date.now(),
             source,
           }
+
           if (this.onDataCallback) {
             this.onDataCallback(parsed)
           }
@@ -526,6 +772,11 @@ export class HardwareBridge {
 
   public async sendRelayCommand(relay: 'dcBus' | 'lights' | 'fans' | 'aux', state: boolean) {
     const cmd = JSON.stringify({ cmd: 'RELAY', relay, state: state ? 1 : 0 })
+    return this.sendCommand(cmd)
+  }
+
+  public async sendPulseFeedCommand(): Promise<boolean> {
+    const cmd = JSON.stringify({ cmd: 'FEED_SERVO' })
     return this.sendCommand(cmd)
   }
 

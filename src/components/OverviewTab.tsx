@@ -9,6 +9,8 @@ import {
   IconThermometer,
   IconColdSink,
   IconSliders,
+  IconGas,
+  IconFeedServo,
 } from './Icons'
 
 interface OverviewTabProps {
@@ -21,8 +23,10 @@ interface OverviewTabProps {
   hasAlert: boolean
   tooHot: boolean
   lowHeat: boolean
+  lowBattery: boolean
   onToggleFans: () => void
   onToggleDcBus: () => void
+  onPulseFeed?: () => void
   onScenarioChange: (preset: ScenarioPreset) => void
   onSimSpeedChange: (speed: number) => void
   onManualSlider: (key: 'stoveTemp' | 'ambientTemp' | 'humidity' | 'batteryPct', val: number) => void
@@ -41,6 +45,7 @@ export function OverviewTab({
   lowBattery,
   onToggleFans,
   onToggleDcBus,
+  onPulseFeed,
   onScenarioChange,
   onSimSpeedChange,
   onManualSlider,
@@ -50,7 +55,55 @@ export function OverviewTab({
   const [showSliders, setShowSliders] = useState<boolean>(false)
 
   // Delta T (Seebeck gradient)
-  const deltaT = Math.max(0, Math.round((telemetry.stoveTemp - telemetry.ambientTemp) * 10) / 10)
+  const deltaT = Number.isFinite(telemetry.deltaT)
+    ? telemetry.deltaT
+    : Math.max(0, Math.round((telemetry.stoveTemp - (telemetry.coldFaceTemp || telemetry.ambientTemp)) * 10) / 10)
+
+  // Safety & Environment metrics
+  const coPpm = Number.isFinite(telemetry.safety?.coPpm)
+    ? telemetry.safety.coPpm
+    : Number.isFinite(telemetry.rawCoPpm)
+    ? telemetry.rawCoPpm
+    : 12.4
+  const ambientTempC = Number.isFinite(telemetry.ambient?.tempC)
+    ? telemetry.ambient.tempC
+    : Number.isFinite(telemetry.ambientTemp)
+    ? telemetry.ambientTemp
+    : 28.5
+  const ambientHumPct = Number.isFinite(telemetry.ambient?.humidityPct)
+    ? telemetry.ambient.humidityPct
+    : Number.isFinite(telemetry.humidity)
+    ? telemetry.humidity
+    : 68.0
+
+  // CO Alert status styling (Green <50, Amber 50-100, Red >100)
+  const coColorClass =
+    coPpm >= 100
+      ? 'text-rose-400'
+      : coPpm >= 50
+      ? 'text-amber-400'
+      : 'text-[#00E676]'
+  const coBadgeBorderClass =
+    coPpm >= 100
+      ? 'border-rose-500/50 bg-rose-500/20 text-rose-300'
+      : coPpm >= 50
+      ? 'border-amber-500/50 bg-amber-500/20 text-amber-300'
+      : 'border-emerald-500/40 bg-emerald-500/10 text-emerald-400'
+  const coStatusLabel = isFil
+    ? coPpm >= 100
+      ? 'ALARMA SA CO'
+      : coPpm >= 50
+      ? 'BABALA SA CO'
+      : 'LIGTAS NA HANGIN'
+    : coPpm >= 100
+    ? 'CO CRITICAL ALARM'
+    : coPpm >= 50
+    ? 'CO WARNING'
+    : 'NOMINAL AIR'
+
+  // Fuel Hopper status
+  const isHopperActive = Boolean(telemetry.fuelSystem?.hopperServoActive)
+  const feedCycles = telemetry.fuelSystem?.feedCycles ?? 14
 
   // System status text and colors
   const statusText = isFil
@@ -147,9 +200,71 @@ export function OverviewTab({
           </span>
           <div className="flex items-baseline mt-1">
             <span className={`text-2xl font-black font-mono tabular-nums tracking-tight ${isDark ? 'text-white' : 'text-zinc-900'}`}>
-              {telemetry.relays.dcBus ? (telemetry.loadPower > 0 ? (telemetry.loadPower * 12).toFixed(1) : '239.4') : '0.0'}
+              {telemetry.relays.dcBus ? telemetry.loadPower.toFixed(1) : '0.0'}
             </span>
             <span className={`text-xs font-normal ml-1 ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-500'}`}>W</span>
+          </div>
+        </div>
+
+        {/* ── TWO-TIER LOAD CONTROLS ───────────────────────────────────── */}
+        <div className="flex flex-col gap-2 pt-0.5">
+          {/* Tier 1: Primary Critical Load (12V LED Light) */}
+          <div className={`p-2.5 rounded-xl border flex items-center justify-between transition-colors ${
+            isDark ? 'bg-[#0B0F12] border-emerald-500/30' : 'bg-emerald-50/70 border-emerald-200'
+          }`}>
+            <div className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-[#00E676] animate-pulse" />
+              <div>
+                <span className={`text-[11px] font-bold block leading-tight ${isDark ? 'text-white' : 'text-zinc-900'}`}>
+                  {isFil ? '12V Ilaw ng Sakuna (Critical)' : '12V Emergency Light'}
+                </span>
+                <span className="text-[9px] font-mono text-[#00E676] font-bold tracking-tight">
+                  {isFil ? 'TIER 1 · HINDI MAIBUBUKOD' : 'TIER 1 · PRIMARY NON-SHEDDABLE'}
+                </span>
+              </div>
+            </div>
+            <span className="text-[9px] font-mono px-2 py-0.5 rounded bg-[#00E676]/20 text-[#00E676] font-black uppercase">
+              {isFil ? 'LOCKED ON' : 'GUARDED ON'}
+            </span>
+          </div>
+
+          {/* Tier 2: Secondary Auxiliary Load (12V DC Fans & USB) */}
+          <div className={`p-2.5 rounded-xl border flex items-center justify-between transition-colors ${
+            isDark ? 'bg-[#0B0F12] border-[#1E242B]' : 'bg-zinc-50 border-zinc-200'
+          }`}>
+            <div>
+              <span className={`text-[11px] font-bold block leading-tight ${isDark ? 'text-white' : 'text-zinc-900'}`}>
+                {isFil ? '12V DC Fans & USB (Aux)' : '12V DC Fans & 5V USB'}
+              </span>
+              <span className={`text-[9px] font-mono tracking-tight ${
+                telemetry.auxLockout ? 'text-rose-400 font-bold' : isDark ? 'text-[#9CA3AF]' : 'text-zinc-500'
+              }`}>
+                {telemetry.auxLockout
+                  ? (isFil ? 'TIER 2 · NAKA-LOCKOUT SA MABABANG BATT' : 'TIER 2 · LOW BATT LOCKOUT')
+                  : (isFil ? 'TIER 2 · MAIBUBUKOD NA KARGA' : 'TIER 2 · SECONDARY SHEDDABLE')}
+              </span>
+            </div>
+
+            <button
+              type="button"
+              disabled={telemetry.auxLockout && !telemetry.relays.fans}
+              onClick={onToggleFans}
+              className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider font-mono cursor-pointer transition-colors min-h-[36px] ${
+                telemetry.relays.fans
+                  ? 'bg-[#00E676] text-zinc-950 shadow-sm'
+                  : telemetry.auxLockout
+                  ? 'bg-rose-950/40 border border-rose-500/30 text-rose-400 cursor-not-allowed opacity-80'
+                  : isDark
+                  ? 'bg-[#1E242B] border border-zinc-700 text-zinc-300 hover:text-white'
+                  : 'bg-zinc-200 border border-zinc-300 text-zinc-700 hover:text-zinc-900'
+              }`}
+            >
+              {telemetry.auxLockout && !telemetry.relays.fans
+                ? (isFil ? 'LOCKOUT' : 'LOCKED OUT')
+                : telemetry.relays.fans
+                ? (isFil ? 'BUKAS' : 'ACTIVE')
+                : (isFil ? 'SARADO' : 'OFF')}
+            </button>
           </div>
         </div>
       </section>
@@ -205,8 +320,8 @@ export function OverviewTab({
 
       {/* ── 4. 2×2 TELEMETRY GRID ───────────────────────────────────── */}
       <div className="grid grid-cols-2 gap-3">
-        {/* TILE 1: BATTERY */}
-        <div className={`rounded-2xl p-3.5 border flex flex-col justify-between min-h-[105px] shadow-lg transition-colors ${
+        {/* TILE 1: BATTERY (LiFePO4 12V 50Ah) */}
+        <div className={`rounded-2xl p-3.5 border flex flex-col justify-between min-h-[110px] shadow-lg transition-colors ${
           isDark ? 'bg-[#13171B] border-[#1E242B]' : 'bg-white border-zinc-200'
         }`}>
           <div>
@@ -216,21 +331,31 @@ export function OverviewTab({
               </span>
               <IconBattery size={18} className="text-[#00E676]" />
             </div>
-            <span className={`text-[9px] block mt-0.5 ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-500'}`}>
-              {isFil ? 'Lebel ng Karga' : 'Level (Karga)'}
-            </span>
+            <div className="flex items-center gap-1.5 mt-0.5">
+              <span className={`text-[9px] block ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-500'}`}>
+                {telemetry.batteryVoltage ? `${telemetry.batteryVoltage.toFixed(2)}V` : '13.20V'}
+              </span>
+              <span className="text-[8px] font-mono px-1 rounded bg-[#00E676]/15 text-[#00E676] font-bold">
+                LiFePO4
+              </span>
+            </div>
           </div>
 
-          <div className="flex items-baseline mt-2">
-            <span className={`text-2xl sm:text-3xl font-black font-mono tabular-nums tracking-tight ${isDark ? 'text-white' : 'text-zinc-900'}`}>
-              {Math.round(telemetry.batteryPct)}
+          <div>
+            <div className="flex items-baseline mt-1.5">
+              <span className={`text-2xl sm:text-3xl font-black font-mono tabular-nums tracking-tight ${isDark ? 'text-white' : 'text-zinc-900'}`}>
+                {Math.round(telemetry.batteryPct)}
+              </span>
+              <span className={`text-xs font-normal ml-1 ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-500'}`}>%</span>
+            </div>
+            <span className={`text-[8.5px] font-mono block mt-0.5 ${isDark ? 'text-zinc-500' : 'text-zinc-400'}`}>
+              10.0V (0%) - 14.6V (100%)
             </span>
-            <span className={`text-xs font-normal ml-1 ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-500'}`}>%</span>
           </div>
         </div>
 
         {/* TILE 2: TEG GEN */}
-        <div className={`rounded-2xl p-3.5 border flex flex-col justify-between min-h-[105px] shadow-lg transition-colors ${
+        <div className={`rounded-2xl p-3.5 border flex flex-col justify-between min-h-[110px] shadow-lg transition-colors ${
           isDark ? 'bg-[#13171B] border-[#1E242B]' : 'bg-white border-zinc-200'
         }`}>
           <div>
@@ -254,7 +379,7 @@ export function OverviewTab({
         </div>
 
         {/* TILE 3: HEAT DIFF */}
-        <div className={`rounded-2xl p-3.5 border flex flex-col justify-between min-h-[105px] shadow-lg transition-colors ${
+        <div className={`rounded-2xl p-3.5 border flex flex-col justify-between min-h-[110px] shadow-lg transition-colors ${
           isDark ? 'bg-[#13171B] border-[#1E242B]' : 'bg-white border-zinc-200'
         }`}>
           <div>
@@ -278,7 +403,7 @@ export function OverviewTab({
         </div>
 
         {/* TILE 4: COOLING */}
-        <div className={`rounded-2xl p-3.5 border flex flex-col justify-between min-h-[105px] shadow-lg transition-colors ${
+        <div className={`rounded-2xl p-3.5 border flex flex-col justify-between min-h-[110px] shadow-lg transition-colors ${
           isDark ? 'bg-[#13171B] border-[#1E242B]' : 'bg-white border-zinc-200'
         }`}>
           <div>
@@ -289,18 +414,165 @@ export function OverviewTab({
               <IconColdSink size={18} className="text-[#00E676]" />
             </div>
             <span className={`text-[9px] block mt-0.5 ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-500'}`}>
-              {isFil ? 'Temperatura ng Likido' : 'Fluid Temp'}
+              {isFil ? 'Temperatura ng Pampalamig' : 'Cold Sink Temp'}
             </span>
           </div>
 
           <div className="flex items-baseline mt-2">
             <span className={`text-2xl sm:text-3xl font-black font-mono tabular-nums tracking-tight ${isDark ? 'text-white' : 'text-zinc-900'}`}>
-              {Math.round(telemetry.ambientTemp)}
+              {Math.round(telemetry.coldFaceTemp || telemetry.ambientTemp)}
             </span>
             <span className={`text-xs font-normal ml-1 ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-500'}`}>°C</span>
           </div>
         </div>
       </div>
+
+      {/* ── 5. ENVIRONMENTAL & SITE SAFETY CARD (MQ-7 & DHT22) ─────── */}
+      <section
+        className={`rounded-2xl p-4 border flex flex-col gap-3 shadow-lg transition-colors ${
+          isDark ? 'bg-[#13171B] border-[#1E242B]' : 'bg-white border-zinc-200'
+        }`}
+        aria-labelledby="env-safety-heading"
+      >
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <IconGas size={17} className={coColorClass} />
+            <h2 id="env-safety-heading" className={`text-xs font-black uppercase tracking-wider ${isDark ? 'text-white' : 'text-zinc-900'}`}>
+              {isFil ? 'KALIGIRAN AT KALIGTASAN (MQ-7 & DHT22)' : 'ENVIRONMENT & SITE SAFETY'}
+            </h2>
+          </div>
+          <span className={`text-[10px] font-mono px-2 py-0.5 rounded-full font-bold uppercase border ${coBadgeBorderClass}`}>
+            {coStatusLabel}
+          </span>
+        </div>
+
+        {/* CO PPM Gauge Row */}
+        <div className={`p-3 rounded-xl border flex items-center justify-between transition-colors ${
+          coPpm >= 100
+            ? 'bg-rose-950/20 border-rose-500/40 text-rose-300'
+            : coPpm >= 50
+            ? 'bg-amber-950/20 border-amber-500/40 text-amber-300'
+            : isDark
+            ? 'bg-[#0B0F12] border-[#1E242B]'
+            : 'bg-[#F9FAFB] border-zinc-200'
+        }`}>
+          <div>
+            <span className={`text-[10px] font-bold uppercase tracking-wider block ${
+              isDark ? 'text-[#9CA3AF]' : 'text-zinc-500'
+            }`}>
+              {isFil ? 'Konsentrasyon ng Carbon Monoxide (MQ-7)' : 'Carbon Monoxide Concentration (MQ-7)'}
+            </span>
+            <div className="flex items-baseline mt-0.5">
+              <span className={`text-2xl font-black font-mono tabular-nums tracking-tight ${coColorClass}`}>
+                {coPpm.toFixed(1)}
+              </span>
+              <span className={`text-xs font-bold ml-1.5 ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-500'}`}>PPM</span>
+            </div>
+          </div>
+
+          <div className="text-right">
+            <span className={`text-[9px] font-mono block ${isDark ? 'text-zinc-500' : 'text-zinc-400'}`}>
+              Ligtas: &lt;50 PPM
+            </span>
+            <span className={`text-[9px] font-mono block ${isDark ? 'text-zinc-500' : 'text-zinc-400'}`}>
+              Babala: 50-100 PPM
+            </span>
+            <span className={`text-[9px] font-mono font-bold block ${coPpm >= 100 ? 'text-rose-400' : isDark ? 'text-zinc-500' : 'text-zinc-400'}`}>
+              Alarma: &gt;100 PPM
+            </span>
+          </div>
+        </div>
+
+        {/* DHT22 Ambient Temp & Relative Humidity */}
+        <div className="grid grid-cols-2 gap-2.5">
+          <div className={`p-2.5 rounded-xl border flex flex-col justify-between ${
+            isDark ? 'bg-[#0B0F12] border-[#1E242B]' : 'bg-[#F9FAFB] border-zinc-200'
+          }`}>
+            <span className={`text-[9.5px] font-bold uppercase tracking-wider ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-500'}`}>
+              {isFil ? 'DHT22 Temperatura' : 'DHT22 Ambient Temp'}
+            </span>
+            <div className="flex items-baseline mt-1">
+              <span className={`text-lg font-black font-mono tabular-nums ${isDark ? 'text-white' : 'text-zinc-900'}`}>
+                {ambientTempC.toFixed(1)}
+              </span>
+              <span className={`text-xs ml-1 ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-500'}`}>°C</span>
+            </div>
+          </div>
+
+          <div className={`p-2.5 rounded-xl border flex flex-col justify-between ${
+            isDark ? 'bg-[#0B0F12] border-[#1E242B]' : 'bg-[#F9FAFB] border-zinc-200'
+          }`}>
+            <span className={`text-[9.5px] font-bold uppercase tracking-wider ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-500'}`}>
+              {isFil ? 'DHT22 Alinsangan' : 'DHT22 Humidity'}
+            </span>
+            <div className="flex items-baseline mt-1">
+              <span className={`text-lg font-black font-mono tabular-nums ${isDark ? 'text-white' : 'text-zinc-900'}`}>
+                {ambientHumPct.toFixed(1)}
+              </span>
+              <span className={`text-xs ml-1 ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-500'}`}>% RH</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ── 6. FUEL HOPPER SERVO CONTROL WIDGET ─────────────────────── */}
+      <section
+        className={`rounded-2xl p-4 border flex flex-col gap-3 shadow-lg transition-colors ${
+          isDark ? 'bg-[#13171B] border-[#1E242B]' : 'bg-white border-zinc-200'
+        }`}
+        aria-labelledby="hopper-control-heading"
+      >
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <IconFeedServo size={18} className="text-[#00E676]" />
+            <h2 id="hopper-control-heading" className={`text-xs font-black uppercase tracking-wider ${isDark ? 'text-white' : 'text-zinc-900'}`}>
+              {isFil ? 'KONTROL NG HOPPER (FEED SERVO)' : 'FUEL HOPPER SERVO CONTROL'}
+            </h2>
+          </div>
+          <span className={`text-[9px] font-mono px-2 py-0.5 rounded-full font-bold uppercase ${
+            isHopperActive
+              ? 'bg-[#00E676]/20 text-[#00E676] border border-[#00E676] animate-pulse'
+              : isDark
+              ? 'bg-[#1E242B] text-zinc-400 border border-[#1E242B]'
+              : 'bg-zinc-100 text-zinc-500 border border-zinc-200'
+          }`}>
+            {isHopperActive
+              ? (isFil ? 'GUMAGANA / FEEDING' : 'FEEDING / ACTIVE')
+              : (isFil ? 'NAKAHANDA / IDLE' : 'STANDBY / IDLE')}
+          </span>
+        </div>
+
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <span className={`text-[10px] font-bold uppercase tracking-wider block ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-500'}`}>
+              {isFil ? 'Kabuuan ng Siklo ng Pagpapakain' : 'Total Feed Cycles'}
+            </span>
+            <div className="flex items-baseline mt-0.5">
+              <span className={`text-xl font-black font-mono tabular-nums ${isDark ? 'text-white' : 'text-zinc-900'}`}>
+                {feedCycles}
+              </span>
+              <span className={`text-xs ml-1 ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-500'}`}>
+                {isFil ? 'siklo' : 'cycles'}
+              </span>
+            </div>
+          </div>
+
+          {/* Pulse Feed Action Button */}
+          <button
+            type="button"
+            onClick={onPulseFeed}
+            disabled={isHopperActive}
+            className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider font-mono cursor-pointer transition-colors shadow-md min-h-[44px] flex items-center gap-2 ${
+              isHopperActive
+                ? 'bg-[#00E676]/30 text-[#00E676] border border-[#00E676] cursor-wait'
+                : 'bg-[#00E676] hover:bg-emerald-400 text-zinc-950 border border-[#00E676]'
+            }`}
+          >
+            <IconFeedServo size={16} />
+            <span>{isFil ? 'PULSE FEED' : 'PULSE FEED'}</span>
+          </button>
+        </div>
+      </section>
 
       {/* ── 5. COLLAPSIBLE BENCH SIMULATION CONTROLS ─────────────────── */}
       <section className={`rounded-2xl p-3 border flex flex-col gap-2 shadow-lg mt-1 font-sans transition-colors ${

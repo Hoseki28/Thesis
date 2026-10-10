@@ -21,35 +21,36 @@ export function SensorsTab({ telemetry, calibration, historyPoints = [], lang, t
 
   // Power values
   const loadWattage = telemetry.relays.dcBus
-    ? (telemetry.loadPower > 0 ? Math.round(telemetry.loadPower * 12) : 229)
+    ? Math.round(telemetry.loadPower)
     : 0
-  const tegWattage = telemetry.tegPower > 0 ? telemetry.tegPower.toFixed(1) : '38.0'
+  const tegWattage = telemetry.tegPower > 0 ? telemetry.tegPower.toFixed(1) : '0.0'
 
-  // SVG Chart rendering
+  // SVG Chart rendering (0 to 40W load scale)
   const width = 340
   const height = 120
-  const yTicks = [260, 195, 130, 65, 0]
+  const yTicks = [40, 30, 20, 10, 0]
 
-  // Construct chart path using history points or mock curve
+  // Construct chart path using history points or baseline
   const pointsToRender = historyPoints.length > 5
     ? historyPoints.slice(-12)
     : [
-        { val: 230 },
-        { val: 245 },
-        { val: 240 },
-        { val: 238 },
-        { val: 248 },
-        { val: 242 },
-        { val: 230 },
+        { val: 21.8 },
+        { val: 21.8 },
+        { val: 16.8 },
+        { val: 21.8 },
+        { val: 21.8 },
+        { val: 16.8 },
+        { val: 21.8 },
       ]
 
   const chartStepX = width / Math.max(1, pointsToRender.length - 1)
   const pathD = pointsToRender
     .map((pt, i) => {
       const x = Math.round(i * chartStepX)
-      const val = 'loadPower' in pt ? (pt as any).loadPower * 12 : pt.val
-      const clamped = Math.max(0, Math.min(260, val))
-      const y = Math.round(height - (clamped / 260) * (height - 20) - 10)
+      const rawVal = 'loadPower' in pt ? (pt as any).loadPower : pt.val
+      const val = Number.isFinite(rawVal) ? rawVal : 0
+      const clamped = Math.max(0, Math.min(40, val))
+      const y = Math.round(height - (clamped / 40) * (height - 20) - 10)
       return `${i === 0 ? 'M' : 'L'} ${x} ${y}`
     })
     .join(' ')
@@ -205,6 +206,120 @@ export function SensorsTab({ telemetry, calibration, historyPoints = [], lang, t
           </div>
         </div>
       </div>
+
+      {/* ── 4. 4-CHANNEL LOAD CONTROLLER BREAKDOWN ────────────────── */}
+      <section
+        className={`rounded-2xl p-4 border flex flex-col gap-3 shadow-lg transition-colors ${
+          isDark ? 'bg-[#13171B] border-[#1E242B]' : 'bg-white border-zinc-200'
+        }`}
+        aria-labelledby="load-channels-heading"
+      >
+        <div className="flex items-center justify-between">
+          <span id="load-channels-heading" className={`text-[10px] font-bold uppercase tracking-wider ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-500'}`}>
+            {isFil ? '4-CHANNEL LOAD CONTROLLER (INA219 / RELAYS)' : '4-CHANNEL LOAD CONTROLLER'}
+          </span>
+          <span className="text-[9px] font-mono font-bold text-[#00E676] px-1.5 py-0.5 rounded bg-[#00E676]/10">
+            2-TIER ARQUITECTURA
+          </span>
+        </div>
+
+        <div className="flex flex-col gap-2">
+          {(
+            telemetry.loadChannels || [
+              { id: 1, name: '12V LED Critical Light', active: true, sheddable: false, currentMa: 400 },
+              { id: 2, name: 'Cold-Side Water Fan', active: telemetry.relays?.fans ?? true, sheddable: true, currentMa: 1000 },
+              { id: 3, name: 'Hopper Fuel Feed Servo', active: false, sheddable: true, currentMa: 0 },
+              { id: 4, name: '5V USB Charging Ports', active: telemetry.relays?.fans ?? true, sheddable: true, currentMa: 415 },
+            ]
+          ).map((ch) => (
+            <div
+              key={ch.id}
+              className={`p-2.5 rounded-xl border flex items-center justify-between transition-colors ${
+                isDark ? 'bg-[#0B0F12] border-[#1E242B]' : 'bg-[#F9FAFB] border-zinc-200'
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                <span
+                  className={`w-2 h-2 rounded-full ${
+                    ch.active
+                      ? ch.sheddable
+                        ? 'bg-emerald-400'
+                        : 'bg-[#00E676] animate-pulse'
+                      : 'bg-zinc-600'
+                  }`}
+                />
+                <div>
+                  <span className={`text-[11px] font-bold block ${isDark ? 'text-white' : 'text-zinc-900'}`}>
+                    CH{ch.id}: {ch.name}
+                  </span>
+                  <span className={`text-[8.5px] font-mono block ${
+                    !ch.sheddable ? 'text-[#00E676] font-bold' : isDark ? 'text-zinc-500' : 'text-zinc-400'
+                  }`}>
+                    {!ch.sheddable
+                      ? (isFil ? 'PANGUNAHIN (TIER 1) · NON-SHEDDABLE' : 'PRIMARY (TIER 1) · NON-SHEDDABLE')
+                      : (isFil ? 'PANGALAWANG (TIER 2) · SHEDDABLE' : 'AUXILIARY (TIER 2) · SHEDDABLE')}
+                  </span>
+                </div>
+              </div>
+
+              <div className="text-right">
+                <span className={`text-xs font-mono font-black block tabular-nums ${
+                  ch.active ? (isDark ? 'text-white' : 'text-zinc-900') : 'text-zinc-500'
+                }`}>
+                  {ch.currentMa} mA
+                </span>
+                <span className={`text-[8.5px] font-mono font-bold uppercase ${
+                  ch.active ? 'text-[#00E676]' : 'text-zinc-500'
+                }`}>
+                  {ch.active ? (isFil ? 'BUKAS' : 'ACTIVE') : (isFil ? 'SARADO' : 'OFF')}
+                </span>
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* ── 5. PHYSICAL SENSOR SUITE DIAGNOSTICS ─────────────────────── */}
+      <section
+        className={`rounded-2xl p-4 border flex flex-col gap-2.5 shadow-lg transition-colors ${
+          isDark ? 'bg-[#13171B] border-[#1E242B]' : 'bg-white border-zinc-200'
+        }`}
+        aria-labelledby="physical-suite-heading"
+      >
+        <span id="physical-suite-heading" className={`text-[10px] font-bold uppercase tracking-wider ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-500'}`}>
+          {isFil ? 'PHYSICAL SENSOR SUITE · MGA KABIT NA SENSOR' : 'PHYSICAL SENSOR SUITE · IC SPECS'}
+        </span>
+
+        <div className="grid grid-cols-2 gap-2 text-[10px] font-mono">
+          <div className={`p-2 rounded-lg border ${isDark ? 'bg-[#0B0F12] border-[#1E242B]' : 'bg-[#F9FAFB] border-zinc-200'}`}>
+            <span className={`block font-bold ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-500'}`}>MAX31855</span>
+            <span className={isDark ? 'text-zinc-300' : 'text-zinc-700'}>
+              {telemetry.stoveTemp.toFixed(1)}°C Hot Face
+            </span>
+          </div>
+
+          <div className={`p-2 rounded-lg border ${isDark ? 'bg-[#0B0F12] border-[#1E242B]' : 'bg-[#F9FAFB] border-zinc-200'}`}>
+            <span className={`block font-bold ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-500'}`}>MQ-7 (CO PPM)</span>
+            <span className={telemetry.safety?.coAlert ? 'text-rose-400 font-bold' : isDark ? 'text-zinc-300' : 'text-zinc-700'}>
+              {(telemetry.safety?.coPpm ?? telemetry.rawCoPpm ?? 12.4).toFixed(1)} PPM
+            </span>
+          </div>
+
+          <div className={`p-2 rounded-lg border ${isDark ? 'bg-[#0B0F12] border-[#1E242B]' : 'bg-[#F9FAFB] border-zinc-200'}`}>
+            <span className={`block font-bold ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-500'}`}>DHT22 (Ambient)</span>
+            <span className={isDark ? 'text-zinc-300' : 'text-zinc-700'}>
+              {(telemetry.ambient?.tempC ?? telemetry.ambientTemp ?? 28.5).toFixed(1)}°C / {(telemetry.ambient?.humidityPct ?? telemetry.humidity ?? 68.0).toFixed(0)}%
+            </span>
+          </div>
+
+          <div className={`p-2 rounded-lg border ${isDark ? 'bg-[#0B0F12] border-[#1E242B]' : 'bg-[#F9FAFB] border-zinc-200'}`}>
+            <span className={`block font-bold ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-500'}`}>INA219 (Shunt)</span>
+            <span className={isDark ? 'text-zinc-300' : 'text-zinc-700'}>
+              {telemetry.batteryCurrentSigned >= 0 ? '+' : ''}{telemetry.batteryCurrentSigned.toFixed(2)}A Signed
+            </span>
+          </div>
+        </div>
+      </section>
     </div>
   )
 }
