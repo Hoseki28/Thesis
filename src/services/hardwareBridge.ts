@@ -1,4 +1,4 @@
-import { FeedstockType, HardwareState, TelemetryData } from '../types/telemetry'
+import { Esp32HardwareStatus, FeedstockType, HardwareState, TelemetryData } from '../types/telemetry'
 
 export type HardwareDataCallback = (raw: {
   rawStoveTemp: number
@@ -9,6 +9,7 @@ export type HardwareDataCallback = (raw: {
   rawBatteryCurrent?: number
   rawTegVoltage: number
   rawTegCurrent: number
+  rawThermalFuseTripped?: boolean
   relays: {
     dcBus?: boolean
     lights: boolean
@@ -27,25 +28,59 @@ export type HardwareDataCallback = (raw: {
   sensorFault?: boolean
   operatingHours?: number
   systemHealthPct?: number
+  esp32?: Esp32HardwareStatus
   timestamp: number
   source: TelemetryData['source']
 }) => void
 
-// Standard Nordic UART BLE Service UUIDs commonly used on ESP32
+export type HardwareEventCallback = (
+  message: string,
+  level: 'info' | 'warning' | 'error',
+  messageFil?: string
+) => void
+
+// Nordic UART BLE Service UUIDs for ESP32 wireless serial bridge
 const NORDIC_UART_SERVICE = '6e400001-b5a3-f393-e0a9-e50e24dcca9e'
-const NORDIC_UART_RX = '6e400002-b5a3-f393-e0a9-e50e24dcca9e' // ESP32 Receive (Write from Web)
-const NORDIC_UART_TX = '6e400003-b5a3-f393-e0a9-e50e24dcca9e' // ESP32 Transmit (Notify to Web)
+const NORDIC_UART_RX = '6e400002-b5a3-f393-e0a9-e50e24dcca9e'
+const NORDIC_UART_TX = '6e400003-b5a3-f393-e0a9-e50e24dcca9e'
+
+function mapStateNameToCode(name: string): number {
+  const clean = name.trim().toUpperCase()
+  if (clean.startsWith('CHARGING')) return 1
+  if (clean.startsWith('FULL-HOLD')) return 2
+  if (clean.startsWith('WAITING')) return 3
+  if (clean.startsWith('FORCED OFF')) return 4
+  if (clean.startsWith('BATTERY HOT')) return 5
+  if (clean.startsWith('OVERCURRENT')) return 6
+  return 0
+}
+
+function defaultStateReason(stateCode: number): string {
+  switch (stateCode) {
+    case 0:
+      return 'no valid battery reading (needs 6 to 16.5 V at the battery divider)'
+    case 1:
+      return 'charging allowed, relay closed'
+    case 2:
+      return 'battery reached its limit, relay open'
+    case 3:
+      return 'battery is below the reconnect level, waiting 60 s before closing the relay'
+    case 4:
+      return 'charging forced OFF by command'
+    case 5:
+      return 'battery temperature too high'
+    default:
+      return 'charge current too high (latched), send r to clear'
+  }
+}
 
 export class HardwareBridge {
   private state: HardwareState
   private port: any = null
   private reader: any = null
-  private writer: any = null
   private readableStreamClosed: any = null
-  private writableStreamClosed: any = null
   private socket: WebSocket | null = null
 
-  // WebSocket frame buffering and reconnection state
   private wsBuffer: string = ''
   private wsReconnectTimer: any = null
   private wsReconnectAttempts: number = 0
@@ -53,20 +88,74 @@ export class HardwareBridge {
   private wsTargetUrl: string = 'ws://192.168.4.1/ws'
   private isIntentionalDisconnect: boolean = false
 
-  // Bluetooth variables
   private bleDevice: any = null
   private bleRxChar: any = null
   private bleTxChar: any = null
 
   private onDataCallback?: HardwareDataCallback
   private onStateChangeCallback?: (state: HardwareState) => void
+  private onEventCallback?: HardwareEventCallback
+
+  // Cached state assembled from thesis.ino compact, detailed, and event serial lines
+  private esp32Cache: Esp32HardwareStatus & {
+    vTeg: number
+    vBat: number
+    iBat: number
+    tHot: number
+    tCold: number
+    tAmb: number
+    hum: number
+    lastIntegrationMs: number
+  } = {
+    stateCode: 0,
+    stateName: 'NO BATTERY',
+    stateReason: defaultStateReason(0),
+    relayClosed: false,
+    forceMode: 0,
+    uptimeStr: '00:00:00',
+    vTeg: 0,
+    vBat: 12.6,
+    iBat: 0,
+    pBatW: 0,
+    pHarvW: 0,
+    whTotal: 0,
+    whHarv: 0,
+    vTegPeak: 0,
+    tHot: 25,
+    tCold: 25,
+    tAmb: 28,
+    hum: 65,
+    hotFault: false,
+    coldFault: false,
+    hotWhy: 'ok',
+    coldWhy: 'ok',
+    dhtOk: true,
+    ts1Tripped: false,
+    overcurrentLatched: false,
+    batHot: false,
+    vOpenNow: 14.4,
+    vCloseNow: 13.6,
+    vHardNow: 14.6,
+    batTrim: 1.1011,
+    tegTrim: 1.1679,
+    curTrim: 1.0,
+    acsVolts: 2.5,
+    acsZero: 2.5,
+    alarmsText: 'none',
+    activeAlarms: [],
+    note: undefined,
+    inaOk: false,
+    lastIntegrationMs: 0,
+  }
 
   constructor(
     onData?: HardwareDataCallback,
-    onStateChange?: (state: HardwareState) => void
+    onStateChange?: (state: HardwareState) => void,
+    onEvent?: HardwareEventCallback
   ) {
     this.onDataCallback = onData
     this.onStateChangeCallback = onStateChange
+    this.onEventCallback = onEvent
 
     this.state = {
       status: 'standby',
@@ -87,7 +176,7 @@ export class HardwareBridge {
           id: 'init-1',
           timestamp: new Date().toLocaleTimeString(),
           type: 'sys',
-          text: 'Hardware Bridge initialized. Standby mode active.',
+          text: 'Hardware Bridge initialized (115200 baud, thesis.ino protocol ready).',
         },
       ],
     }
@@ -117,9 +206,7 @@ export class HardwareBridge {
       type,
       text,
     }
-    // Keep last 100 entries
-    const updatedLogs = [...this.state.rawLogs, entry].slice(-100)
-    this.state.rawLogs = updatedLogs
+    this.state.rawLogs = [...this.state.rawLogs, entry].slice(-100)
     this.notifyState()
   }
 
@@ -139,15 +226,12 @@ export class HardwareBridge {
     if (this.state.lastPacketTime) {
       this.state.latencyMs = Math.max(1, now - this.state.lastPacketTime)
     } else {
-      this.state.latencyMs = 25 // default initial estimate
+      this.state.latencyMs = 25
     }
     this.state.packetsReceived++
     this.state.lastPacketTime = now
   }
 
-  // ─────────────────────────────────────────────────────────────────────────────
-  // 1. WIRED USB SERIAL (Web Serial API)
-  // ─────────────────────────────────────────────────────────────────────────────
   public async connectSerial(baudRate?: number): Promise<boolean> {
     if (!this.isWebSerialSupported()) {
       this.state.status = 'error'
@@ -169,13 +253,12 @@ export class HardwareBridge {
 
       this.state.status = 'connected'
       this.state.transport = 'serial'
-      this.state.deviceName = 'ESP32 (USB Serial)'
+      this.state.deviceName = 'ESP32 TEG Charger (USB Serial)'
       this.state.portInfo = `USB Serial (${baud} baud)`
       this.state.lastError = null
-      this.appendLog('sys', `Connected successfully to USB serial port at ${baud} baud.`)
+      this.appendLog('sys', `Connected to ESP32 over USB Serial at ${baud} baud.`)
       this.notifyState()
 
-      // Start read loop
       this.startSerialReadLoop()
       return true
     } catch (err: any) {
@@ -234,6 +317,10 @@ export class HardwareBridge {
         await this.reader.cancel()
         this.reader = null
       }
+      if (this.readableStreamClosed) {
+        await this.readableStreamClosed.catch(() => {})
+        this.readableStreamClosed = null
+      }
       if (this.port) {
         await this.port.close()
         this.port = null
@@ -250,9 +337,6 @@ export class HardwareBridge {
     }
   }
 
-  // ─────────────────────────────────────────────────────────────────────────────
-  // 2. BLUETOOTH BLE (Web Bluetooth API)
-  // ─────────────────────────────────────────────────────────────────────────────
   public async connectBluetooth(): Promise<boolean> {
     if (!this.isWebBluetoothSupported()) {
       this.state.status = 'error'
@@ -272,12 +356,11 @@ export class HardwareBridge {
           { namePrefix: 'ESP32' },
           { namePrefix: 'B-TEG' },
           { namePrefix: 'Padayon' },
-          { namePrefix: 'Node' },
+          { namePrefix: 'TEG' },
           { services: [NORDIC_UART_SERVICE] },
         ],
         optionalServices: [NORDIC_UART_SERVICE, 'generic_access'],
       }).catch(async () => {
-        // Fallback: accept all devices if user wants to select un-prefixed ESP32
         // @ts-ignore
         return await navigator.bluetooth.requestDevice({
           acceptAllDevices: true,
@@ -302,9 +385,7 @@ export class HardwareBridge {
 
       const service = await server.getPrimaryService(NORDIC_UART_SERVICE).catch(() => null)
       if (service) {
-        // TX Characteristic (ESP32 notifications -> Web Dashboard)
         this.bleTxChar = await service.getCharacteristic(NORDIC_UART_TX).catch(() => null)
-        // RX Characteristic (Web Dashboard commands -> ESP32)
         this.bleRxChar = await service.getCharacteristic(NORDIC_UART_RX).catch(() => null)
 
         if (this.bleTxChar) {
@@ -368,9 +449,6 @@ export class HardwareBridge {
     }
   }
 
-  // ─────────────────────────────────────────────────────────────────────────────
-  // 3. WI-FI NETWORK (WebSocket & Local IP with Auto-Reconnection & Frame Buffering)
-  // ─────────────────────────────────────────────────────────────────────────────
   public connectWebSocket(url: string = 'ws://192.168.4.1/ws', isAutoRetry: boolean = false) {
     this.wsTargetUrl = url
     if (!isAutoRetry) {
@@ -430,9 +508,7 @@ export class HardwareBridge {
         this.state.bytesReceived += rawChunk.length
         this.wsBuffer += rawChunk
 
-        // Reassemble fragmented frames split across packets or concatenated by newline
         const lines = this.wsBuffer.split('\n')
-        // Incomplete tail remains in buffer
         this.wsBuffer = lines.pop() || ''
 
         for (const line of lines) {
@@ -444,7 +520,6 @@ export class HardwareBridge {
           }
         }
 
-        // Handle case where ESP32 sends raw JSON without newlines: '}{' delimiter
         if (this.wsBuffer.includes('}{')) {
           const splitObjects = this.wsBuffer.replace(/\}\{/g, '}\n{').split('\n')
           this.wsBuffer = splitObjects.pop() || ''
@@ -478,12 +553,10 @@ export class HardwareBridge {
           return
         }
 
-        // Handle unintentional connection drops with exponential backoff auto-reconnect
         if (this.wsReconnectAttempts < this.wsMaxReconnectAttempts) {
           this.wsReconnectAttempts++
-          // Exponential backoff: 1.5s, 2.25s, 3.37s, 5.06s... up to 15s max
           const backoffDelay = Math.min(15000, Math.round(1500 * Math.pow(1.5, this.wsReconnectAttempts - 1)))
-          
+
           this.state.status = 'connecting'
           this.state.reconnectAttempts = this.wsReconnectAttempts
           this.state.isAutoReconnecting = true
@@ -499,7 +572,6 @@ export class HardwareBridge {
             }
           }, backoffDelay)
         } else {
-          // Reconnection attempts exhausted
           this.state.status = 'standby'
           this.state.transport = 'none'
           this.state.portInfo = 'None (Standby Mode)'
@@ -553,21 +625,574 @@ export class HardwareBridge {
     }
   }
 
-  /**
-   * Parse and sanitize incoming telemetry payload (JSON or CSV)
-   * Enforces strict NaN checking, operational boundary limits, and sensorFault flags.
-   */
+  // Emit assembled thesis.ino cache to the dashboard callback
+  private emitFromEsp32Cache(source: TelemetryData['source']) {
+    const c = this.esp32Cache
+    const hasSensorFault = c.hotFault || c.coldFault || !c.dhtOk
+    this.state.sensorFault = hasSensorFault
+
+    const snapshot: Esp32HardwareStatus = {
+      stateCode: c.stateCode,
+      stateName: c.stateName,
+      stateReason: c.stateReason,
+      relayClosed: c.relayClosed,
+      forceMode: c.forceMode,
+      uptimeStr: c.uptimeStr,
+      pBatW: c.pBatW,
+      pHarvW: c.pHarvW,
+      whTotal: c.whTotal,
+      whHarv: c.whHarv,
+      vTegPeak: c.vTegPeak,
+      hotFault: c.hotFault,
+      coldFault: c.coldFault,
+      hotWhy: c.hotWhy,
+      coldWhy: c.coldWhy,
+      dhtOk: c.dhtOk,
+      ts1Tripped: c.ts1Tripped,
+      overcurrentLatched: c.overcurrentLatched,
+      batHot: c.batHot,
+      vOpenNow: c.vOpenNow,
+      vCloseNow: c.vCloseNow,
+      vHardNow: c.vHardNow,
+      batTrim: c.batTrim,
+      tegTrim: c.tegTrim,
+      curTrim: c.curTrim,
+      acsVolts: c.acsVolts,
+      acsZero: c.acsZero,
+      alarmsText: c.alarmsText,
+      activeAlarms: [...c.activeAlarms],
+      note: c.note,
+      inaOk: c.inaOk,
+    }
+
+    if (this.onDataCallback) {
+      this.onDataCallback({
+        rawStoveTemp: c.hotFault ? 0 : c.tHot,
+        rawColdFaceTemp: c.coldFault ? c.tAmb : c.tCold,
+        rawAmbientTemp: c.tAmb,
+        rawHumidity: c.hum,
+        rawBatteryVoltage: c.vBat,
+        rawBatteryCurrent: c.iBat,
+        rawTegVoltage: c.vTeg,
+        rawTegCurrent: c.iBat,
+        rawThermalFuseTripped: c.ts1Tripped,
+        isPhysicalCurrent: true,
+        sensorFault: hasSensorFault,
+        relays: {
+          dcBus: c.relayClosed,
+          lights: true,
+          fans: c.relayClosed,
+          aux: false,
+        },
+        esp32: snapshot,
+        inaOk: c.inaOk,
+        timestamp: Date.now(),
+        source,
+      })
+    }
+  }
+
+  private parseAlarmsField(rawAlarmsAndNote: string) {
+    let text = rawAlarmsAndNote.trim()
+    let note: string | undefined = undefined
+
+    const notePatterns = [
+      '(TEG voltage is too low to charge)',
+      '(relay closed, no current yet)',
+    ]
+    for (const pat of notePatterns) {
+      const idx = text.indexOf(pat)
+      if (idx !== -1) {
+        note = pat.slice(1, -1)
+        text = text.slice(0, idx).trim()
+      }
+    }
+
+    this.esp32Cache.note = note
+    this.esp32Cache.alarmsText = text || 'none'
+    if (!text || text.toLowerCase() === 'none') {
+      this.esp32Cache.activeAlarms = []
+    } else {
+      this.esp32Cache.activeAlarms = text
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean)
+    }
+
+    const lower = text.toLowerCase()
+    this.esp32Cache.ts1Tripped = lower.includes('ts1')
+    this.esp32Cache.overcurrentLatched =
+      this.esp32Cache.stateCode === 6 || lower.includes('overcurrent')
+    this.esp32Cache.batHot =
+      this.esp32Cache.stateCode === 5 || lower.includes('battery too hot')
+    this.esp32Cache.dhtOk = !lower.includes('dht22 not reading')
+    if (lower.includes('hot thermocouple fault')) {
+      this.esp32Cache.hotFault = true
+    }
+    if (lower.includes('cold thermocouple fault')) {
+      this.esp32Cache.coldFault = true
+    }
+  }
+
+  private updateTempCompLimits() {
+    if (this.esp32Cache.dhtOk) {
+      const comp = Math.min(0.2, Math.max(-0.45, -0.018 * (this.esp32Cache.tAmb - 25.0)))
+      this.esp32Cache.vOpenNow = Math.round((14.4 + comp) * 100) / 100
+      this.esp32Cache.vCloseNow = Math.round((13.6 + comp) * 100) / 100
+      this.esp32Cache.vHardNow = Math.round((14.6 + comp) * 100) / 100
+    } else {
+      this.esp32Cache.vOpenNow = 14.2
+      this.esp32Cache.vCloseNow = 13.4
+      this.esp32Cache.vHardNow = 14.4
+    }
+  }
+
   private parseIncomingPayload(line: string, source: TelemetryData['source']) {
     try {
-      let sensorFault = false
+      // 1. Parse thesis.ino one-off event messages: [HH:MM:SS] >>> ...
+      const eventMatch = line.match(/^\[(\d{2}:\d{2}:\d{2})\]\s*>>>\s*(.+)$/)
+      if (eventMatch) {
+        this.esp32Cache.uptimeStr = eventMatch[1]
+        const msg = eventMatch[2].trim()
 
-      // 1. Try parsing JSON format:
-      // {"stoveTemp":185.2,"coldFaceTemp":26.4,"ambientTemp":29.1,"humidity":65,"batteryV":12.4,"tegVoltage":4.5,"tegCurrent":0.8,"feedstock":"wood_waste"}
+        if (msg.startsWith('STATE:')) {
+          const stateBody = msg.slice(6).trim()
+          const dashIdx = stateBody.indexOf('-')
+          if (dashIdx !== -1) {
+            const sName = stateBody.slice(0, dashIdx).trim()
+            const sReason = stateBody.slice(dashIdx + 1).trim()
+            const sCode = mapStateNameToCode(sName)
+            this.esp32Cache.stateName = sName
+            this.esp32Cache.stateCode = sCode
+            this.esp32Cache.stateReason = sReason
+            this.esp32Cache.relayClosed = sCode === 1
+          }
+          this.emitFromEsp32Cache(source)
+          if (this.onEventCallback) {
+            this.onEventCallback(`ESP32 ${msg}`, 'info')
+          }
+          return
+        }
+
+        if (msg.startsWith('Charging: AUTOMATIC')) {
+          this.esp32Cache.forceMode = 0
+          this.emitFromEsp32Cache(source)
+        } else if (msg.startsWith('Charging: FORCED ON')) {
+          this.esp32Cache.forceMode = 1
+          this.esp32Cache.relayClosed = true
+          this.emitFromEsp32Cache(source)
+        } else if (msg.startsWith('Charging: FORCED OFF')) {
+          this.esp32Cache.forceMode = 2
+          this.esp32Cache.relayClosed = false
+          this.emitFromEsp32Cache(source)
+        } else if (msg.startsWith('Overcurrent latch cleared')) {
+          this.esp32Cache.overcurrentLatched = false
+          this.emitFromEsp32Cache(source)
+        } else if (msg.startsWith('Energy counters and peak voltage reset')) {
+          this.esp32Cache.whTotal = 0
+          this.esp32Cache.whHarv = 0
+          this.esp32Cache.vTegPeak = 0
+          this.emitFromEsp32Cache(source)
+        }
+
+        const calSaved = msg.match(/^(Battery|TEG|Current) calibration saved:\s*factor\s*([-\d.]+)/i)
+        if (calSaved) {
+          const kind = calSaved[1].toLowerCase()
+          const factor = parseFloat(calSaved[2])
+          if (Number.isFinite(factor)) {
+            if (kind === 'battery') this.esp32Cache.batTrim = factor
+            else if (kind === 'teg') this.esp32Cache.tegTrim = factor
+            else if (kind === 'current') this.esp32Cache.curTrim = factor
+          }
+          this.emitFromEsp32Cache(source)
+        }
+
+        if (msg.startsWith('Calibration reset to default')) {
+          this.esp32Cache.batTrim = 1.028
+          this.esp32Cache.tegTrim = 1.052
+          this.esp32Cache.curTrim = 1.0
+          this.emitFromEsp32Cache(source)
+        }
+
+        const zeroSaved = msg.match(/^(?:Current sensor zeroed at|ACS712 current sensor tared to zero:?)\s*([-\d.]+)\s*V/i)
+        if (zeroSaved) {
+          const z = parseFloat(zeroSaved[1])
+          if (Number.isFinite(z)) this.esp32Cache.acsZero = z
+          this.emitFromEsp32Cache(source)
+        }
+
+        const hotTcWhy = msg.match(/^hot thermocouple:\s*(.+)$/i)
+        if (hotTcWhy) {
+          this.esp32Cache.hotWhy = hotTcWhy[1].trim()
+          this.esp32Cache.hotFault = true
+          this.emitFromEsp32Cache(source)
+        }
+
+        const coldTcWhy = msg.match(/^cold thermocouple:\s*(.+)$/i)
+        if (coldTcWhy) {
+          this.esp32Cache.coldWhy = coldTcWhy[1].trim()
+          this.esp32Cache.coldFault = true
+          this.emitFromEsp32Cache(source)
+        }
+
+        if (this.onEventCallback) {
+          const lvl =
+            msg.startsWith('ALARM:') || msg.includes('refused')
+              ? 'error'
+              : msg.startsWith('WARNING:') || msg.startsWith('Not zeroed')
+              ? 'warning'
+              : 'info'
+          this.onEventCallback(`ESP32: ${msg}`, lvl)
+        }
+        return
+      }
+
+      // 2. Parse thesis.ino compact status line:
+      // [00:01:24] CHARGING   | TEG 14.80 V | BAT 12.65 V | I 0.45 A | IN-BAT   5.7 W | HARVEST   6.7 W 0.123 Wh | HOT 185 C | COLD  32 C | dT 153 C | AMB 28.4 C | ALARMS: none
+      if (line.includes('| TEG ') && line.includes('| BAT ') && line.includes('| ALARMS:')) {
+        const firstPipe = line.indexOf('|')
+        const prefix = line.slice(0, firstPipe).trim()
+        const prefixMatch = prefix.match(/^\[(\d{2}:\d{2}:\d{2})\]\s*(.+)$/)
+        if (prefixMatch) {
+          this.esp32Cache.uptimeStr = prefixMatch[1]
+          const sName = prefixMatch[2].trim()
+          const sCode = mapStateNameToCode(sName)
+          this.esp32Cache.stateName = sName
+          this.esp32Cache.stateCode = sCode
+          this.esp32Cache.stateReason = defaultStateReason(sCode)
+          this.esp32Cache.relayClosed = sCode === 1
+        }
+
+        const segments = line.slice(firstPipe + 1).split('|')
+        for (const rawSeg of segments) {
+          const seg = rawSeg.trim()
+          if (seg.startsWith('TEG ')) {
+            const m = seg.match(/TEG\s+([-\d.]+)\s*V/i)
+            if (m) {
+              const v = parseFloat(m[1])
+              if (Number.isFinite(v)) {
+                this.esp32Cache.vTeg = v
+                if (v > this.esp32Cache.vTegPeak) this.esp32Cache.vTegPeak = v
+              }
+            }
+          } else if (seg.startsWith('BAT ')) {
+            const m = seg.match(/BAT\s+([-\d.]+)\s*V/i)
+            if (m) {
+              const v = parseFloat(m[1])
+              if (Number.isFinite(v)) this.esp32Cache.vBat = v
+            }
+          } else if (seg.startsWith('I ')) {
+            const m = seg.match(/I\s+([-\d.]+)\s*A/i)
+            if (m) {
+              const v = parseFloat(m[1])
+              if (Number.isFinite(v)) this.esp32Cache.iBat = v
+            }
+          } else if (seg.startsWith('PWR ')) {
+            const m = seg.match(/PWR\s+([-\d.]+)\s*W/i)
+            if (m) {
+              const p = parseFloat(m[1])
+              if (Number.isFinite(p)) {
+                this.esp32Cache.pHarvW = p
+                this.esp32Cache.pBatW = Math.round(this.esp32Cache.vBat * this.esp32Cache.iBat * 10) / 10
+              }
+            }
+          } else if (seg.startsWith('IN-BAT ')) {
+            const m = seg.match(/IN-BAT\s+([-\d.]+)\s*W/i)
+            if (m) {
+              const p = parseFloat(m[1])
+              if (Number.isFinite(p)) {
+                const nowMs = Date.now()
+                if (this.esp32Cache.lastIntegrationMs > 0) {
+                  const dtHours = Math.min(10, (nowMs - this.esp32Cache.lastIntegrationMs) / 1000) / 3600
+                  this.esp32Cache.whTotal = Math.round((this.esp32Cache.whTotal + p * dtHours) * 1000) / 1000
+                }
+                this.esp32Cache.lastIntegrationMs = nowMs
+                this.esp32Cache.pBatW = p
+              }
+            }
+          } else if (seg.startsWith('HARVEST ')) {
+            const mFull = seg.match(/HARVEST\s+([-\d.]+)\s*W\s+([-\d.]+)\s*Wh/i)
+            if (mFull) {
+              const ph = parseFloat(mFull[1])
+              const wh = parseFloat(mFull[2])
+              if (Number.isFinite(ph)) this.esp32Cache.pHarvW = ph
+              if (Number.isFinite(wh)) this.esp32Cache.whHarv = wh
+            } else {
+              const mWh = seg.match(/HARVEST\s+([-\d.]+)\s*Wh/i)
+              if (mWh) {
+                const wh = parseFloat(mWh[1])
+                if (Number.isFinite(wh)) this.esp32Cache.whHarv = wh
+              }
+            }
+          } else if (seg.startsWith('HOT ')) {
+            const m = seg.match(/HOT\s+(\S+)\s*C/i)
+            if (m) {
+              if (m[1] === '---') {
+                this.esp32Cache.hotFault = true
+              } else {
+                const th = parseFloat(m[1])
+                if (Number.isFinite(th)) {
+                  this.esp32Cache.tHot = th
+                  this.esp32Cache.hotFault = false
+                  this.esp32Cache.hotWhy = 'ok'
+                }
+              }
+            }
+          } else if (seg.startsWith('COLD ')) {
+            const m = seg.match(/COLD\s+(\S+)\s*C/i)
+            if (m) {
+              if (m[1] === '---') {
+                this.esp32Cache.coldFault = true
+              } else {
+                const tc = parseFloat(m[1])
+                if (Number.isFinite(tc)) {
+                  this.esp32Cache.tCold = tc
+                  this.esp32Cache.coldFault = false
+                  this.esp32Cache.coldWhy = 'ok'
+                }
+              }
+            }
+          } else if (seg.startsWith('AMB ')) {
+            const m = seg.match(/AMB\s+([-\d.]+)\s*C/i)
+            if (m) {
+              const ta = parseFloat(m[1])
+              if (Number.isFinite(ta) && ta > 0) this.esp32Cache.tAmb = ta
+            }
+          } else if (seg.startsWith('ALARMS:')) {
+            this.parseAlarmsField(seg.slice(7))
+          }
+        }
+
+        this.updateTempCompLimits()
+        this.emitFromEsp32Cache(source)
+        return
+      }
+
+      // 3. Parse thesis.ino detailed block lines & startup lines
+      const headerMatch = line.match(/^----------------\s*(\d{2}:\d{2}:\d{2})\s*----------------$/)
+      if (headerMatch) {
+        this.esp32Cache.uptimeStr = headerMatch[1]
+        return
+      }
+
+      if (line.startsWith('STATE     :')) {
+        const m = line.match(/^STATE\s*:\s*(.+?)\(relay\s+(CLOSED|OPEN)\)\s*(.+)$/i)
+        if (m) {
+          const sName = m[1].trim()
+          const sCode = mapStateNameToCode(sName)
+          this.esp32Cache.stateName = sName
+          this.esp32Cache.stateCode = sCode
+          this.esp32Cache.relayClosed = m[2].toUpperCase() === 'CLOSED'
+          this.esp32Cache.stateReason = m[3].trim()
+        }
+        return
+      }
+
+      if (line.startsWith('VOLTAGE   :')) {
+        const m = line.match(/TEG\s+([-\d.]+)\s*V.*BATTERY\s+([-\d.]+)\s*V/i)
+        if (m) {
+          const vt = parseFloat(m[1])
+          const vb = parseFloat(m[2])
+          if (Number.isFinite(vt)) this.esp32Cache.vTeg = vt
+          if (Number.isFinite(vb)) this.esp32Cache.vBat = vb
+        }
+        return
+      }
+
+      if (line.startsWith('CURRENT   :')) {
+        const m = line.match(/CURRENT\s*:\s*([-\d.]+)\s*A/i)
+        if (m) {
+          const ib = parseFloat(m[1])
+          if (Number.isFinite(ib)) this.esp32Cache.iBat = ib
+        }
+        const mTrim = line.match(/factor\s*([-\d.]+)/i)
+        if (mTrim) {
+          const ct = parseFloat(mTrim[1])
+          if (Number.isFinite(ct)) this.esp32Cache.curTrim = ct
+        }
+        const mSens = line.match(/sensor\s*([-\d.]+)\s*V/i)
+        if (mSens) {
+          const sv = parseFloat(mSens[1])
+          if (Number.isFinite(sv)) this.esp32Cache.acsVolts = sv
+        }
+        const mZero = line.match(/zero\s*([-\d.]+)\s*V/i)
+        if (mZero) {
+          const zv = parseFloat(mZero[1])
+          if (Number.isFinite(zv)) this.esp32Cache.acsZero = zv
+        }
+        return
+      }
+
+      if (line.startsWith('POWER     :')) {
+        const m = line.match(/into battery\s*([-\d.]+)\s*W\s*\(([-\d.]+)\s*Wh\)\s*harvested from TEG\s*([-\d.]+)\s*W\s*\(([-\d.]+)\s*Wh\)\s*peak TEG\s*([-\d.]+)\s*V/i)
+        if (m) {
+          const pb = parseFloat(m[1])
+          const wht = parseFloat(m[2])
+          const ph = parseFloat(m[3])
+          const whh = parseFloat(m[4])
+          const pk = parseFloat(m[5])
+          if (Number.isFinite(pb)) this.esp32Cache.pBatW = pb
+          if (Number.isFinite(wht)) this.esp32Cache.whTotal = wht
+          if (Number.isFinite(ph)) this.esp32Cache.pHarvW = ph
+          if (Number.isFinite(whh)) this.esp32Cache.whHarv = whh
+          if (Number.isFinite(pk)) this.esp32Cache.vTegPeak = pk
+        } else {
+          const mSimple = line.match(/TEG power\s*([-\d.]+)\s*W\s+harvested energy\s*([-\d.]+)\s*Wh\s+peak TEG\s*([-\d.]+)\s*V/i)
+          if (mSimple) {
+            const ph = parseFloat(mSimple[1])
+            const whh = parseFloat(mSimple[2])
+            const pk = parseFloat(mSimple[3])
+            if (Number.isFinite(ph)) {
+              this.esp32Cache.pHarvW = ph
+              this.esp32Cache.pBatW = ph
+            }
+            if (Number.isFinite(whh)) this.esp32Cache.whHarv = whh
+            if (Number.isFinite(pk)) this.esp32Cache.vTegPeak = pk
+          } else {
+            const mAlt = line.match(/TEG\s+([-\d.]+)\s*W.*into battery\s+([-\d.]+)\s*W.*harvested\s+([-\d.]+)\s*Wh.*peak TEG\s+([-\d.]+)\s*V/i)
+            if (mAlt) {
+              const ph = parseFloat(mAlt[1])
+              const pb = parseFloat(mAlt[2])
+              const whh = parseFloat(mAlt[3])
+              const pk = parseFloat(mAlt[4])
+              if (Number.isFinite(ph)) this.esp32Cache.pHarvW = ph
+              if (Number.isFinite(pb)) this.esp32Cache.pBatW = pb
+              if (Number.isFinite(whh)) this.esp32Cache.whHarv = whh
+              if (Number.isFinite(pk)) this.esp32Cache.vTegPeak = pk
+            }
+          }
+        }
+        return
+      }
+
+      if (line.startsWith('TEMPERATURE:')) {
+        const m = line.match(/hot\s+(\S+)\s*C\s*\(([^)]+)\)\s*cold\s+(\S+)\s*C\s*\(([^)]+)\)/i)
+        if (m) {
+          this.esp32Cache.hotWhy = m[2].trim()
+          if (m[1] === '---') {
+            this.esp32Cache.hotFault = true
+          } else {
+            const th = parseFloat(m[1])
+            if (Number.isFinite(th)) {
+              this.esp32Cache.tHot = th
+              this.esp32Cache.hotFault = false
+            }
+          }
+          this.esp32Cache.coldWhy = m[4].trim()
+          if (m[3] === '---') {
+            this.esp32Cache.coldFault = true
+          } else {
+            const tc = parseFloat(m[3])
+            if (Number.isFinite(tc)) {
+              this.esp32Cache.tCold = tc
+              this.esp32Cache.coldFault = false
+            }
+          }
+        }
+        return
+      }
+
+      if (line.startsWith('BATTERY AREA:')) {
+        const m = line.match(/BATTERY AREA:\s*([-\d.]+)\s*C\s+humidity\s+([-\d.]+)\s*%\s*\(([^)]+)\)\s*TS1:\s*(\S+)/i)
+        if (m) {
+          const ta = parseFloat(m[1])
+          const hm = parseFloat(m[2])
+          const dhtStatus = m[3].trim().toLowerCase()
+          const ts1Status = m[4].trim().toLowerCase()
+          this.esp32Cache.dhtOk = dhtStatus.includes('ok')
+          if (Number.isFinite(ta) && this.esp32Cache.dhtOk) this.esp32Cache.tAmb = ta
+          if (Number.isFinite(hm) && hm >= 0) this.esp32Cache.hum = hm
+          this.esp32Cache.ts1Tripped = ts1Status.includes('tripped')
+        }
+        return
+      }
+
+      if (line.startsWith('LIMITS    :')) {
+        const m = line.match(/open\s*([-\d.]+)\s*V,\s*close\s*([-\d.]+)\s*V,\s*hard\s*([-\d.]+)\s*V/i)
+        if (m) {
+          const vo = parseFloat(m[1])
+          const vc = parseFloat(m[2])
+          const vh = parseFloat(m[3])
+          if (Number.isFinite(vo)) this.esp32Cache.vOpenNow = vo
+          if (Number.isFinite(vc)) this.esp32Cache.vCloseNow = vc
+          if (Number.isFinite(vh)) this.esp32Cache.vHardNow = vh
+        }
+        return
+      }
+
+      if (line.startsWith('ALARMS    :')) {
+        this.parseAlarmsField(line.slice(11))
+        this.emitFromEsp32Cache(source)
+        return
+      }
+
+      // Startup banner lines in thesis.ino
+      const startupCal = line.match(/^Calibration\s*:\s*battery\s*x([-\d.]+),\s*TEG\s*x([-\d.]+),\s*current\s*x([-\d.]+)/i)
+      if (startupCal) {
+        const bt = parseFloat(startupCal[1])
+        const tt = parseFloat(startupCal[2])
+        const ct = parseFloat(startupCal[3])
+        if (Number.isFinite(bt)) this.esp32Cache.batTrim = bt
+        if (Number.isFinite(tt)) this.esp32Cache.tegTrim = tt
+        if (Number.isFinite(ct)) this.esp32Cache.curTrim = ct
+        return
+      }
+
+      // 4. Parse JSON format (supports both thesis.ino JSON and generic telemetry JSON)
       if (line.startsWith('{') && line.endsWith('}')) {
         const json = JSON.parse(line)
 
-        // Parse & Sanitize Stove Temperature (MAX6675 / Thermocouple)
-        // Operational window: 0°C to 350°C. Fault if NaN, negative, or > 350°C (open circuit)
+        if (json.type === 'telemetry' || json.vTeg !== undefined || json.vBat !== undefined || json.stateName !== undefined) {
+          if (typeof json.uptime === 'string') this.esp32Cache.uptimeStr = json.uptime
+          if (typeof json.stateName === 'string') {
+            this.esp32Cache.stateName = json.stateName.trim()
+            this.esp32Cache.stateCode =
+              typeof json.state === 'number' ? json.state : mapStateNameToCode(json.stateName)
+            this.esp32Cache.stateReason = json.stateReason || defaultStateReason(this.esp32Cache.stateCode)
+          } else if (typeof json.state === 'number') {
+            this.esp32Cache.stateCode = json.state
+            this.esp32Cache.stateReason = defaultStateReason(json.state)
+          }
+          if (typeof json.relayOn === 'boolean') this.esp32Cache.relayClosed = json.relayOn
+          if (typeof json.forceMode === 'number') this.esp32Cache.forceMode = json.forceMode as 0 | 1 | 2
+          if (Number.isFinite(Number(json.vTeg))) this.esp32Cache.vTeg = Number(json.vTeg)
+          if (Number.isFinite(Number(json.vBat))) this.esp32Cache.vBat = Number(json.vBat)
+          if (Number.isFinite(Number(json.iBat))) this.esp32Cache.iBat = Number(json.iBat)
+          if (Number.isFinite(Number(json.iTeg))) this.esp32Cache.iBat = Number(json.iTeg)
+          if (Number.isFinite(Number(json.pBat))) this.esp32Cache.pBatW = Number(json.pBat)
+          if (Number.isFinite(Number(json.pHarv))) this.esp32Cache.pHarvW = Number(json.pHarv)
+          if (Number.isFinite(Number(json.pTeg))) this.esp32Cache.pHarvW = Number(json.pTeg)
+          if (Number.isFinite(Number(json.whTotal))) this.esp32Cache.whTotal = Number(json.whTotal)
+          if (Number.isFinite(Number(json.whHarv))) this.esp32Cache.whHarv = Number(json.whHarv)
+          if (Number.isFinite(Number(json.vTegPeak))) this.esp32Cache.vTegPeak = Number(json.vTegPeak)
+          if (typeof json.hotFault === 'boolean') this.esp32Cache.hotFault = json.hotFault
+          if (typeof json.coldFault === 'boolean') this.esp32Cache.coldFault = json.coldFault
+          if (typeof json.hotWhy === 'string') this.esp32Cache.hotWhy = json.hotWhy
+          if (typeof json.coldWhy === 'string') this.esp32Cache.coldWhy = json.coldWhy
+          if (Number.isFinite(Number(json.tHot)) && Number(json.tHot) >= 0) this.esp32Cache.tHot = Number(json.tHot)
+          if (Number.isFinite(Number(json.tCold)) && Number(json.tCold) >= 0) this.esp32Cache.tCold = Number(json.tCold)
+          if (Number.isFinite(Number(json.tAmb)) && Number(json.tAmb) > 0) this.esp32Cache.tAmb = Number(json.tAmb)
+          if (Number.isFinite(Number(json.hum)) && Number(json.hum) >= 0) this.esp32Cache.hum = Number(json.hum)
+          if (typeof json.dhtOK === 'boolean') this.esp32Cache.dhtOk = json.dhtOK
+          if (typeof json.ts1 === 'boolean') this.esp32Cache.ts1Tripped = json.ts1
+          if (typeof json.overcurrent === 'boolean') this.esp32Cache.overcurrentLatched = json.overcurrent
+          if (typeof json.batHot === 'boolean') this.esp32Cache.batHot = json.batHot
+          if (Number.isFinite(Number(json.vOpen))) this.esp32Cache.vOpenNow = Number(json.vOpen)
+          if (Number.isFinite(Number(json.vClose))) this.esp32Cache.vCloseNow = Number(json.vClose)
+          if (Number.isFinite(Number(json.vHard))) this.esp32Cache.vHardNow = Number(json.vHard)
+          if (Number.isFinite(Number(json.batTrim))) this.esp32Cache.batTrim = Number(json.batTrim)
+          if (Number.isFinite(Number(json.tegTrim))) this.esp32Cache.tegTrim = Number(json.tegTrim)
+          if (Number.isFinite(Number(json.curTrim))) this.esp32Cache.curTrim = Number(json.curTrim)
+          if (Number.isFinite(Number(json.acsZero))) this.esp32Cache.acsZero = Number(json.acsZero)
+          if (Number.isFinite(Number(json.acsVolts))) this.esp32Cache.acsVolts = Number(json.acsVolts)
+          if (typeof json.inaOK === 'boolean') this.esp32Cache.inaOk = json.inaOK
+          if (typeof json.alarms === 'string') this.parseAlarmsField(json.alarms)
+
+          this.emitFromEsp32Cache(source)
+          return
+        }
+
+        let sensorFault = false
         const rawStoveVal = Number(json.stoveTemp ?? json.stove_temp ?? json.stove ?? json.hot_side)
         let safeStove = 25
         if (Number.isFinite(rawStoveVal) && rawStoveVal >= 0 && rawStoveVal <= 350) {
@@ -577,18 +1202,15 @@ export class HardwareBridge {
           safeStove = Number.isFinite(rawStoveVal) ? Math.min(350, Math.max(0, rawStoveVal)) : 25
         }
 
-        // Parse & Sanitize Cold Face Temperature (Heatsink water block)
-        // Operational window: 5°C to 95°C
         const rawColdVal = Number(json.coldFaceTemp ?? json.cold_temp ?? json.cold_side ?? json.t_cold)
         let safeColdFace: number | undefined = undefined
-        if (Number.isFinite(rawColdVal) && rawColdVal >= 5 && rawColdVal <= 95) {
+        if (Number.isFinite(rawColdVal) && rawColdVal >= 0 && rawColdVal <= 120) {
           safeColdFace = rawColdVal
         } else if (Number.isFinite(rawColdVal)) {
           sensorFault = true
-          safeColdFace = Math.min(95, Math.max(5, rawColdVal))
+          safeColdFace = Math.min(120, Math.max(0, rawColdVal))
         }
 
-        // Parse & Sanitize Ambient Air Temperature (DHT11)
         const rawAmbientVal = Number(json.ambientTemp ?? json.ambient_temp ?? json.dht_temp)
         let safeAmbient = 28
         if (Number.isFinite(rawAmbientVal) && rawAmbientVal >= -10 && rawAmbientVal <= 65) {
@@ -598,33 +1220,28 @@ export class HardwareBridge {
           safeAmbient = 28
         }
 
-        // Parse & Sanitize Humidity (DHT11 RH %)
         const rawHumVal = Number(json.humidity ?? json.dht_hum)
         const safeHumidity = Number.isFinite(rawHumVal) ? Math.min(100, Math.max(0, rawHumVal)) : 60
 
-        // Parse & Sanitize Battery Voltage (ADC)
         const rawBattVVal = Number(json.batteryV ?? json.battery_voltage ?? json.v_batt)
         let safeBattV = 12.0
-        if (Number.isFinite(rawBattVVal) && rawBattVVal >= 7.0 && rawBattVVal <= 16.5) {
+        if (Number.isFinite(rawBattVVal) && rawBattVVal >= 6.0 && rawBattVVal <= 16.5) {
           safeBattV = rawBattVVal
         } else {
           sensorFault = true
-          safeBattV = Number.isFinite(rawBattVVal) ? Math.min(16.5, Math.max(7.0, rawBattVVal)) : 12.0
+          safeBattV = Number.isFinite(rawBattVVal) ? Math.min(16.5, Math.max(6.0, rawBattVVal)) : 12.0
         }
 
-        // Parse & Sanitize TEG Electrical Readings
         const rawTegVVal = Number(json.tegVoltage ?? json.v_teg)
-        const safeTegV = Number.isFinite(rawTegVVal) && rawTegVVal >= 0 && rawTegVVal <= 28.0 ? rawTegVVal : 0
+        const safeTegV = Number.isFinite(rawTegVVal) && rawTegVVal >= 0 && rawTegVVal <= 60.0 ? rawTegVVal : 0
 
         const rawTegIVal = Number(json.tegCurrent ?? json.i_teg)
-        const safeTegI = Number.isFinite(rawTegIVal) && rawTegIVal >= 0 && rawTegIVal <= 5.0 ? rawTegIVal : 0
+        const safeTegI = Number.isFinite(rawTegIVal) && rawTegIVal >= 0 && rawTegIVal <= 10.0 ? rawTegIVal : 0
 
-        // Parse Physical Battery Current (if shunt/Hall is present)
         const rawBattIVal = Number(json.batteryCurrent ?? json.i_batt ?? json.battery_current)
         const safeBattI = Number.isFinite(rawBattIVal) ? rawBattIVal : undefined
         const isPhysicalCurrent = safeBattI !== undefined
 
-        // Feedstock & Run ID metadata
         const feedstock: FeedstockType =
           json.feedstock === 'wood_waste' || json.feedstock === 'coconut_husk'
             ? json.feedstock
@@ -632,64 +1249,56 @@ export class HardwareBridge {
         const runId = typeof json.runId === 'string' ? json.runId : typeof json.run_id === 'string' ? json.run_id : 'RUN-01'
         const fuelMassKg = Number.isFinite(Number(json.fuelMassKg ?? json.fuel_mass)) ? Number(json.fuelMassKg ?? json.fuel_mass) : 1.5
 
-        // MQ-7 Carbon Monoxide PPM
         const rawCoVal = Number(json.co_ppm ?? json.coPpm ?? json.co ?? json.mq7_ppm)
         const safeCoPpm = Number.isFinite(rawCoVal) && rawCoVal >= 0 && rawCoVal <= 1000 ? rawCoVal : 14
 
-        // Fuel Hopper Servo Actuation
         const hopperServoActive = Boolean(json.hopperServoActive ?? json.hopper_servo ?? json.servo_active)
         const feedCycles = Number.isFinite(Number(json.feedCycles ?? json.feed_cycles)) ? Number(json.feedCycles ?? json.feed_cycles) : undefined
-
-        // Cold-Side Fan PWM
         const coolingFanPwm = Number.isFinite(Number(json.fan_pwm ?? json.coolingFanPwm)) ? Number(json.fan_pwm ?? json.coolingFanPwm) : undefined
 
-        // 4-Channel Load Currents (mA)
         const channelCurrentsMa = Array.isArray(json.channel_currents)
           ? (json.channel_currents.map((v: any) => Number(v) || 0) as [number, number, number, number])
           : undefined
 
         this.state.sensorFault = sensorFault
 
-        const parsed = {
-          rawStoveTemp: safeStove,
-          rawColdFaceTemp: safeColdFace,
-          rawAmbientTemp: safeAmbient,
-          rawHumidity: safeHumidity,
-          rawBatteryVoltage: safeBattV,
-          rawBatteryCurrent: safeBattI,
-          rawTegVoltage: safeTegV,
-          rawTegCurrent: safeTegI,
-          rawCoPpm: safeCoPpm,
-          hopperServoActive,
-          feedCycles,
-          coolingFanPwm,
-          channelCurrentsMa,
-          isPhysicalCurrent,
-          feedstock,
-          runId,
-          fuelMassKg,
-          sensorFault,
-          relays: {
-            dcBus: Boolean(json.relays?.dcBus ?? json.dcBus ?? true),
-            lights: Boolean(json.relays?.lights ?? json.lights ?? true),
-            fans: Boolean(json.relays?.fans ?? json.fans ?? false),
-            aux: Boolean(json.relays?.aux ?? json.aux ?? false),
-          },
-          timestamp: Date.now(),
-          source,
-        }
-
         if (this.onDataCallback) {
-          this.onDataCallback(parsed)
+          this.onDataCallback({
+            rawStoveTemp: safeStove,
+            rawColdFaceTemp: safeColdFace,
+            rawAmbientTemp: safeAmbient,
+            rawHumidity: safeHumidity,
+            rawBatteryVoltage: safeBattV,
+            rawBatteryCurrent: safeBattI,
+            rawTegVoltage: safeTegV,
+            rawTegCurrent: safeTegI,
+            rawCoPpm: safeCoPpm,
+            hopperServoActive,
+            feedCycles,
+            coolingFanPwm,
+            channelCurrentsMa,
+            isPhysicalCurrent,
+            feedstock,
+            runId,
+            fuelMassKg,
+            sensorFault,
+            relays: {
+              dcBus: Boolean(json.relays?.dcBus ?? json.dcBus ?? true),
+              lights: Boolean(json.relays?.lights ?? json.lights ?? true),
+              fans: Boolean(json.relays?.fans ?? json.fans ?? false),
+              aux: Boolean(json.relays?.aux ?? json.aux ?? false),
+            },
+            timestamp: Date.now(),
+            source,
+          })
         }
         return
       }
 
-      // 2. Try parsing Comma Separated CSV:
-      // stoveTemp, coldFaceTemp, ambientTemp, humidity, batteryV, tegVoltage, tegCurrent, lights, fans
+      // 5. Parse comma-separated CSV
       if (line.includes(',')) {
         const parts = line.split(',').map((p) => p.trim())
-        if (parts.length >= 4) {
+        if (parts.length >= 4 && !Number.isNaN(parseFloat(parts[0]))) {
           const rawStove = parseFloat(parts[0])
           const rawCold = parseFloat(parts[1])
           const rawAmb = parseFloat(parts[2])
@@ -698,49 +1307,46 @@ export class HardwareBridge {
           const rawTegV = parseFloat(parts[5])
           const rawTegI = parseFloat(parts[6])
 
+          let sensorFault = false
           const safeStove = Number.isFinite(rawStove) && rawStove >= 0 && rawStove <= 350 ? rawStove : 25
           if (!Number.isFinite(rawStove) || rawStove > 350) sensorFault = true
 
           this.state.sensorFault = sensorFault
 
-          const parsed = {
-            rawStoveTemp: safeStove,
-            rawColdFaceTemp: Number.isFinite(rawCold) ? rawCold : undefined,
-            rawAmbientTemp: Number.isFinite(rawAmb) ? rawAmb : 28,
-            rawHumidity: Number.isFinite(rawHum) ? Math.min(100, Math.max(0, rawHum)) : 60,
-            rawBatteryVoltage: Number.isFinite(rawBattV) && rawBattV >= 7.0 ? rawBattV : 12.0,
-            rawTegVoltage: Number.isFinite(rawTegV) && rawTegV >= 0 ? rawTegV : 0,
-            rawTegCurrent: Number.isFinite(rawTegI) && rawTegI >= 0 ? rawTegI : 0,
-            sensorFault,
-            relays: {
-              dcBus: true,
-              lights: parts[7] === '1' || parts[7]?.toLowerCase() === 'true',
-              fans: parts[8] === '1' || parts[8]?.toLowerCase() === 'true',
-              aux: parts[9] === '1' || parts[9]?.toLowerCase() === 'true',
-            },
-            timestamp: Date.now(),
-            source,
-          }
-
           if (this.onDataCallback) {
-            this.onDataCallback(parsed)
+            this.onDataCallback({
+              rawStoveTemp: safeStove,
+              rawColdFaceTemp: Number.isFinite(rawCold) ? rawCold : undefined,
+              rawAmbientTemp: Number.isFinite(rawAmb) ? rawAmb : 28,
+              rawHumidity: Number.isFinite(rawHum) ? Math.min(100, Math.max(0, rawHum)) : 60,
+              rawBatteryVoltage: Number.isFinite(rawBattV) && rawBattV >= 6.0 ? rawBattV : 12.0,
+              rawTegVoltage: Number.isFinite(rawTegV) && rawTegV >= 0 ? rawTegV : 0,
+              rawTegCurrent: Number.isFinite(rawTegI) && rawTegI >= 0 ? rawTegI : 0,
+              sensorFault,
+              relays: {
+                dcBus: true,
+                lights: parts[7] === '1' || parts[7]?.toLowerCase() === 'true',
+                fans: parts[8] === '1' || parts[8]?.toLowerCase() === 'true',
+                aux: parts[9] === '1' || parts[9]?.toLowerCase() === 'true',
+              },
+              timestamp: Date.now(),
+              source,
+            })
           }
         }
       }
     } catch {
-      // Non-telemetry microcontroller string log
+      // Ignore non-telemetry banner lines
     }
   }
 
-  /**
-   * Send a command string to microcontroller over Serial, BLE, or WebSocket
-   */
   public async sendCommand(command: string): Promise<boolean> {
-    const formatted = command.endsWith('\n') ? command : command + '\n'
-    this.appendLog('out', command.trim())
+    const trimmed = command.trim()
+    if (!trimmed) return false
+    const formatted = trimmed + '\n'
+    this.appendLog('out', trimmed)
 
     try {
-      // 1. Serial writer
       if (this.port && this.port.writable) {
         const encoder = new TextEncoder()
         const writer = this.port.writable.getWriter()
@@ -749,14 +1355,12 @@ export class HardwareBridge {
         return true
       }
 
-      // 2. Bluetooth writer
       if (this.bleRxChar) {
         const encoder = new TextEncoder()
         await this.bleRxChar.writeValue(encoder.encode(formatted))
         return true
       }
 
-      // 3. WebSocket sender
       if (this.socket && this.socket.readyState === WebSocket.OPEN) {
         this.socket.send(formatted)
         return true
@@ -771,8 +1375,68 @@ export class HardwareBridge {
   }
 
   public async sendRelayCommand(relay: 'dcBus' | 'lights' | 'fans' | 'aux', state: boolean) {
+    if (relay === 'dcBus') {
+      return this.sendCommand(state ? 'c' : 'o')
+    }
     const cmd = JSON.stringify({ cmd: 'RELAY', relay, state: state ? 1 : 0 })
     return this.sendCommand(cmd)
+  }
+
+  // ── ESP32 Native Commands (thesis.ino) ──────────────────────────────────
+  public async sendAutoCharging(): Promise<boolean> {
+    return this.sendCommand('a')
+  }
+
+  public async sendForceChargingOn(): Promise<boolean> {
+    return this.sendCommand('c')
+  }
+
+  public async sendForceChargingOff(): Promise<boolean> {
+    return this.sendCommand('o')
+  }
+
+  public async sendClearOvercurrent(): Promise<boolean> {
+    return this.sendCommand('r')
+  }
+
+  public async sendZeroCurrent(): Promise<boolean> {
+    return this.sendCommand('k')
+  }
+
+  public async sendResetEnergy(): Promise<boolean> {
+    return this.sendCommand('z')
+  }
+
+  public async sendMuteBuzzer(): Promise<boolean> {
+    return this.sendCommand('m')
+  }
+
+  public async sendTestLedsBuzzer(): Promise<boolean> {
+    return this.sendCommand('t')
+  }
+
+  public async sendToggleOutputDetail(): Promise<boolean> {
+    return this.sendCommand('d')
+  }
+
+  public async sendPinCheck(): Promise<boolean> {
+    return this.sendCommand('v')
+  }
+
+  public async sendCalibrateBattery(volts: number): Promise<boolean> {
+    return this.sendCommand(`B${volts.toFixed(2)}`)
+  }
+
+  public async sendCalibrateTeg(volts: number): Promise<boolean> {
+    return this.sendCommand(`G${volts.toFixed(2)}`)
+  }
+
+  public async sendCalibrateCurrent(amps: number): Promise<boolean> {
+    return this.sendCommand(`I${amps.toFixed(2)}`)
+  }
+
+  public async sendResetCalibrations(): Promise<boolean> {
+    return this.sendCommand('X')
   }
 
   public async sendPulseFeedCommand(): Promise<boolean> {

@@ -9,6 +9,7 @@ import { ConnectionModal } from './components/ConnectionModal'
 import { IconDownload, IconCheckCircle } from './components/Icons'
 import {
   applyCalibration,
+  getOfflineTelemetry,
   loadCalibration,
   resetCalibration,
   saveCalibration,
@@ -181,25 +182,8 @@ export default function App() {
   // Calibration ref to avoid stale closure in hardware listeners
   const calibrationRef = useRef<CalibrationConfig>(calibration)
 
-  // Active Telemetry State
-  const [telemetry, setTelemetry] = useState<TelemetryData>(() => {
-    const dummyCal = loadCalibration()
-    return applyCalibration(
-      {
-        rawStoveTemp: 185.0,
-        rawAmbientTemp: 28.5,
-        rawHumidity: 68.0,
-        rawBatteryVoltage: 13.19,
-        rawTegVoltage: 5.2,
-        rawTegCurrent: 1.15,
-        relays: { dcBus: true, lights: true, fans: true, aux: false },
-        operatingHours: 1248,
-        systemHealthPct: 96,
-        source: 'simulated',
-      },
-      dummyCal
-    )
-  })
+  // Active Telemetry State - completely zeroed out until ESP32 connects
+  const [telemetry, setTelemetry] = useState<TelemetryData>(() => getOfflineTelemetry())
 
   useEffect(() => {
     calibrationRef.current = calibration
@@ -231,23 +215,19 @@ export default function App() {
       },
       (newHardwareState) => {
         setHardwareState(newHardwareState)
+        if (newHardwareState.status !== 'connected') {
+          // When ESP32 is disconnected or in standby, reset telemetry to offline zero values
+          setTelemetry(getOfflineTelemetry(calibrationRef.current))
+        }
+      },
+      (message, level, filMessage) => {
+        systemLogManager.addSystemLog(message, level || 'info', filMessage, 'esp32')
       }
     )
     bridgeRef.current = bridge
 
-    // 2. Initialize Simulation Engine
-    const sim = new SimulationEngine(calibrationRef.current, (simulatedData) => {
-      if (bridge.getState().status !== 'connected') {
-        setTelemetry(simulatedData)
-        historyManagerRef.current.addPoint(simulatedData)
-        setHistoryPoints(historyManagerRef.current.getPoints())
-      }
-    })
-    simRef.current = sim
-    sim.start()
-
+    // Simulation is not auto-started: dashboard strictly responds to physical ESP32
     return () => {
-      sim.stop()
       bridge.disconnectAll()
     }
   }, [])
@@ -315,42 +295,7 @@ export default function App() {
     }))
   }
 
-  // Fuel Hopper Servo Pulse Feed (Downlink Command {"cmd": "FEED_SERVO"})
-  const handlePulseFeed = async () => {
-    systemLogManager.addSystemLog(
-      'Manual fuel pulse triggered: Dispatched downlink command {"cmd": "FEED_SERVO"} to fuel hopper feed servo',
-      'info',
-      'Manu-manong pagpapakain ng gatong: Ipinadala ang utos na {"cmd": "FEED_SERVO"} sa servo ng hopper',
-      'action'
-    )
 
-    if (hardwareState.status === 'connected' && bridgeRef.current) {
-      await bridgeRef.current.sendPulseFeedCommand()
-    } else if (simRef.current) {
-      simRef.current.pulseServo()
-    }
-
-    // Set momentary visual active state on telemetry.fuelSystem
-    setTelemetry((prev) => ({
-      ...prev,
-      fuelSystem: {
-        ...prev.fuelSystem,
-        hopperServoActive: true,
-        feedCycles: (prev.fuelSystem?.feedCycles || 0) + 1,
-      },
-    }))
-
-    // Reset visual feed servo pulse after 2 seconds
-    setTimeout(() => {
-      setTelemetry((prev) => ({
-        ...prev,
-        fuelSystem: {
-          ...prev.fuelSystem,
-          hopperServoActive: false,
-        },
-      }))
-    }, 2000)
-  }
 
   // Calibration Actions
   const handleSaveCalibration = (updated: CalibrationConfig) => {
@@ -370,12 +315,12 @@ export default function App() {
     return false
   }
 
-  // Compute Alerts
-  const tooHot = telemetry.stoveTemp > calibration.stoveOverheatThreshold
-  const lowHeat = telemetry.stoveTemp < calibration.stoveLowHeatThreshold
-  const lowBattery = telemetry.batteryPct <= calibration.batteryCutoffPct
-  const hasAlert = tooHot || lowHeat || lowBattery
+  // Compute Alerts - Only active when physical ESP32 is connected
   const isLive = hardwareState.status === 'connected'
+  const tooHot = isLive && telemetry.stoveTemp > calibration.stoveOverheatThreshold
+  const lowHeat = isLive && telemetry.stoveTemp > 0 && telemetry.stoveTemp < calibration.stoveLowHeatThreshold
+  const lowBattery = isLive && telemetry.batteryPct > 0 && telemetry.batteryPct <= calibration.batteryCutoffPct
+  const hasAlert = tooHot || lowHeat || lowBattery
 
   // Edge-triggered threshold breaches logging (prevents spamming every second)
   const prevOverheatRef = useRef(false)
@@ -533,7 +478,6 @@ export default function App() {
               lowBattery={lowBattery}
               onToggleFans={handleToggleFans}
               onToggleDcBus={handleToggleDcBus}
-              onPulseFeed={handlePulseFeed}
               onScenarioChange={handleScenarioChange}
               onSimSpeedChange={setSimSpeed}
               onManualSlider={handleManualSlider}
@@ -556,6 +500,7 @@ export default function App() {
             <ServiceTab
               telemetry={telemetry}
               calibration={calibration}
+              bridge={bridgeRef.current}
               lang={lang}
               theme={theme}
               onSaveCalibration={handleSaveCalibration}

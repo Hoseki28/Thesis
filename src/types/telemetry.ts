@@ -16,6 +16,40 @@ export interface LoadChannel {
   currentMa: number
 }
 
+export interface Esp32HardwareStatus {
+  stateCode: number
+  stateName: string
+  stateReason: string
+  relayClosed: boolean
+  forceMode: 0 | 1 | 2
+  uptimeStr: string
+  pBatW: number
+  pHarvW: number
+  whTotal: number
+  whHarv: number
+  vTegPeak: number
+  hotFault: boolean
+  coldFault: boolean
+  hotWhy: string
+  coldWhy: string
+  dhtOk: boolean
+  ts1Tripped: boolean
+  overcurrentLatched: boolean
+  batHot: boolean
+  vOpenNow: number
+  vCloseNow: number
+  vHardNow: number
+  batTrim: number
+  tegTrim: number
+  curTrim: number
+  acsVolts: number
+  acsZero: number
+  alarmsText: string
+  activeAlarms: string[]
+  note?: string
+  inaOk?: boolean
+}
+
 export interface TelemetryData {
   // Raw measurements (ADC / Bus raw)
   rawStoveTemp: number
@@ -27,6 +61,46 @@ export interface TelemetryData {
   rawTegVoltage: number
   rawTegCurrent: number
   rawCoPpm?: number
+
+  // Direct ESP32 Hardware Truth fields (thesis.ino)
+  vTeg?: number
+  vBat?: number
+  iBat?: number
+  pBat?: number
+  pHarv?: number
+  whTotal?: number
+  whHarv?: number
+  vTegPeak?: number
+  tHot?: number
+  tCold?: number
+  dT?: number
+  tAmb?: number
+  hum?: number
+  hotFault?: boolean
+  coldFault?: boolean
+  hotWhy?: string
+  coldWhy?: string
+  dhtOk?: boolean
+  ts1Tripped?: boolean
+  relayOn?: boolean
+  stateCode?: number
+  stateName?: string
+  stateReason?: string
+  forceMode?: 0 | 1 | 2
+  alarmsText?: string
+  activeAlarms?: string[]
+  rawBat?: number
+  rawTeg?: number
+  rawI?: number
+  acsVolts?: number
+  acsZero?: number
+  batTrim?: number
+  tegTrim?: number
+  curTrim?: number
+  vOpenNow?: number
+  vCloseNow?: number
+  vHardNow?: number
+  inaOk?: boolean
 
   // Calibrated measurements
   stoveTemp: number        // °C (MAX31855 Thermocouple hot junction)
@@ -111,6 +185,7 @@ export interface TelemetryData {
   sensorFault?: boolean
   operatingHours: number
   systemHealthPct: number
+  esp32?: Esp32HardwareStatus
 
   timestamp: number
   source: DataSource
@@ -125,12 +200,13 @@ export interface CalibrationConfig {
   dhtTempOffset: number
   dhtHumidityOffset: number
 
-  // LiFePO4 Voltage Curve Profile: 10.0V (0% Cutoff) to 14.6V (100% Full)
+  // LiFePO4 / SLA Voltage Curve Profile: 10.0V (0% Cutoff) to 14.6V (100% Full)
   batteryVMin: number
   batteryVMax: number
   batteryVoltageGain: number
   batteryCutoffPct: number
 
+  tegVoltageGain?: number
   tegCurrentZeroOffset: number
   tegCurrentGain: number
 

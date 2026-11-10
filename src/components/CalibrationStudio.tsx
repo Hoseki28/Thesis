@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { generateCppCalibrationHeader } from '../services/calibrationStorage'
+import { HardwareBridge } from '../services/hardwareBridge'
 import { CalibrationConfig, Lang, TelemetryData } from '../types/telemetry'
 import {
   Sliders,
@@ -21,6 +22,7 @@ interface CalibrationStudioProps {
   onSaveCalibration: (updated: CalibrationConfig) => void
   onResetDefaults: () => void
   onSendToHardware?: (cal: CalibrationConfig) => Promise<boolean>
+  bridge?: HardwareBridge | null
 }
 
 export function CalibrationStudio({
@@ -31,12 +33,18 @@ export function CalibrationStudio({
   onSaveCalibration,
   onResetDefaults,
   onSendToHardware,
+  bridge,
 }: CalibrationStudioProps) {
   const isFil = lang === 'fil'
   const isDark = theme === 'dark'
   const [form, setForm] = useState<CalibrationConfig>({ ...config })
   const [savedNotice, setSavedNotice] = useState<string | null>(null)
   const [copiedNotice, setCopiedNotice] = useState<boolean>(false)
+
+  // Multimeter manual input values for ESP32 B / G / I serial calibration
+  const [multiBatV, setMultiBatV] = useState<string>('10.24')
+  const [multiTegV, setMultiTegV] = useState<string>('13.10')
+  const [multiCurA, setMultiCurA] = useState<string>('0.50')
 
   const handleChange = (key: keyof CalibrationConfig, val: number) => {
     setForm((prev) => ({ ...prev, [key]: val }))
@@ -52,15 +60,90 @@ export function CalibrationStudio({
     setTimeout(() => setSavedNotice(null), 3500)
   }
 
-  const handleTareCurrent = () => {
-    const newTare = currentTelemetry.rawTegCurrent
-    handleChange('tegCurrentZeroOffset', newTare)
-    setSavedNotice(
-      isFil
-        ? `Na-zero ang ACS712 tare sa ${newTare.toFixed(2)}A!`
-        : `ACS712 current zero-drift tared to ${newTare.toFixed(2)}A!`
-    )
+  const handleTareCurrent = async () => {
+    if (bridge) {
+      await bridge.sendZeroCurrent()
+      setSavedNotice(
+        isFil
+          ? 'Ipinadala ang command na k (zero current) sa ESP32!'
+          : 'Dispatched k (zero current) command to ESP32!'
+      )
+    } else {
+      const newTare = currentTelemetry.rawTegCurrent
+      handleChange('tegCurrentZeroOffset', newTare)
+      setSavedNotice(
+        isFil
+          ? `Na-zero ang ACS712 tare sa ${newTare.toFixed(2)}A!`
+          : `ACS712 current zero-drift tared to ${newTare.toFixed(2)}A!`
+      )
+    }
     setTimeout(() => setSavedNotice(null), 3500)
+  }
+
+  const handleSendMultimeterBat = async () => {
+    const val = parseFloat(multiBatV)
+    if (!Number.isFinite(val) || val < 3 || val > 60) return
+    if (bridge) {
+      await bridge.sendCalibrateBattery(val)
+      setSavedNotice(
+        isFil
+          ? `Ipinadala ang B${val.toFixed(2)} sa ESP32!`
+          : `Dispatched B${val.toFixed(2)} battery calibration to ESP32!`
+      )
+      setTimeout(() => setSavedNotice(null), 3500)
+    }
+  }
+
+  const handleSendMultimeterTeg = async () => {
+    const val = parseFloat(multiTegV)
+    if (!Number.isFinite(val) || val < 3 || val > 60) return
+    if (bridge) {
+      await bridge.sendCalibrateTeg(val)
+      setSavedNotice(
+        isFil
+          ? `Ipinadala ang G${val.toFixed(2)} sa ESP32!`
+          : `Dispatched G${val.toFixed(2)} TEG calibration to ESP32!`
+      )
+      setTimeout(() => setSavedNotice(null), 3500)
+    }
+  }
+
+  const handleSendMultimeterCurrent = async () => {
+    const val = parseFloat(multiCurA)
+    if (!Number.isFinite(val) || val < 0.1 || val > 10) return
+    if (bridge) {
+      await bridge.sendCalibrateCurrent(val)
+      setSavedNotice(
+        isFil
+          ? `Ipinadala ang I${val.toFixed(2)} sa ESP32!`
+          : `Dispatched I${val.toFixed(2)} current calibration to ESP32!`
+      )
+      setTimeout(() => setSavedNotice(null), 3500)
+    }
+  }
+
+  const handleSendPinCheck = async () => {
+    if (bridge) {
+      await bridge.sendPinCheck()
+      setSavedNotice(
+        isFil
+          ? 'Ipinadala ang command na v (pin check). Tingnan ang Terminal!'
+          : 'Dispatched v (pin check) command. Check Serial Terminal!'
+      )
+      setTimeout(() => setSavedNotice(null), 3500)
+    }
+  }
+
+  const handleResetEsp32Flash = async () => {
+    if (bridge) {
+      await bridge.sendResetCalibrations()
+      setSavedNotice(
+        isFil
+          ? 'Ipinadala ang command na X (reset flash calibrations) sa ESP32!'
+          : 'Dispatched X (reset flash calibrations) command to ESP32!'
+      )
+      setTimeout(() => setSavedNotice(null), 3500)
+    }
   }
 
   const handleCalibrateIceBath = () => {
@@ -110,6 +193,16 @@ export function CalibrationStudio({
       setTimeout(() => setSavedNotice(null), 3500)
     }
   }
+
+  // Live readings from thesis.ino state
+  const rawBatVal = currentTelemetry.rawBat ?? currentTelemetry.rawBatteryVoltage ?? 12.65
+  const rawTegVal = currentTelemetry.rawTeg ?? currentTelemetry.rawTegVoltage ?? 0.0
+  const rawIVal = currentTelemetry.rawI ?? currentTelemetry.rawTegCurrent ?? 0.0
+  const batTrimVal = currentTelemetry.batTrim ?? form.batteryVoltageGain ?? 1.028
+  const tegTrimVal = currentTelemetry.tegTrim ?? 1.052
+  const curTrimVal = currentTelemetry.curTrim ?? form.tegCurrentGain ?? 1.0
+  const acsZeroVal = currentTelemetry.acsZero ?? 2.5
+  const acsVoltsVal = currentTelemetry.acsVolts ?? 2.5
 
   // Industrial workbench input styling (Dark Mode Standard)
   const baseInputClass =
@@ -166,6 +259,170 @@ export function CalibrationStudio({
             <span>{savedNotice}</span>
           </div>
         )}
+      </section>
+
+      {/* ── LIVE HARDWARE TRIMS & ADC VALUES (thesis.ino) ───────────── */}
+      <section className={`${cardClass} flex flex-col gap-3`}>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <BatteryCharging className="w-4 h-4 text-[#00E676]" strokeWidth={1.75} />
+            <h3 className={`text-xs font-semibold ${isDark ? 'text-zinc-100' : 'text-zinc-900'}`}>
+              {isFil ? 'Live ESP32 ADC at Calibration Factors' : 'Live ESP32 ADCs & Calibration Factors'}
+            </h3>
+          </div>
+          <span className={`text-[10px] font-mono ${isDark ? 'text-zinc-400' : 'text-zinc-500'}`}>
+            NVS Flash Active
+          </span>
+        </div>
+
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs font-mono">
+          <div className={`p-2.5 rounded-xl border flex flex-col gap-0.5 ${isDark ? 'bg-zinc-900/40 border-zinc-800' : 'bg-zinc-50 border-zinc-200'}`}>
+            <span className={`text-[10px] uppercase font-bold ${isDark ? 'text-zinc-400' : 'text-zinc-500'}`}>Battery (GPIO32)</span>
+            <span className="font-bold text-sm tabular-nums text-zinc-100">{rawBatVal.toFixed(2)} V</span>
+            <span className="text-[10px] text-emerald-400">Trim: x{batTrimVal.toFixed(4)}</span>
+          </div>
+
+          <div className={`p-2.5 rounded-xl border flex flex-col gap-0.5 ${isDark ? 'bg-zinc-900/40 border-zinc-800' : 'bg-zinc-50 border-zinc-200'}`}>
+            <span className={`text-[10px] uppercase font-bold ${isDark ? 'text-zinc-400' : 'text-zinc-500'}`}>TEG (GPIO33)</span>
+            <span className="font-bold text-sm tabular-nums text-zinc-100">{rawTegVal.toFixed(2)} V</span>
+            <span className="text-[10px] text-emerald-400">Trim: x{tegTrimVal.toFixed(4)}</span>
+          </div>
+
+          <div className={`p-2.5 rounded-xl border flex flex-col gap-0.5 ${isDark ? 'bg-zinc-900/40 border-zinc-800' : 'bg-zinc-50 border-zinc-200'}`}>
+            <span className={`text-[10px] uppercase font-bold ${isDark ? 'text-zinc-400' : 'text-zinc-500'}`}>
+              ACS712 Current (GPIO16)
+            </span>
+            <span className="font-bold text-sm tabular-nums text-zinc-100">{rawIVal.toFixed(2)} A</span>
+            <span className="text-[10px] text-emerald-400">Trim: x{curTrimVal.toFixed(4)}</span>
+          </div>
+
+          <div className={`p-2.5 rounded-xl border flex flex-col gap-0.5 ${isDark ? 'bg-zinc-900/40 border-zinc-800' : 'bg-zinc-50 border-zinc-200'}`}>
+            <span className={`text-[10px] uppercase font-bold ${isDark ? 'text-zinc-400' : 'text-zinc-500'}`}>
+              ACS Zero Point
+            </span>
+            <span className="font-bold text-sm tabular-nums text-zinc-100">
+              {acsZeroVal.toFixed(3)} V
+            </span>
+            <span className="text-[10px] text-zinc-400">
+              Sensor: {acsVoltsVal.toFixed(3)} V
+            </span>
+          </div>
+        </div>
+      </section>
+
+      {/* ── MULTIMETER SERIAL CALIBRATION (Commands B, G, I, k, v, X) ─── */}
+      <section className={`${cardClass} flex flex-col gap-3.5`}>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Sliders className="w-4 h-4 text-emerald-400" strokeWidth={1.75} />
+            <h3 className={`text-xs font-semibold ${isDark ? 'text-zinc-100' : 'text-zinc-900'}`}>
+              {isFil ? 'Multimeter Calibration Commands (B / G / I / k / v / X)' : 'Multimeter Calibration Commands (B / G / I / k / v / X)'}
+            </h3>
+          </div>
+          <span className={`text-xs font-mono ${isDark ? 'text-zinc-400' : 'text-zinc-500'}`}>
+            115200 baud
+          </span>
+        </div>
+
+        {/* Multimeter Battery (B) */}
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+          <div className="flex-1">
+            <label className={`text-[11px] font-medium block mb-1 ${isDark ? 'text-zinc-400' : 'text-zinc-600'}`}>
+              Multimeter Battery Volts (Cmd B):
+            </label>
+            <input
+              type="number"
+              step="0.01"
+              value={multiBatV}
+              onChange={(e) => setMultiBatV(e.target.value)}
+              placeholder="e.g. 12.65"
+              className={fullInputClass}
+            />
+          </div>
+          <button
+            type="button"
+            onClick={handleSendMultimeterBat}
+            className="h-9 px-4 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-medium cursor-pointer transition-colors sm:self-end"
+          >
+            Send B{multiBatV}
+          </button>
+        </div>
+
+        {/* Multimeter TEG (G) */}
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+          <div className="flex-1">
+            <label className={`text-[11px] font-medium block mb-1 ${isDark ? 'text-zinc-400' : 'text-zinc-600'}`}>
+              Multimeter TEG Volts (Cmd G):
+            </label>
+            <input
+              type="number"
+              step="0.01"
+              value={multiTegV}
+              onChange={(e) => setMultiTegV(e.target.value)}
+              placeholder="e.g. 14.80"
+              className={fullInputClass}
+            />
+          </div>
+          <button
+            type="button"
+            onClick={handleSendMultimeterTeg}
+            className="h-9 px-4 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-medium cursor-pointer transition-colors sm:self-end"
+          >
+            Send G{multiTegV}
+          </button>
+        </div>
+
+        {/* Multimeter Current (I) */}
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+          <div className="flex-1">
+            <label className={`text-[11px] font-medium block mb-1 ${isDark ? 'text-zinc-400' : 'text-zinc-600'}`}>
+              Multimeter Charge Current Amps (Cmd I - while charging):
+            </label>
+            <input
+              type="number"
+              step="0.01"
+              value={multiCurA}
+              onChange={(e) => setMultiCurA(e.target.value)}
+              placeholder="e.g. 0.50"
+              className={fullInputClass}
+            />
+          </div>
+          <button
+            type="button"
+            onClick={handleSendMultimeterCurrent}
+            className="h-9 px-4 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-medium cursor-pointer transition-colors sm:self-end"
+          >
+            Send I{multiCurA}
+          </button>
+        </div>
+
+        {/* Action strip: k, v, X */}
+        <div className="grid grid-cols-3 gap-2 pt-1 border-t border-zinc-800">
+          <button
+            type="button"
+            onClick={handleTareCurrent}
+            className="h-9 px-2 rounded-lg border text-[11px] font-medium cursor-pointer transition-colors flex items-center justify-center bg-zinc-900 hover:bg-zinc-850 border-zinc-800 text-zinc-200"
+            title="Re-zero ACS712 sensor (only when relay is open)"
+          >
+            Cmd k (Zero Current)
+          </button>
+          <button
+            type="button"
+            onClick={handleSendPinCheck}
+            className="h-9 px-2 rounded-lg border text-[11px] font-medium cursor-pointer transition-colors flex items-center justify-center bg-zinc-900 hover:bg-zinc-850 border-zinc-800 text-zinc-200"
+            title="Print raw GPIO pin voltages (GPIO32, 33, 15) to Serial Terminal"
+          >
+            Cmd v (Pin Check)
+          </button>
+          <button
+            type="button"
+            onClick={handleResetEsp32Flash}
+            className="h-9 px-2 rounded-lg border text-[11px] font-medium cursor-pointer transition-colors flex items-center justify-center bg-zinc-900 hover:bg-zinc-850 border-zinc-800 text-rose-400"
+            title="Reset all calibration trims in ESP32 flash to default"
+          >
+            Cmd X (Reset Cal)
+          </button>
+        </div>
       </section>
 
       {/* ── 1. STOVE THERMOCOUPLE CALIBRATION ────────────────────────── */}

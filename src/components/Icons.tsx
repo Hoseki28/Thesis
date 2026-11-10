@@ -553,6 +553,24 @@ export function IconSignal({ size = 18, className = '', strokeWidth = 1.8, ...pr
   )
 }
 
+export function IconShield({ size = 18, className = '', strokeWidth = 1.8, ...props }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" className={className} {...props}>
+      <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+    </svg>
+  )
+}
+
+export function IconVolume2({ size = 18, className = '', strokeWidth = 1.8, ...props }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" className={className} {...props}>
+      <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+      <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
+      <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
+    </svg>
+  )
+}
+
 // Lucide-compatible exports
 export {
   IconCheck as Check,
@@ -568,5 +586,7 @@ export {
   IconGauge as Gauge,
   IconBluetooth as Bluetooth,
   IconWifi as Wifi,
+  IconShield as Shield,
+  IconVolume2 as Volume2,
 }
 

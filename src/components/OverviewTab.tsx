@@ -1,4 +1,3 @@
-import { useState } from 'react'
 import { Lang, ScenarioPreset, TelemetryData } from '../types/telemetry'
 import {
   IconShieldCheck,
@@ -8,9 +7,6 @@ import {
   IconFlame,
   IconThermometer,
   IconColdSink,
-  IconSliders,
-  IconGas,
-  IconFeedServo,
 } from './Icons'
 
 interface OverviewTabProps {
@@ -26,7 +22,6 @@ interface OverviewTabProps {
   lowBattery: boolean
   onToggleFans: () => void
   onToggleDcBus: () => void
-  onPulseFeed?: () => void
   onScenarioChange: (preset: ScenarioPreset) => void
   onSimSpeedChange: (speed: number) => void
   onManualSlider: (key: 'stoveTemp' | 'ambientTemp' | 'humidity' | 'batteryPct', val: number) => void
@@ -45,75 +40,53 @@ export function OverviewTab({
   lowBattery,
   onToggleFans,
   onToggleDcBus,
-  onPulseFeed,
   onScenarioChange,
   onSimSpeedChange,
   onManualSlider,
 }: OverviewTabProps) {
   const isFil = lang === 'fil'
   const isDark = theme === 'dark'
-  const [showSliders, setShowSliders] = useState<boolean>(false)
+  const isConnected = isLive
 
   // Delta T (Seebeck gradient)
   const deltaT = Number.isFinite(telemetry.deltaT)
     ? telemetry.deltaT
     : Math.max(0, Math.round((telemetry.stoveTemp - (telemetry.coldFaceTemp || telemetry.ambientTemp)) * 10) / 10)
 
-  // Safety & Environment metrics
-  const coPpm = Number.isFinite(telemetry.safety?.coPpm)
-    ? telemetry.safety.coPpm
-    : Number.isFinite(telemetry.rawCoPpm)
-    ? telemetry.rawCoPpm
-    : 12.4
-  const ambientTempC = Number.isFinite(telemetry.ambient?.tempC)
+  // Ambient temperature and humidity (DHT22 on GPIO23)
+  const ambientTempC = Number.isFinite(telemetry.tAmb)
+    ? (telemetry.tAmb as number)
+    : Number.isFinite(telemetry.ambient?.tempC)
     ? telemetry.ambient.tempC
     : Number.isFinite(telemetry.ambientTemp)
     ? telemetry.ambientTemp
     : 28.5
-  const ambientHumPct = Number.isFinite(telemetry.ambient?.humidityPct)
+  const ambientHumPct = Number.isFinite(telemetry.hum)
+    ? (telemetry.hum as number)
+    : Number.isFinite(telemetry.ambient?.humidityPct)
     ? telemetry.ambient.humidityPct
     : Number.isFinite(telemetry.humidity)
     ? telemetry.humidity
     : 68.0
 
-  // CO Alert status styling (Green <50, Amber 50-100, Red >100)
-  const coColorClass =
-    coPpm >= 100
-      ? 'text-rose-400'
-      : coPpm >= 50
-      ? 'text-amber-400'
-      : 'text-[#00E676]'
-  const coBadgeBorderClass =
-    coPpm >= 100
-      ? 'border-rose-500/50 bg-rose-500/20 text-rose-300'
-      : coPpm >= 50
-      ? 'border-amber-500/50 bg-amber-500/20 text-amber-300'
-      : 'border-emerald-500/40 bg-emerald-500/10 text-emerald-400'
-  const coStatusLabel = isFil
-    ? coPpm >= 100
-      ? 'ALARMA SA CO'
-      : coPpm >= 50
-      ? 'BABALA SA CO'
-      : 'LIGTAS NA HANGIN'
-    : coPpm >= 100
-    ? 'CO CRITICAL ALARM'
-    : coPpm >= 50
-    ? 'CO WARNING'
-    : 'NOMINAL AIR'
+  // Real ESP32 Hardware State & Alarms (thesis.ino)
+  const espStateName = (telemetry.stateName || telemetry.esp32?.stateName || '').trim()
+  const espAlarms = telemetry.activeAlarms || telemetry.esp32?.activeAlarms || []
+  const hasCriticalAlarm =
+    tooHot ||
+    lowBattery ||
+    Boolean(telemetry.ts1Tripped) ||
+    Boolean(telemetry.esp32?.overcurrentLatched) ||
+    Boolean(telemetry.esp32?.batHot) ||
+    espAlarms.some((a) => a.includes('over 230') || a.includes('over 60') || a.includes('over 45') || a.includes('overcurrent') || a.includes('TS1'))
 
-  // Fuel Hopper status
-  const isHopperActive = Boolean(telemetry.fuelSystem?.hopperServoActive)
-  const feedCycles = telemetry.fuelSystem?.feedCycles ?? 14
-
-  // System status text and colors
-  const statusText = isFil
-    ? tooHot
-      ? 'BABALA: SOBRANG INIT NG KALAN'
-      : lowBattery
-      ? 'BABALA: MABABANG BATERYA CUTOFF'
-      : lowHeat
-      ? 'KULANG SA INIT: MAHINANG APOY'
-      : 'MAAYOS ANG SISTEMA: GUMAGANA'
+  // System status text and colors mapped to thesis.ino state machine
+  const statusText = !isConnected
+    ? isFil
+      ? 'HINDI NAKAKONEKTA: IKABIT ANG ESP32 SA USB PORT'
+      : 'DISCONNECTED: CONNECT ESP32 VIA USB SERIAL'
+    : espStateName
+    ? `STATE: ${espStateName}${espAlarms.length > 0 ? ` (${espAlarms[0]})` : ''}`
     : tooHot
     ? 'SYSTEM ALERT: CORE OVERHEAT'
     : lowBattery
@@ -122,13 +95,25 @@ export function OverviewTab({
     ? 'SYSTEM DEFICIT: LOW FLAME'
     : 'SYSTEM GOOD: RUNNING'
 
-  const statusBorder = hasAlert
-    ? tooHot || lowBattery
+  const statusBorder = !isConnected
+    ? isDark
+      ? 'border-zinc-800 text-zinc-400 bg-zinc-900/40'
+      : 'border-zinc-300 text-zinc-500 bg-zinc-100'
+    : hasCriticalAlarm || hasAlert
+    ? hasCriticalAlarm || tooHot || lowBattery
       ? 'border-rose-500 text-rose-400 bg-rose-950/20'
       : 'border-amber-500 text-amber-400 bg-amber-950/20'
     : isDark
     ? 'border-[#00E676] text-[#00E676] bg-[#00E676]/10'
     : 'border-emerald-500 text-emerald-600 bg-emerald-50'
+
+  const vBatLive = isConnected ? (telemetry.vBat ?? telemetry.batteryVoltage ?? 0.0) : 0.0
+  const vTegLive = isConnected ? (telemetry.vTeg ?? telemetry.tegVoltage ?? 0.0) : 0.0
+  const iBatLive = isConnected ? (telemetry.iBat ?? telemetry.rawTegCurrent ?? 0.0) : 0.0
+  const pBatLive = isConnected ? (telemetry.pBat ?? Math.round(vBatLive * iBatLive * 10) / 10) : 0.0
+  const pHarvLive = isConnected ? (telemetry.pHarv ?? (telemetry.tegPower > 0 ? telemetry.tegPower : Math.round(vTegLive * iBatLive * 10) / 10)) : 0.0
+  const whHarvLive = isConnected ? (telemetry.whHarv ?? 0.0) : 0.0
+  const isRelayClosed = isConnected ? Boolean(telemetry.relayOn ?? telemetry.relays.dcBus) : false
 
   return (
     <div className="flex flex-col gap-3 font-sans">
@@ -141,8 +126,8 @@ export function OverviewTab({
           <span>{statusText}</span>
         </div>
 
-        {isLive && (
-          <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 font-bold uppercase">
+        {isConnected && (
+          <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 font-bold uppercase animate-pulse">
             LIVE HARDWARE
           </span>
         )}
@@ -159,10 +144,12 @@ export function OverviewTab({
         <div className="flex items-center justify-between">
           <div>
             <h2 id="dc-main-power-heading" className={`text-xs font-black uppercase tracking-wider block ${isDark ? 'text-white' : 'text-zinc-900'}`}>
-              {isFil ? 'PANGUNAHING KURYENTE (DC)' : 'DC MAIN POWER'}
+              {isFil ? 'KONTROL NG CHARGER RELAY (GPIO14)' : 'CHARGER RELAY (GPIO14)'}
             </h2>
             <span className={`text-[10px] mt-0.5 block ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-500'}`}>
-              {isFil ? 'Pangunahing Switch ng Pagkarga' : 'Master Load Switch'}
+              {!isConnected
+                ? (isFil ? 'Hindi nakakonekta ang ESP32 · Naka-standby' : 'ESP32 not connected · Standby')
+                : (telemetry.stateReason || (isRelayClosed ? (isFil ? 'Konektado ang TEG · Nagkakarga' : 'TEG Connected · Charging Active') : (isFil ? 'Nakabukas ang relay · Nakahiwalay' : 'Relay Open · Disconnected')))}
             </span>
           </div>
 
@@ -170,16 +157,16 @@ export function OverviewTab({
           <button
             type="button"
             role="switch"
-            aria-checked={telemetry.relays.dcBus}
+            aria-checked={isRelayClosed}
             onClick={onToggleDcBus}
             className={`w-14 h-8 rounded-full p-1 transition-colors cursor-pointer flex items-center ${
-              telemetry.relays.dcBus ? 'bg-[#00E676]' : isDark ? 'bg-[#1E242B]' : 'bg-zinc-300'
+              isRelayClosed ? 'bg-[#00E676]' : isDark ? 'bg-[#1E242B]' : 'bg-zinc-300'
             }`}
-            aria-label="Toggle DC Main Power Switch"
+            aria-label="Toggle Charger Relay Switch"
           >
             <div
               className={`w-6 h-6 bg-white rounded-full shadow-md transform transition-transform duration-200 ease-in-out ${
-                telemetry.relays.dcBus ? 'translate-x-6' : 'translate-x-0'
+                isRelayClosed ? 'translate-x-6' : 'translate-x-0'
               }`}
             />
           </button>
@@ -191,16 +178,16 @@ export function OverviewTab({
         }`}>
           <div className="flex items-center justify-between">
             <span className={`text-[10px] font-bold uppercase tracking-wider ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-500'}`}>
-              {isFil ? 'KASALUKUYANG KARGA' : 'CURRENT LOAD'}
+              {isFil ? 'KASALUKUYANG KURYENTE AT LAKAS' : 'CHARGE CURRENT & POWER'}
             </span>
-            <IconPowerCircle size={16} className={telemetry.relays.dcBus ? 'text-[#00E676]' : 'text-zinc-400'} />
+            <IconPowerCircle size={16} className={isRelayClosed ? 'text-[#00E676]' : 'text-zinc-400'} />
           </div>
           <span className={`text-[9px] ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-400'}`}>
-            {isFil ? 'Tunay na Paggamit' : 'Realtime Usage'}
+            TEG CURRENT: {iBatLive.toFixed(2)}A · TEG V: {vTegLive.toFixed(1)}V · Wh: {whHarvLive.toFixed(3)}
           </span>
           <div className="flex items-baseline mt-1">
             <span className={`text-2xl font-black font-mono tabular-nums tracking-tight ${isDark ? 'text-white' : 'text-zinc-900'}`}>
-              {telemetry.relays.dcBus ? telemetry.loadPower.toFixed(1) : '0.0'}
+              {isRelayClosed ? pHarvLive.toFixed(1) : '0.0'}
             </span>
             <span className={`text-xs font-normal ml-1 ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-500'}`}>W</span>
           </div>
@@ -213,18 +200,18 @@ export function OverviewTab({
             isDark ? 'bg-[#0B0F12] border-emerald-500/30' : 'bg-emerald-50/70 border-emerald-200'
           }`}>
             <div className="flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-[#00E676] animate-pulse" />
+              <span className={`w-2 h-2 rounded-full ${isRelayClosed ? 'bg-[#00E676] animate-pulse' : 'bg-zinc-600'}`} />
               <div>
                 <span className={`text-[11px] font-bold block leading-tight ${isDark ? 'text-white' : 'text-zinc-900'}`}>
-                  {isFil ? '12V Ilaw ng Sakuna (Critical)' : '12V Emergency Light'}
+                  {isFil ? 'ESP32 State Machine' : 'ESP32 State Machine'}
                 </span>
                 <span className="text-[9px] font-mono text-[#00E676] font-bold tracking-tight">
-                  {isFil ? 'TIER 1 · HINDI MAIBUBUKOD' : 'TIER 1 · PRIMARY NON-SHEDDABLE'}
+                  {isConnected ? `${espStateName || (isRelayClosed ? 'CHARGING' : 'STANDBY')} (GPIO14: ${isRelayClosed ? 'CLOSED' : 'OPEN'})` : 'OFFLINE (GPIO14: OPEN)'}
                 </span>
               </div>
             </div>
-            <span className="text-[9px] font-mono px-2 py-0.5 rounded bg-[#00E676]/20 text-[#00E676] font-black uppercase">
-              {isFil ? 'LOCKED ON' : 'GUARDED ON'}
+            <span className={`text-[9px] font-mono px-2 py-0.5 rounded font-black uppercase ${isConnected && isRelayClosed ? 'bg-[#00E676]/20 text-[#00E676]' : 'bg-zinc-800 text-zinc-400'}`}>
+              {isConnected ? (isRelayClosed ? 'CHARGING' : 'HOLD/OFF') : 'DISCONNECTED'}
             </span>
           </div>
 
@@ -234,14 +221,12 @@ export function OverviewTab({
           }`}>
             <div>
               <span className={`text-[11px] font-bold block leading-tight ${isDark ? 'text-white' : 'text-zinc-900'}`}>
-                {isFil ? '12V DC Fans & USB (Aux)' : '12V DC Fans & 5V USB'}
+                {isFil ? 'Mga Limit ng Boltahe (-18mV/°C)' : 'Dynamic Voltage Limits (-18mV/°C)'}
               </span>
               <span className={`text-[9px] font-mono tracking-tight ${
                 telemetry.auxLockout ? 'text-rose-400 font-bold' : isDark ? 'text-[#9CA3AF]' : 'text-zinc-500'
               }`}>
-                {telemetry.auxLockout
-                  ? (isFil ? 'TIER 2 · NAKA-LOCKOUT SA MABABANG BATT' : 'TIER 2 · LOW BATT LOCKOUT')
-                  : (isFil ? 'TIER 2 · MAIBUBUKOD NA KARGA' : 'TIER 2 · SECONDARY SHEDDABLE')}
+                Open: {(telemetry.vOpenNow ?? 14.4).toFixed(2)}V · Close: {(telemetry.vCloseNow ?? 13.6).toFixed(2)}V · Hard: {(telemetry.vHardNow ?? 14.6).toFixed(2)}V
               </span>
             </div>
 
@@ -281,13 +266,15 @@ export function OverviewTab({
           <div className="flex items-center gap-1.5">
             <IconClock size={16} className="text-[#00E676]" />
             <h2 id="run-hours-heading" className={`text-xs font-bold uppercase tracking-wider ${isDark ? 'text-white' : 'text-zinc-900'}`}>
-              {isFil ? 'ORAS NG PAG-ANDAR' : 'RUN HOURS'}
+              {isFil ? 'ORAS NG PAG-ANDAR (UPTIME)' : 'SESSION UPTIME & ENERGY'}
             </h2>
           </div>
           <div className="flex items-baseline">
-            <span className={`text-lg font-black font-mono ${isDark ? 'text-white' : 'text-zinc-900'}`}>1248</span>
+            <span className={`text-lg font-black font-mono ${isDark ? 'text-white' : 'text-zinc-900'}`}>
+              {isConnected ? (telemetry.esp32?.uptimeStr || '00:00:00') : '--:--:--'}
+            </span>
             <span className={`text-[10px] font-bold ml-1 ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-500'}`}>
-              {isFil ? 'ORAS' : 'HRS'}
+              PHT
             </span>
           </div>
         </div>
@@ -295,18 +282,18 @@ export function OverviewTab({
         {/* Progress Line */}
         <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-wider">
           <span className={isDark ? 'text-[#9CA3AF]' : 'text-zinc-500'}>
-            {isFil ? 'PAG-USAD NG PAGSUSURI' : 'INSPECTION PROGRESS'}
+            {isFil ? 'NA-HARVEST NA ENERHIYA' : 'HARVESTED ENERGY'}
           </span>
-          <span className="text-[#00E676] font-mono">75%</span>
+          <span className="text-[#00E676] font-mono">{whHarvLive.toFixed(3)} Wh</span>
         </div>
 
         {/* Progress Bar */}
         <div className={`w-full h-2.5 rounded-full overflow-hidden ${isDark ? 'bg-[#1E242B]' : 'bg-zinc-200'}`}>
           <div
             className="bg-[#00E676] h-full rounded-full transition-all duration-500"
-            style={{ width: '75%' }}
+            style={{ width: `${isConnected ? Math.min(100, Math.round((vBatLive / 14.4) * 100)) : 0}%` }}
             role="progressbar"
-            aria-valuenow={75}
+            aria-valuenow={isConnected ? Math.min(100, Math.round((vBatLive / 14.4) * 100)) : 0}
             aria-valuemin={0}
             aria-valuemax={100}
           />
@@ -314,13 +301,15 @@ export function OverviewTab({
 
         {/* Bottom Note */}
         <span className={`text-[9px] ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-500'}`}>
-          {isFil ? 'Susunod na pag-aayos sa 2,000 oras' : 'Next overhaul scheduled at 2,000 hrs'}
+          {!isConnected
+            ? (isFil ? 'Hindi nakakabit ang ESP32 · Ikabit sa USB port para mabasa ang sensors' : 'ESP32 not connected · Connect via USB COM port to read live sensors')
+            : (telemetry.esp32?.note ? telemetry.esp32.note : (isFil ? '12V 15Ah Sealed Lead-Acid (SLA) Baterya' : '12V 15Ah Sealed Lead-Acid (SLA) Battery'))}
         </span>
       </section>
 
       {/* ── 4. 2×2 TELEMETRY GRID ───────────────────────────────────── */}
       <div className="grid grid-cols-2 gap-3">
-        {/* TILE 1: BATTERY (LiFePO4 12V 50Ah) */}
+        {/* TILE 1: BATTERY (12V 15Ah SLA) */}
         <div className={`rounded-2xl p-3.5 border flex flex-col justify-between min-h-[110px] shadow-lg transition-colors ${
           isDark ? 'bg-[#13171B] border-[#1E242B]' : 'bg-white border-zinc-200'
         }`}>
@@ -333,10 +322,10 @@ export function OverviewTab({
             </div>
             <div className="flex items-center gap-1.5 mt-0.5">
               <span className={`text-[9px] block ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-500'}`}>
-                {telemetry.batteryVoltage ? `${telemetry.batteryVoltage.toFixed(2)}V` : '13.20V'}
+                {vBatLive.toFixed(2)}V
               </span>
               <span className="text-[8px] font-mono px-1 rounded bg-[#00E676]/15 text-[#00E676] font-bold">
-                LiFePO4
+                12V 15Ah SLA
               </span>
             </div>
           </div>
@@ -344,12 +333,12 @@ export function OverviewTab({
           <div>
             <div className="flex items-baseline mt-1.5">
               <span className={`text-2xl sm:text-3xl font-black font-mono tabular-nums tracking-tight ${isDark ? 'text-white' : 'text-zinc-900'}`}>
-                {Math.round(telemetry.batteryPct)}
+                {isConnected ? Math.round(telemetry.batteryPct) : 0}
               </span>
               <span className={`text-xs font-normal ml-1 ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-500'}`}>%</span>
             </div>
             <span className={`text-[8.5px] font-mono block mt-0.5 ${isDark ? 'text-zinc-500' : 'text-zinc-400'}`}>
-              10.0V (0%) - 14.6V (100%)
+              6.0V Min · 14.4V Full
             </span>
           </div>
         </div>
@@ -366,13 +355,13 @@ export function OverviewTab({
               <IconFlame size={18} className="text-[#00E676]" />
             </div>
             <span className={`text-[9px] block mt-0.5 ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-500'}`}>
-              {isFil ? 'Lakas na Nalilikha' : 'Output Power'}
+              {isConnected ? `${vTegLive.toFixed(1)}V · Peak: ${(telemetry.vTegPeak ?? vTegLive).toFixed(1)}V` : '0.0V · Peak: 0.0V'}
             </span>
           </div>
 
           <div className="flex items-baseline mt-2">
             <span className={`text-2xl sm:text-3xl font-black font-mono tabular-nums tracking-tight ${isDark ? 'text-white' : 'text-zinc-900'}`}>
-              {telemetry.tegPower.toFixed(1)}
+              {pHarvLive.toFixed(1)}
             </span>
             <span className={`text-xs font-normal ml-1 ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-500'}`}>W</span>
           </div>
@@ -390,277 +379,46 @@ export function OverviewTab({
               <IconThermometer size={18} className="text-[#00E676]" />
             </div>
             <span className={`text-[9px] block mt-0.5 ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-500'}`}>
-              {isFil ? 'Agwat ng Temperatura (ΔT)' : 'Difference (ΔT)'}
+              {isConnected
+                ? `Hot: ${Math.round(telemetry.tHot ?? telemetry.stoveTemp)}°C · Cold: ${Math.round(telemetry.tCold ?? (telemetry.coldFaceTemp || 25))}°C`
+                : 'Hot: 0°C · Cold: 0°C'}
             </span>
           </div>
 
           <div className="flex items-baseline mt-2">
             <span className={`text-2xl sm:text-3xl font-black font-mono tabular-nums tracking-tight ${isDark ? 'text-white' : 'text-zinc-900'}`}>
-              {Math.round(deltaT)}
+              {isConnected ? Math.round(telemetry.dT ?? deltaT) : 0}
             </span>
             <span className={`text-xs font-normal ml-1 ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-500'}`}>°C</span>
           </div>
         </div>
 
-        {/* TILE 4: COOLING */}
+        {/* TILE 4: COOLING & AMBIENT (DHT22) */}
         <div className={`rounded-2xl p-3.5 border flex flex-col justify-between min-h-[110px] shadow-lg transition-colors ${
           isDark ? 'bg-[#13171B] border-[#1E242B]' : 'bg-white border-zinc-200'
         }`}>
           <div>
             <div className="flex items-center justify-between">
               <span className={`text-[10px] font-bold uppercase tracking-wider ${isDark ? 'text-white' : 'text-zinc-900'}`}>
-                {isFil ? 'PAMPALAMIG' : 'COOLING'}
+                {isFil ? 'PAMPALAMIG AT PALIGID' : 'COOLING & AMBIENT'}
               </span>
               <IconColdSink size={18} className="text-[#00E676]" />
             </div>
             <span className={`text-[9px] block mt-0.5 ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-500'}`}>
-              {isFil ? 'Temperatura ng Pampalamig' : 'Cold Sink Temp'}
+              {isConnected
+                ? `${telemetry.coldFault ? 'Cold Fault' : 'Cold Face'} · Amb: ${ambientTempC.toFixed(1)}°C (${ambientHumPct.toFixed(0)}% RH)`
+                : 'Cold Face · Amb: 0.0°C (0% RH)'}
             </span>
           </div>
 
           <div className="flex items-baseline mt-2">
             <span className={`text-2xl sm:text-3xl font-black font-mono tabular-nums tracking-tight ${isDark ? 'text-white' : 'text-zinc-900'}`}>
-              {Math.round(telemetry.coldFaceTemp || telemetry.ambientTemp)}
+              {isConnected ? Math.round(telemetry.tCold ?? (telemetry.coldFaceTemp || telemetry.ambientTemp)) : 0}
             </span>
             <span className={`text-xs font-normal ml-1 ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-500'}`}>°C</span>
           </div>
         </div>
       </div>
-
-      {/* ── 5. ENVIRONMENTAL & SITE SAFETY CARD (MQ-7 & DHT22) ─────── */}
-      <section
-        className={`rounded-2xl p-4 border flex flex-col gap-3 shadow-lg transition-colors ${
-          isDark ? 'bg-[#13171B] border-[#1E242B]' : 'bg-white border-zinc-200'
-        }`}
-        aria-labelledby="env-safety-heading"
-      >
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <IconGas size={17} className={coColorClass} />
-            <h2 id="env-safety-heading" className={`text-xs font-black uppercase tracking-wider ${isDark ? 'text-white' : 'text-zinc-900'}`}>
-              {isFil ? 'KALIGIRAN AT KALIGTASAN (MQ-7 & DHT22)' : 'ENVIRONMENT & SITE SAFETY'}
-            </h2>
-          </div>
-          <span className={`text-[10px] font-mono px-2 py-0.5 rounded-full font-bold uppercase border ${coBadgeBorderClass}`}>
-            {coStatusLabel}
-          </span>
-        </div>
-
-        {/* CO PPM Gauge Row */}
-        <div className={`p-3 rounded-xl border flex items-center justify-between transition-colors ${
-          coPpm >= 100
-            ? 'bg-rose-950/20 border-rose-500/40 text-rose-300'
-            : coPpm >= 50
-            ? 'bg-amber-950/20 border-amber-500/40 text-amber-300'
-            : isDark
-            ? 'bg-[#0B0F12] border-[#1E242B]'
-            : 'bg-[#F9FAFB] border-zinc-200'
-        }`}>
-          <div>
-            <span className={`text-[10px] font-bold uppercase tracking-wider block ${
-              isDark ? 'text-[#9CA3AF]' : 'text-zinc-500'
-            }`}>
-              {isFil ? 'Konsentrasyon ng Carbon Monoxide (MQ-7)' : 'Carbon Monoxide Concentration (MQ-7)'}
-            </span>
-            <div className="flex items-baseline mt-0.5">
-              <span className={`text-2xl font-black font-mono tabular-nums tracking-tight ${coColorClass}`}>
-                {coPpm.toFixed(1)}
-              </span>
-              <span className={`text-xs font-bold ml-1.5 ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-500'}`}>PPM</span>
-            </div>
-          </div>
-
-          <div className="text-right">
-            <span className={`text-[9px] font-mono block ${isDark ? 'text-zinc-500' : 'text-zinc-400'}`}>
-              Ligtas: &lt;50 PPM
-            </span>
-            <span className={`text-[9px] font-mono block ${isDark ? 'text-zinc-500' : 'text-zinc-400'}`}>
-              Babala: 50-100 PPM
-            </span>
-            <span className={`text-[9px] font-mono font-bold block ${coPpm >= 100 ? 'text-rose-400' : isDark ? 'text-zinc-500' : 'text-zinc-400'}`}>
-              Alarma: &gt;100 PPM
-            </span>
-          </div>
-        </div>
-
-        {/* DHT22 Ambient Temp & Relative Humidity */}
-        <div className="grid grid-cols-2 gap-2.5">
-          <div className={`p-2.5 rounded-xl border flex flex-col justify-between ${
-            isDark ? 'bg-[#0B0F12] border-[#1E242B]' : 'bg-[#F9FAFB] border-zinc-200'
-          }`}>
-            <span className={`text-[9.5px] font-bold uppercase tracking-wider ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-500'}`}>
-              {isFil ? 'DHT22 Temperatura' : 'DHT22 Ambient Temp'}
-            </span>
-            <div className="flex items-baseline mt-1">
-              <span className={`text-lg font-black font-mono tabular-nums ${isDark ? 'text-white' : 'text-zinc-900'}`}>
-                {ambientTempC.toFixed(1)}
-              </span>
-              <span className={`text-xs ml-1 ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-500'}`}>°C</span>
-            </div>
-          </div>
-
-          <div className={`p-2.5 rounded-xl border flex flex-col justify-between ${
-            isDark ? 'bg-[#0B0F12] border-[#1E242B]' : 'bg-[#F9FAFB] border-zinc-200'
-          }`}>
-            <span className={`text-[9.5px] font-bold uppercase tracking-wider ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-500'}`}>
-              {isFil ? 'DHT22 Alinsangan' : 'DHT22 Humidity'}
-            </span>
-            <div className="flex items-baseline mt-1">
-              <span className={`text-lg font-black font-mono tabular-nums ${isDark ? 'text-white' : 'text-zinc-900'}`}>
-                {ambientHumPct.toFixed(1)}
-              </span>
-              <span className={`text-xs ml-1 ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-500'}`}>% RH</span>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* ── 6. FUEL HOPPER SERVO CONTROL WIDGET ─────────────────────── */}
-      <section
-        className={`rounded-2xl p-4 border flex flex-col gap-3 shadow-lg transition-colors ${
-          isDark ? 'bg-[#13171B] border-[#1E242B]' : 'bg-white border-zinc-200'
-        }`}
-        aria-labelledby="hopper-control-heading"
-      >
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <IconFeedServo size={18} className="text-[#00E676]" />
-            <h2 id="hopper-control-heading" className={`text-xs font-black uppercase tracking-wider ${isDark ? 'text-white' : 'text-zinc-900'}`}>
-              {isFil ? 'KONTROL NG HOPPER (FEED SERVO)' : 'FUEL HOPPER SERVO CONTROL'}
-            </h2>
-          </div>
-          <span className={`text-[9px] font-mono px-2 py-0.5 rounded-full font-bold uppercase ${
-            isHopperActive
-              ? 'bg-[#00E676]/20 text-[#00E676] border border-[#00E676] animate-pulse'
-              : isDark
-              ? 'bg-[#1E242B] text-zinc-400 border border-[#1E242B]'
-              : 'bg-zinc-100 text-zinc-500 border border-zinc-200'
-          }`}>
-            {isHopperActive
-              ? (isFil ? 'GUMAGANA / FEEDING' : 'FEEDING / ACTIVE')
-              : (isFil ? 'NAKAHANDA / IDLE' : 'STANDBY / IDLE')}
-          </span>
-        </div>
-
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <span className={`text-[10px] font-bold uppercase tracking-wider block ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-500'}`}>
-              {isFil ? 'Kabuuan ng Siklo ng Pagpapakain' : 'Total Feed Cycles'}
-            </span>
-            <div className="flex items-baseline mt-0.5">
-              <span className={`text-xl font-black font-mono tabular-nums ${isDark ? 'text-white' : 'text-zinc-900'}`}>
-                {feedCycles}
-              </span>
-              <span className={`text-xs ml-1 ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-500'}`}>
-                {isFil ? 'siklo' : 'cycles'}
-              </span>
-            </div>
-          </div>
-
-          {/* Pulse Feed Action Button */}
-          <button
-            type="button"
-            onClick={onPulseFeed}
-            disabled={isHopperActive}
-            className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider font-mono cursor-pointer transition-colors shadow-md min-h-[44px] flex items-center gap-2 ${
-              isHopperActive
-                ? 'bg-[#00E676]/30 text-[#00E676] border border-[#00E676] cursor-wait'
-                : 'bg-[#00E676] hover:bg-emerald-400 text-zinc-950 border border-[#00E676]'
-            }`}
-          >
-            <IconFeedServo size={16} />
-            <span>{isFil ? 'PULSE FEED' : 'PULSE FEED'}</span>
-          </button>
-        </div>
-      </section>
-
-      {/* ── 5. COLLAPSIBLE BENCH SIMULATION CONTROLS ─────────────────── */}
-      <section className={`rounded-2xl p-3 border flex flex-col gap-2 shadow-lg mt-1 font-sans transition-colors ${
-        isDark ? 'bg-[#13171B] border-[#1E242B]' : 'bg-white border-zinc-200'
-      }`}>
-        <div className="flex items-center justify-between">
-          <span className={`text-[10px] font-bold uppercase tracking-wider ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-500'}`}>
-            {isFil ? 'BENCH PHYSICS AT PAGSUBOK' : 'BENCH PHYSICS & TEST PRESETS'}
-          </span>
-          <button
-            type="button"
-            onClick={() => setShowSliders(!showSliders)}
-            className="text-[10px] text-[#00E676] hover:text-emerald-500 font-bold uppercase flex items-center gap-1 cursor-pointer"
-          >
-            <IconSliders size={12} />
-            <span>{showSliders ? (isFil ? 'ITAGO' : 'COLLAPSE') : (isFil ? 'BUKSAN' : 'EXPAND CONTROLS')}</span>
-          </button>
-        </div>
-
-        {showSliders && (
-          <div className={`pt-2 border-t flex flex-col gap-2.5 animate-slide-in ${isDark ? 'border-[#1E242B]' : 'border-zinc-200'}`}>
-            {/* Presets */}
-            <div className="grid grid-cols-3 gap-1.5">
-              {(
-                [
-                  { id: 'normal', label: isFil ? 'NORMAL' : 'NORMAL' },
-                  { id: 'tegPeak', label: isFil ? 'PEAK TEG' : 'PEAK TEG' },
-                  { id: 'lowHeat', label: isFil ? 'MAHINANG INIT' : 'LOW FLAME' },
-                  { id: 'overheat', label: isFil ? 'OVERHEAT' : 'OVERHEAT' },
-                  { id: 'lowBatt', label: isFil ? 'MABABANG BATT' : 'LOW BATT' },
-                ] as const
-              ).map((p) => (
-                <button
-                  key={p.id}
-                  type="button"
-                  onClick={() => onScenarioChange(p.id)}
-                  className={`py-1.5 px-2 rounded-lg text-[10px] font-bold tracking-wider uppercase transition-colors cursor-pointer border ${
-                    scenario === p.id
-                      ? 'bg-[#00E676]/20 border-[#00E676] text-[#00E676]'
-                      : isDark
-                      ? 'bg-[#0B0F12] border-[#1E242B] text-[#9CA3AF] hover:text-zinc-200'
-                      : 'bg-zinc-100 border-zinc-200 text-zinc-600 hover:text-zinc-900'
-                  }`}
-                >
-                  {p.label}
-                </button>
-              ))}
-            </div>
-
-            {/* Manual Sliders */}
-            <div className="flex flex-col gap-2 pt-1">
-              <div>
-                <div className={`flex justify-between text-[10px] mb-1 ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-500'}`}>
-                  <span>{isFil ? 'TEMPERATURA NG KALAN' : 'STOVE TEMPERATURE'}</span>
-                  <span className={`font-bold ${isDark ? 'text-white' : 'text-zinc-900'}`}>{Math.round(telemetry.stoveTemp)}°C</span>
-                </div>
-                <input
-                  type="range"
-                  min="40"
-                  max="280"
-                  step="1"
-                  value={telemetry.stoveTemp}
-                  onChange={(e) => onManualSlider('stoveTemp', parseFloat(e.target.value))}
-                  className="accent-emerald-500 h-1.5 w-full bg-zinc-800 rounded-lg appearance-none cursor-pointer"
-                  aria-label="Stove Temperature Slider"
-                />
-              </div>
-
-              <div>
-                <div className={`flex justify-between text-[10px] mb-1 ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-500'}`}>
-                  <span>{isFil ? 'KARGA NG BATERYA' : 'BATTERY CHARGE'}</span>
-                  <span className={`font-bold ${isDark ? 'text-white' : 'text-zinc-900'}`}>{Math.round(telemetry.batteryPct)}%</span>
-                </div>
-                <input
-                  type="range"
-                  min="5"
-                  max="100"
-                  step="1"
-                  value={telemetry.batteryPct}
-                  onChange={(e) => onManualSlider('batteryPct', parseFloat(e.target.value))}
-                  className="accent-emerald-500 h-1.5 w-full bg-zinc-800 rounded-lg appearance-none cursor-pointer"
-                  aria-label="Battery SOC Slider"
-                />
-              </div>
-            </div>
-          </div>
-        )}
-      </section>
     </div>
   )
 }

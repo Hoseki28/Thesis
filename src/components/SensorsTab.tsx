@@ -17,30 +17,25 @@ export function SensorsTab({ telemetry, calibration, historyPoints = [], lang, t
   const isDark = theme === 'dark'
 
   // Voltage reading
-  const batteryVoltage = telemetry.batteryVoltage || 13.19
+  const batteryVoltage = telemetry.vBat ?? telemetry.batteryVoltage ?? 0.0
 
   // Power values
-  const loadWattage = telemetry.relays.dcBus
-    ? Math.round(telemetry.loadPower)
-    : 0
-  const tegWattage = telemetry.tegPower > 0 ? telemetry.tegPower.toFixed(1) : '0.0'
+  const pBatLive = telemetry.pBat ?? Math.round(batteryVoltage * (telemetry.iBat ?? 0) * 10) / 10
+  const tegWattage = (telemetry.pHarv ?? (telemetry.tegPower > 0 ? telemetry.tegPower : Math.round((telemetry.vTeg ?? 0) * (telemetry.iBat ?? 0) * 10) / 10)).toFixed(1)
 
   // SVG Chart rendering (0 to 40W load scale)
   const width = 340
   const height = 120
   const yTicks = [40, 30, 20, 10, 0]
 
-  // Construct chart path using history points or baseline
-  const pointsToRender = historyPoints.length > 5
+  // Construct chart path using history points
+  const pointsToRender = historyPoints.length > 0
     ? historyPoints.slice(-12)
     : [
-        { val: 21.8 },
-        { val: 21.8 },
-        { val: 16.8 },
-        { val: 21.8 },
-        { val: 21.8 },
-        { val: 16.8 },
-        { val: 21.8 },
+        { val: 0 },
+        { val: 0 },
+        { val: 0 },
+        { val: 0 },
       ]
 
   const chartStepX = width / Math.max(1, pointsToRender.length - 1)
@@ -170,19 +165,19 @@ export function SensorsTab({ telemetry, calibration, historyPoints = [], lang, t
 
       {/* ── 3. LOAD & TEG GEN METRIC TILES ──────────────────────────── */}
       <div className="grid grid-cols-2 gap-3">
-        {/* LOAD */}
+        {/* IN-BATTERY POWER */}
         <div className={`rounded-2xl p-4 border flex flex-col justify-between min-h-[95px] shadow-lg transition-colors ${
           isDark ? 'bg-[#13171B] border-[#1E242B]' : 'bg-white border-zinc-200'
         }`}>
           <div className="flex items-center justify-between">
             <span className={`text-[10px] font-bold uppercase tracking-wider ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-500'}`}>
-              {isFil ? 'KARGA' : 'LOAD'}
+              {isFil ? 'LAKAS SA BATERYA' : 'IN-BATTERY POWER'}
             </span>
             <IconZap size={16} className="text-[#00E676]" />
           </div>
           <div className="flex items-baseline mt-2">
             <span className={`text-2xl sm:text-3xl font-black font-mono tabular-nums ${isDark ? 'text-white' : 'text-zinc-900'}`}>
-              {loadWattage}
+              {pBatLive.toFixed(1)}
             </span>
             <span className={`text-xs font-normal ml-1 ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-500'}`}>W</span>
           </div>
@@ -194,7 +189,7 @@ export function SensorsTab({ telemetry, calibration, historyPoints = [], lang, t
         }`}>
           <div className="flex items-center justify-between">
             <span className={`text-[10px] font-bold uppercase tracking-wider ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-500'}`}>
-              {isFil ? 'LIKHANG TEG' : 'TEG GEN'}
+              {isFil ? 'LIKHANG TEG' : 'TEG HARVEST'}
             </span>
             <IconFlame size={16} className="text-[#00E676]" />
           </div>
@@ -216,66 +211,113 @@ export function SensorsTab({ telemetry, calibration, historyPoints = [], lang, t
       >
         <div className="flex items-center justify-between">
           <span id="load-channels-heading" className={`text-[10px] font-bold uppercase tracking-wider ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-500'}`}>
-            {isFil ? '4-CHANNEL LOAD CONTROLLER (INA219 / RELAYS)' : '4-CHANNEL LOAD CONTROLLER'}
+            {isFil ? 'ESP32 CHARGER SUB-SYSTEMS & ACTUATORS' : 'ESP32 CHARGER SUB-SYSTEMS & RELAYS'}
           </span>
           <span className="text-[9px] font-mono font-bold text-[#00E676] px-1.5 py-0.5 rounded bg-[#00E676]/10">
-            2-TIER ARQUITECTURA
+            THESIS FIRMWARE
           </span>
         </div>
 
         <div className="flex flex-col gap-2">
-          {(
-            telemetry.loadChannels || [
-              { id: 1, name: '12V LED Critical Light', active: true, sheddable: false, currentMa: 400 },
-              { id: 2, name: 'Cold-Side Water Fan', active: telemetry.relays?.fans ?? true, sheddable: true, currentMa: 1000 },
-              { id: 3, name: 'Hopper Fuel Feed Servo', active: false, sheddable: true, currentMa: 0 },
-              { id: 4, name: '5V USB Charging Ports', active: telemetry.relays?.fans ?? true, sheddable: true, currentMa: 415 },
-            ]
-          ).map((ch) => (
-            <div
-              key={ch.id}
-              className={`p-2.5 rounded-xl border flex items-center justify-between transition-colors ${
-                isDark ? 'bg-[#0B0F12] border-[#1E242B]' : 'bg-[#F9FAFB] border-zinc-200'
-              }`}
-            >
-              <div className="flex items-center gap-2">
-                <span
-                  className={`w-2 h-2 rounded-full ${
-                    ch.active
-                      ? ch.sheddable
-                        ? 'bg-emerald-400'
-                        : 'bg-[#00E676] animate-pulse'
-                      : 'bg-zinc-600'
-                  }`}
-                />
-                <div>
-                  <span className={`text-[11px] font-bold block ${isDark ? 'text-white' : 'text-zinc-900'}`}>
-                    CH{ch.id}: {ch.name}
-                  </span>
-                  <span className={`text-[8.5px] font-mono block ${
-                    !ch.sheddable ? 'text-[#00E676] font-bold' : isDark ? 'text-zinc-500' : 'text-zinc-400'
-                  }`}>
-                    {!ch.sheddable
-                      ? (isFil ? 'PANGUNAHIN (TIER 1) · NON-SHEDDABLE' : 'PRIMARY (TIER 1) · NON-SHEDDABLE')
-                      : (isFil ? 'PANGALAWANG (TIER 2) · SHEDDABLE' : 'AUXILIARY (TIER 2) · SHEDDABLE')}
-                  </span>
-                </div>
-              </div>
-
-              <div className="text-right">
-                <span className={`text-xs font-mono font-black block tabular-nums ${
-                  ch.active ? (isDark ? 'text-white' : 'text-zinc-900') : 'text-zinc-500'
-                }`}>
-                  {ch.currentMa} mA
+          {/* Row 1: GPIO14 Relay */}
+          <div className={`p-2.5 rounded-xl border flex items-center justify-between transition-colors ${
+            isDark ? 'bg-[#0B0F12] border-[#1E242B]' : 'bg-[#F9FAFB] border-zinc-200'
+          }`}>
+            <div className="flex items-center gap-2">
+              <span className={`w-2 h-2 rounded-full ${telemetry.relayOn ? 'bg-[#00E676] animate-pulse' : 'bg-zinc-600'}`} />
+              <div>
+                <span className={`text-[11px] font-bold block ${isDark ? 'text-white' : 'text-zinc-900'}`}>
+                  CH1: GPIO14 Charging Relay
                 </span>
-                <span className={`text-[8.5px] font-mono font-bold uppercase ${
-                  ch.active ? 'text-[#00E676]' : 'text-zinc-500'
-                }`}>
-                  {ch.active ? (isFil ? 'BUKAS' : 'ACTIVE') : (isFil ? 'SARADO' : 'OFF')}
+                <span className={`text-[8.5px] font-mono block ${telemetry.relayOn ? 'text-[#00E676] font-bold' : isDark ? 'text-zinc-500' : 'text-zinc-400'}`}>
+                  {telemetry.relayOn ? 'RELAY CLOSED · TEG CONNECTED' : 'RELAY OPEN · DISCONNECTED'}
                 </span>
               </div>
             </div>
-          ))}
+            <div className="text-right">
+              <span className={`text-xs font-mono font-black block tabular-nums ${telemetry.relayOn ? (isDark ? 'text-white' : 'text-zinc-900') : 'text-zinc-500'}`}>
+                {(telemetry.iBat ?? 0).toFixed(2)} A
+              </span>
+              <span className={`text-[8.5px] font-mono font-bold uppercase ${telemetry.relayOn ? 'text-[#00E676]' : 'text-zinc-500'}`}>
+                {telemetry.relayOn ? 'CLOSED' : 'OPEN'}
+              </span>
+            </div>
+          </div>
+
+          {/* Row 2: State Machine */}
+          <div className={`p-2.5 rounded-xl border flex items-center justify-between transition-colors ${
+            isDark ? 'bg-[#0B0F12] border-[#1E242B]' : 'bg-[#F9FAFB] border-zinc-200'
+          }`}>
+            <div className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-emerald-400" />
+              <div>
+                <span className={`text-[11px] font-bold block ${isDark ? 'text-white' : 'text-zinc-900'}`}>
+                  CH2: State #{telemetry.stateCode ?? 1} ({telemetry.stateName || 'CHARGING'})
+                </span>
+                <span className={`text-[8.5px] font-mono block ${isDark ? 'text-zinc-500' : 'text-zinc-400'}`}>
+                  {telemetry.stateReason || 'Charge controller state machine'}
+                </span>
+              </div>
+            </div>
+            <div className="text-right">
+              <span className={`text-xs font-mono font-black block tabular-nums ${isDark ? 'text-white' : 'text-zinc-900'}`}>
+                {(telemetry.vTeg ?? 0).toFixed(1)} V
+              </span>
+              <span className="text-[8.5px] font-mono font-bold uppercase text-[#00E676]">
+                {telemetry.stateName || 'ACTIVE'}
+              </span>
+            </div>
+          </div>
+
+          {/* Row 3: TS1 Thermal Switch */}
+          <div className={`p-2.5 rounded-xl border flex items-center justify-between transition-colors ${
+            isDark ? 'bg-[#0B0F12] border-[#1E242B]' : 'bg-[#F9FAFB] border-zinc-200'
+          }`}>
+            <div className="flex items-center gap-2">
+              <span className={`w-2 h-2 rounded-full ${telemetry.ts1Tripped ? 'bg-rose-500' : 'bg-[#00E676]'}`} />
+              <div>
+                <span className={`text-[11px] font-bold block ${isDark ? 'text-white' : 'text-zinc-900'}`}>
+                  CH3: GPIO4 TS1 150°C Thermal Switch
+                </span>
+                <span className={`text-[8.5px] font-mono block ${telemetry.ts1Tripped ? 'text-rose-400 font-bold' : isDark ? 'text-zinc-500' : 'text-zinc-400'}`}>
+                  {telemetry.ts1Tripped ? 'TRIPPED (CLOSED TO GND)' : 'NOMINAL (INTERNAL PULLUP)'}
+                </span>
+              </div>
+            </div>
+            <div className="text-right">
+              <span className={`text-xs font-mono font-black block tabular-nums ${telemetry.ts1Tripped ? 'text-rose-400' : isDark ? 'text-white' : 'text-zinc-900'}`}>
+                {telemetry.ts1Tripped ? 'ALARM' : 'NORMAL'}
+              </span>
+              <span className={`text-[8.5px] font-mono font-bold uppercase ${telemetry.ts1Tripped ? 'text-rose-400' : 'text-[#00E676]'}`}>
+                {telemetry.ts1Tripped ? 'TRIPPED' : 'OPEN'}
+              </span>
+            </div>
+          </div>
+
+          {/* Row 4: Dynamic Limits */}
+          <div className={`p-2.5 rounded-xl border flex items-center justify-between transition-colors ${
+            isDark ? 'bg-[#0B0F12] border-[#1E242B]' : 'bg-[#F9FAFB] border-zinc-200'
+          }`}>
+            <div className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-emerald-400" />
+              <div>
+                <span className={`text-[11px] font-bold block ${isDark ? 'text-white' : 'text-zinc-900'}`}>
+                  CH4: Dynamic SLA Charge Limits
+                </span>
+                <span className={`text-[8.5px] font-mono block ${isDark ? 'text-zinc-500' : 'text-zinc-400'}`}>
+                  Open: {(telemetry.vOpenNow ?? 14.4).toFixed(2)}V · Close: {(telemetry.vCloseNow ?? 13.6).toFixed(2)}V · Hard: {(telemetry.vHardNow ?? 14.6).toFixed(2)}V
+                </span>
+              </div>
+            </div>
+            <div className="text-right">
+              <span className={`text-xs font-mono font-black block tabular-nums ${isDark ? 'text-white' : 'text-zinc-900'}`}>
+                {(telemetry.vOpenNow ?? 14.4).toFixed(2)} V
+              </span>
+              <span className="text-[8.5px] font-mono font-bold uppercase text-[#00E676]">
+                ACTIVE
+              </span>
+            </div>
+          </div>
         </div>
       </section>
 
@@ -292,30 +334,32 @@ export function SensorsTab({ telemetry, calibration, historyPoints = [], lang, t
 
         <div className="grid grid-cols-2 gap-2 text-[10px] font-mono">
           <div className={`p-2 rounded-lg border ${isDark ? 'bg-[#0B0F12] border-[#1E242B]' : 'bg-[#F9FAFB] border-zinc-200'}`}>
-            <span className={`block font-bold ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-500'}`}>MAX31855</span>
-            <span className={isDark ? 'text-zinc-300' : 'text-zinc-700'}>
-              {telemetry.stoveTemp.toFixed(1)}°C Hot Face
+            <span className={`block font-bold ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-500'}`}>MAX31855 Hot (GPIO5)</span>
+            <span className={telemetry.hotFault ? 'text-rose-400 font-bold' : isDark ? 'text-zinc-300' : 'text-zinc-700'}>
+              {telemetry.hotFault ? `FAULT (${telemetry.hotWhy || 'open'})` : `${(telemetry.tHot ?? telemetry.stoveTemp).toFixed(1)}°C Hot Face`}
             </span>
           </div>
 
           <div className={`p-2 rounded-lg border ${isDark ? 'bg-[#0B0F12] border-[#1E242B]' : 'bg-[#F9FAFB] border-zinc-200'}`}>
-            <span className={`block font-bold ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-500'}`}>MQ-7 (CO PPM)</span>
-            <span className={telemetry.safety?.coAlert ? 'text-rose-400 font-bold' : isDark ? 'text-zinc-300' : 'text-zinc-700'}>
-              {(telemetry.safety?.coPpm ?? telemetry.rawCoPpm ?? 12.4).toFixed(1)} PPM
+            <span className={`block font-bold ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-500'}`}>MAX31855 Cold (GPIO17)</span>
+            <span className={telemetry.coldFault ? 'text-rose-400 font-bold' : isDark ? 'text-zinc-300' : 'text-zinc-700'}>
+              {telemetry.coldFault ? `FAULT (${telemetry.coldWhy || 'open'})` : `${(telemetry.tCold ?? (telemetry.coldFaceTemp || 25)).toFixed(1)}°C Cold Face`}
             </span>
           </div>
 
           <div className={`p-2 rounded-lg border ${isDark ? 'bg-[#0B0F12] border-[#1E242B]' : 'bg-[#F9FAFB] border-zinc-200'}`}>
-            <span className={`block font-bold ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-500'}`}>DHT22 (Ambient)</span>
-            <span className={isDark ? 'text-zinc-300' : 'text-zinc-700'}>
-              {(telemetry.ambient?.tempC ?? telemetry.ambientTemp ?? 28.5).toFixed(1)}°C / {(telemetry.ambient?.humidityPct ?? telemetry.humidity ?? 68.0).toFixed(0)}%
+            <span className={`block font-bold ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-500'}`}>DHT22 Battery Area (GPIO23)</span>
+            <span className={!telemetry.dhtOk ? 'text-amber-400 font-bold' : isDark ? 'text-zinc-300' : 'text-zinc-700'}>
+              {(telemetry.tAmb ?? telemetry.ambientTemp ?? 28.5).toFixed(1)}°C / {(telemetry.hum ?? telemetry.humidity ?? 65.0).toFixed(0)}% {!telemetry.dhtOk ? '(ERR)' : ''}
             </span>
           </div>
 
           <div className={`p-2 rounded-lg border ${isDark ? 'bg-[#0B0F12] border-[#1E242B]' : 'bg-[#F9FAFB] border-zinc-200'}`}>
-            <span className={`block font-bold ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-500'}`}>INA219 (Shunt)</span>
+            <span className={`block font-bold ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-500'}`}>
+              ACS712-5A Current (GPIO16)
+            </span>
             <span className={isDark ? 'text-zinc-300' : 'text-zinc-700'}>
-              {telemetry.batteryCurrentSigned >= 0 ? '+' : ''}{telemetry.batteryCurrentSigned.toFixed(2)}A Signed
+              {(telemetry.iBat ?? telemetry.rawTegCurrent ?? 0.0).toFixed(2)}A (zero: {(telemetry.acsZero ?? 2.5).toFixed(2)}V)
             </span>
           </div>
         </div>

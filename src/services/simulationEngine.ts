@@ -5,7 +5,7 @@ export interface SimulationState {
   preset: ScenarioPreset
   isRunning: boolean
   speedMultiplier: number
-  
+
   // Internal continuous physical state variables
   stoveTempTarget: number
   currentStoveTemp: number
@@ -13,7 +13,7 @@ export interface SimulationState {
   humidityBase: number
   batteryChargeAh: number // Amp-hours stored (12V 50Ah LiFePO4 battery)
   maxBatteryAh: number
-  
+
   // Actuator states
   hopperServoActive: boolean
   feedCycles: number
@@ -252,6 +252,44 @@ export class SimulationEngine {
     const coJitter = (Math.random() - 0.5) * 2.5
     const rawCoPpm = Math.max(0, Math.round(targetCo + coJitter))
 
+    // 7. Simulated thesis.ino ESP32 State Machine and Counters
+    const vOpen = 14.4 - 0.018 * Math.max(0, ambientTemp - 25.0)
+    const vClose = 13.6 - 0.018 * Math.max(0, ambientTemp - 25.0)
+    const vHard = 14.6 - 0.018 * Math.max(0, ambientTemp - 25.0)
+
+    let simState = 1
+    let simStateName = 'CHARGING'
+    let simStateReason = 'charging allowed, relay closed'
+
+    if (rawBatteryVoltage < 6.0 || rawBatteryVoltage > 16.5) {
+      simState = 0
+      simStateName = 'NO BATTERY'
+      simStateReason = 'no valid battery reading (needs 6 to 16.5 V at the battery divider)'
+    } else if (ambientTemp >= 45.0) {
+      simState = 5
+      simStateName = 'BATTERY HOT'
+      simStateReason = 'battery temperature too high'
+    } else if (!isBusOn) {
+      simState = 4
+      simStateName = 'FORCED OFF'
+      simStateReason = 'charging forced OFF by command'
+    } else if (rawBatteryVoltage >= vOpen) {
+      simState = 2
+      simStateName = 'FULL-HOLD'
+      simStateReason = 'battery reached its limit, relay open'
+    }
+
+    const simRelayClosed = simState === 1
+    const pBatSim = Math.round(rawBatteryVoltage * rawTegCurrent * 10) / 10
+    const pHarvSim = Math.round(rawTegVoltage * rawTegCurrent * 10) / 10
+
+    const simAlarms: string[] = []
+    if (rawBatteryVoltage < 11.8) simAlarms.push('battery low (<11.8 V)')
+    if (rawBatteryVoltage >= vOpen) simAlarms.push('battery at charge limit')
+    if (this.state.currentStoveTemp > 230) simAlarms.push('hot side over 230 C')
+    if (heatsinkColdFace > 60) simAlarms.push('cold side over 60 C')
+    if (rawTegVoltage > 45) simAlarms.push('TEG voltage over 45 V')
+
     return applyCalibration(
       {
         rawStoveTemp: Math.round(this.state.currentStoveTemp * 10) / 10,
@@ -264,7 +302,44 @@ export class SimulationEngine {
         rawCoPpm,
         hopperServoActive: this.state.hopperServoActive,
         feedCycles: this.state.feedCycles,
-        relays: { ...this.state.relays },
+        relays: {
+          dcBus: simRelayClosed,
+          lights: this.state.relays.lights,
+          fans: simRelayClosed,
+          aux: this.state.relays.aux,
+        },
+        esp32: {
+          stateCode: simState,
+          stateName: simStateName,
+          stateReason: simStateReason,
+          relayClosed: simRelayClosed,
+          forceMode: isBusOn ? 0 : 2,
+          uptimeStr: new Date().toTimeString().split(' ')[0],
+          pBatW: pBatSim,
+          pHarvW: pHarvSim,
+          whTotal: Math.round(pBatSim * 0.12 * 100) / 100,
+          whHarv: Math.round(pHarvSim * 0.14 * 100) / 100,
+          vTegPeak: Math.max(14.8, rawTegVoltage),
+          hotFault: false,
+          coldFault: false,
+          hotWhy: 'ok',
+          coldWhy: 'ok',
+          dhtOk: true,
+          ts1Tripped: false,
+          overcurrentLatched: false,
+          batHot: ambientTemp >= 45,
+          vOpenNow: Math.round(vOpen * 100) / 100,
+          vCloseNow: Math.round(vClose * 100) / 100,
+          vHardNow: Math.round(vHard * 100) / 100,
+          batTrim: 1.1011,
+          tegTrim: 1.1679,
+          curTrim: 1.0,
+          acsVolts: 2.5 + rawTegCurrent * 0.185,
+          acsZero: 2.5,
+          alarmsText: simAlarms.length ? simAlarms.join(', ') : 'none',
+          activeAlarms: simAlarms,
+          note: simState === 1 && rawTegCurrent === 0 ? 'TEG voltage is too low to charge' : undefined,
+        },
         timestamp: Date.now(),
         source: 'simulated',
       },
