@@ -119,6 +119,33 @@ export default function App() {
     rawLogs: [],
   })
 
+  // Continuous Real-Time Session Stopwatch (never resets to 0 on connect/disconnect)
+  const sessionStartMsRef = useRef<number>(Date.now())
+  const [sessionUptimeStr, setSessionUptimeStr] = useState<string>('00:00:00')
+
+  useEffect(() => {
+    const stored = sessionStorage.getItem('bteg_session_start_ms')
+    if (stored) {
+      sessionStartMsRef.current = parseInt(stored, 10)
+    } else {
+      sessionStorage.setItem('bteg_session_start_ms', sessionStartMsRef.current.toString())
+    }
+
+    const updateTimer = () => {
+      const elapsedSec = Math.max(0, Math.floor((Date.now() - sessionStartMsRef.current) / 1000))
+      const hrs = Math.floor(elapsedSec / 3600)
+      const mins = Math.floor((elapsedSec % 3600) / 60)
+      const secs = elapsedSec % 60
+      setSessionUptimeStr(
+        `${hrs.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`
+      )
+    }
+
+    updateTimer()
+    const interval = setInterval(updateTimer, 1000)
+    return () => clearInterval(interval)
+  }, [])
+
   // System logs dynamic state
   const [systemLogs, setSystemLogs] = useState<SystemLogEntry[]>(() => systemLogManager.getLogs())
 
@@ -475,6 +502,7 @@ export default function App() {
               tooHot={tooHot}
               lowHeat={lowHeat}
               lowBattery={lowBattery}
+              sessionUptimeStr={sessionUptimeStr}
               onToggleFans={handleToggleFans}
               onToggleDcBus={handleToggleDcBus}
               onScenarioChange={handleScenarioChange}

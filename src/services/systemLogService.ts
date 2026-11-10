@@ -3,21 +3,28 @@ import { SystemLogEntry, SystemLogLevel } from '../types/telemetry'
 export const MAX_SYSTEM_LOGS = 50
 
 /**
- * Strictly format timestamps as `YYYY-MM-DD HH:mm` in Asia/Manila (PHT, UTC+8).
+ * Format timestamps as `YYYY-MM-DD hh:mm AM/PM` in Asia/Manila (PHT, UTC+8) - strictly 12-hour format.
  */
 export function formatLogTimestamp(date: Date = new Date()): string {
-  const formatter = new Intl.DateTimeFormat('en-US', {
-    timeZone: 'Asia/Manila',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  })
-  const parts = formatter.formatToParts(date)
-  const get = (type: string) => parts.find((p) => p.type === type)?.value || '00'
-  return `${get('year')}-${get('month')}-${get('day')} ${get('hour')}:${get('minute')}`
+  try {
+    const formatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'Asia/Manila',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true,
+    })
+    const parts = formatter.formatToParts(date)
+    const get = (type: string) => parts.find((p) => p.type === type)?.value || ''
+    const hour = get('hour') || '12'
+    const minute = get('minute') || '00'
+    const period = parts.find((p) => p.type === 'dayPeriod')?.value?.toUpperCase() || (date.getHours() >= 12 ? 'PM' : 'AM')
+    return `${get('year')}-${get('month')}-${get('day')} ${hour}:${minute} ${period}`
+  } catch {
+    return date.toLocaleString('en-US', { hour12: true })
+  }
 }
 
 /**

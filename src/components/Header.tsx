@@ -67,14 +67,30 @@ export function Header({
     }
   }
 
-  // Format 12-hour AM/PM Standard Time strictly in Asia/Manila (PHT)
-  const timeFormatted = currentTime.toLocaleTimeString('en-US', {
-    timeZone: 'Asia/Manila',
-    hour: 'numeric',
-    minute: '2-digit',
-    second: '2-digit',
-    hour12: true,
-  })
+  // Format strictly as 12-hour AM/PM Standard Time (never 24-hour military time) in Asia/Manila (PHT)
+  const format12HourPHT = (date: Date): string => {
+    try {
+      const parts = new Intl.DateTimeFormat('en-US', {
+        timeZone: 'Asia/Manila',
+        hour: 'numeric',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: true,
+      }).formatToParts(date)
+
+      const hour = parts.find((p) => p.type === 'hour')?.value || '12'
+      const minute = parts.find((p) => p.type === 'minute')?.value || '00'
+      const second = parts.find((p) => p.type === 'second')?.value || '00'
+      const dayPeriod = parts.find((p) => p.type === 'dayPeriod')?.value?.toUpperCase() || (date.getHours() >= 12 ? 'PM' : 'AM')
+
+      return `${hour}:${minute}:${second} ${dayPeriod}`
+    } catch {
+      // Fallback
+      return date.toLocaleTimeString('en-US', { hour12: true })
+    }
+  }
+
+  const timeFormatted = format12HourPHT(currentTime)
 
   const dateFormatted = currentTime.toLocaleDateString(isFil ? 'fil-PH' : 'en-US', {
     timeZone: 'Asia/Manila',

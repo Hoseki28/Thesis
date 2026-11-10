@@ -35,10 +35,10 @@ export class TelemetryHistoryManager {
   public addPoint(data: TelemetryData) {
     const timeStr = new Date(data.timestamp).toLocaleTimeString('en-US', {
       timeZone: 'Asia/Manila',
-      hour: '2-digit',
+      hour: 'numeric',
       minute: '2-digit',
       second: '2-digit',
-      hour12: false,
+      hour12: true,
     })
 
     const phtTimestamp = new Intl.DateTimeFormat('en-US', {
@@ -46,10 +46,10 @@ export class TelemetryHistoryManager {
       year: 'numeric',
       month: '2-digit',
       day: '2-digit',
-      hour: '2-digit',
+      hour: 'numeric',
       minute: '2-digit',
       second: '2-digit',
-      hour12: false,
+      hour12: true,
     }).format(new Date(data.timestamp))
 
     // Hardware truth & bounds sanitization

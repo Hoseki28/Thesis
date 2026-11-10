@@ -20,6 +20,7 @@ interface OverviewTabProps {
   tooHot: boolean
   lowHeat: boolean
   lowBattery: boolean
+  sessionUptimeStr?: string
   onToggleFans: () => void
   onToggleDcBus: () => void
   onScenarioChange: (preset: ScenarioPreset) => void
@@ -38,6 +39,7 @@ export function OverviewTab({
   tooHot,
   lowHeat,
   lowBattery,
+  sessionUptimeStr,
   onToggleFans,
   onToggleDcBus,
   onScenarioChange,
@@ -264,10 +266,10 @@ export function OverviewTab({
           </div>
           <div className="flex items-baseline">
             <span className={`text-lg font-black font-mono tabular-nums ${isDark ? 'text-white' : 'text-zinc-950'}`}>
-              {isConnected ? (telemetry.esp32?.uptimeStr || '00:00:00') : '00:16:51'}
+              {sessionUptimeStr || (isConnected ? (telemetry.esp32?.uptimeStr || '00:00:00') : '00:00:00')}
             </span>
             <span className={`text-[10px] font-bold ml-1 ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-600'}`}>
-              PHT
+              UPTIME
             </span>
           </div>
         </div>
