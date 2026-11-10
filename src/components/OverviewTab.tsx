@@ -28,6 +28,101 @@ interface OverviewTabProps {
   onManualSlider: (key: 'stoveTemp' | 'ambientTemp' | 'humidity' | 'batteryPct', val: number) => void
 }
 
+/**
+ * 4-Bar State-of-Charge Battery SVG Icon
+ * Lights up 0 to 4 bars corresponding to:
+ * - 4 bars: 76% to 100%
+ * - 3 bars: 51% to 75%
+ * - 2 bars: 26% to 50%
+ * - 1 bar: 1% to 25% (warning color)
+ * - 0 bars: 0% / disconnected
+ */
+function Battery4BarIcon({
+  activeBars,
+  isDark,
+  size = 24,
+}: {
+  activeBars: number
+  isDark: boolean
+  size?: number
+}) {
+  const activeColor =
+    activeBars === 1
+      ? '#ef4444' // Red / Low (1-25%)
+      : activeBars === 2
+      ? '#f59e0b' // Amber (26-50%)
+      : '#00E676' // Vibrant green (>50%)
+
+  const inactiveColor = isDark ? '#272F38' : '#e4e4e7'
+  const strokeColor = activeBars === 0 ? (isDark ? '#4b5563' : '#a1a1aa') : activeColor
+
+  return (
+    <svg
+      width={size}
+      height={Math.round(size * 0.52)}
+      viewBox="0 0 28 14"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      className="flex-shrink-0"
+      aria-label={`${activeBars} of 4 bars`}
+    >
+      {/* Battery Body Outline */}
+      <rect
+        x="1"
+        y="1"
+        width="22"
+        height="12"
+        rx="2.5"
+        stroke={strokeColor}
+        strokeWidth="1.5"
+      />
+      {/* Battery Positive Terminal Tip */}
+      <path
+        d="M25 5C25.5 5 26 5.5 26 6V8C26 8.5 25.5 9 25 9"
+        stroke={strokeColor}
+        strokeWidth="1.5"
+        strokeLinecap="round"
+      />
+      {/* Bar 1 */}
+      <rect
+        x="3"
+        y="3"
+        width="3.6"
+        height="8"
+        rx="0.8"
+        fill={activeBars >= 1 ? activeColor : inactiveColor}
+      />
+      {/* Bar 2 */}
+      <rect
+        x="8"
+        y="3"
+        width="3.6"
+        height="8"
+        rx="0.8"
+        fill={activeBars >= 2 ? activeColor : inactiveColor}
+      />
+      {/* Bar 3 */}
+      <rect
+        x="13"
+        y="3"
+        width="3.6"
+        height="8"
+        rx="0.8"
+        fill={activeBars >= 3 ? activeColor : inactiveColor}
+      />
+      {/* Bar 4 */}
+      <rect
+        x="18"
+        y="3"
+        width="3.6"
+        height="8"
+        rx="0.8"
+        fill={activeBars >= 4 ? activeColor : inactiveColor}
+      />
+    </svg>
+  )
+}
+
 export function OverviewTab({
   telemetry,
   lang,
@@ -116,6 +211,11 @@ export function OverviewTab({
   const pHarvLive = isConnected ? (telemetry.pHarv ?? (telemetry.tegPower > 0 ? telemetry.tegPower : Math.round(vTegLive * iBatLive * 10) / 10)) : 0.0
   const whHarvLive = isConnected ? (telemetry.whHarv ?? 0.0) : 0.0
   const isRelayClosed = isConnected ? Boolean(telemetry.relayOn ?? telemetry.relays.dcBus) : false
+
+  // 4-Bar Battery State-of-Charge Calculation
+  // 4 bars: 76-100%, 3 bars: 51-75%, 2 bars: 26-50%, 1 bar: 1-25%, 0 bars: 0%
+  const battPct = isConnected ? Math.min(100, Math.max(0, Math.round(telemetry.batteryPct))) : 0
+  const activeBars = battPct > 75 ? 4 : battPct > 50 ? 3 : battPct > 25 ? 2 : battPct > 0 ? 1 : 0
 
   return (
     <div className="flex flex-col gap-3 font-sans">
@@ -294,7 +394,7 @@ export function OverviewTab({
 
       {/* ── 3. 2×2 TELEMETRY GRID ───────────────────────────────────── */}
       <div className="grid grid-cols-2 gap-3">
-        {/* TILE 1: BATTERY (12V 15Ah SLA) */}
+        {/* TILE 1: BATTERY (12V 15Ah SLA) WITH 4-BAR GAUGE */}
         <div className={`rounded-2xl p-3.5 border flex flex-col justify-between min-h-[110px] shadow-md transition-all ${
           isDark
             ? 'bg-[#13171B] border-[#1E242B] ring-1 ring-white/[0.04]'
@@ -305,7 +405,7 @@ export function OverviewTab({
               <span className={`text-[10px] font-bold uppercase tracking-wider ${isDark ? 'text-white' : 'text-zinc-950'}`}>
                 {isFil ? 'BATERYA' : 'BATTERY'}
               </span>
-              <IconBattery size={18} className={isDark ? 'text-[#00E676]' : 'text-emerald-700'} />
+              <Battery4BarIcon activeBars={activeBars} isDark={isDark} size={24} />
             </div>
             <div className="flex items-center gap-1.5 mt-0.5">
               <span className={`text-[9.5px] font-mono ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-600'}`}>
@@ -320,12 +420,58 @@ export function OverviewTab({
           </div>
 
           <div>
-            <div className="flex items-baseline mt-1.5">
-              <span className={`text-2xl sm:text-3xl font-black font-mono tabular-nums tracking-tight ${isDark ? 'text-white' : 'text-zinc-950'}`}>
-                {isConnected ? Math.round(telemetry.batteryPct) : 0}
+            <div className="flex items-baseline justify-between mt-1">
+              <div className="flex items-baseline">
+                <span className={`text-2xl sm:text-3xl font-black font-mono tabular-nums tracking-tight ${isDark ? 'text-white' : 'text-zinc-950'}`}>
+                  {battPct}
+                </span>
+                <span className={`text-xs font-semibold ml-1 ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-600'}`}>%</span>
+              </div>
+              <span className={`text-[9px] font-mono font-bold px-1.5 py-0.5 rounded ${
+                activeBars === 1
+                  ? 'bg-rose-500/20 text-rose-400'
+                  : activeBars === 2
+                  ? 'bg-amber-500/20 text-amber-400'
+                  : isDark
+                  ? 'bg-[#00E676]/15 text-[#00E676]'
+                  : 'bg-emerald-100 text-emerald-800'
+              }`}>
+                {activeBars}/4 BARS
               </span>
-              <span className={`text-xs font-semibold ml-1 ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-600'}`}>%</span>
             </div>
+
+            {/* 4-Segment State-of-Charge Bar Gauge */}
+            <div
+              className="grid grid-cols-4 gap-1 w-full my-1.5"
+              role="meter"
+              aria-valuenow={battPct}
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-label={`Battery ${battPct}%, ${activeBars} of 4 bars`}
+            >
+              {[1, 2, 3, 4].map((bar) => {
+                const isLit = activeBars >= bar
+                return (
+                  <div
+                    key={bar}
+                    className={`h-2 rounded-full transition-all duration-300 ${
+                      isLit
+                        ? activeBars === 1
+                          ? 'bg-rose-500 shadow-sm shadow-rose-500/40'
+                          : activeBars === 2
+                          ? 'bg-amber-400 shadow-sm shadow-amber-400/40'
+                          : isDark
+                          ? 'bg-[#00E676] shadow-sm shadow-emerald-500/40'
+                          : 'bg-emerald-600'
+                        : isDark
+                        ? 'bg-[#1E242B]'
+                        : 'bg-zinc-200'
+                    }`}
+                  />
+                )
+              })}
+            </div>
+
             <span className={`text-[8.5px] font-mono block mt-0.5 ${isDark ? 'text-zinc-500' : 'text-zinc-500'}`}>
               6.0V Min · 14.4V Full
             </span>
