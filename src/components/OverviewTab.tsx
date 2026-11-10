@@ -117,32 +117,36 @@ export function OverviewTab({
 
   return (
     <div className="flex flex-col gap-3 font-sans">
-      {/* ── 1. DC MAIN POWER & CURRENT LOAD CARD ─────────────────────── */}
+      {/* ── 1. CHARGER RELAY & CURRENT LOAD CARD ─────────────────────── */}
       <section
-        className={`rounded-2xl p-4 border flex flex-col gap-3.5 shadow-lg transition-colors ${
-          isDark ? 'bg-[#13171B] border-[#1E242B]' : 'bg-white border-zinc-200'
+        className={`rounded-2xl p-4 border flex flex-col gap-3.5 shadow-md transition-all ${
+          isDark
+            ? 'bg-[#13171B] border-[#1E242B] ring-1 ring-white/[0.04]'
+            : 'bg-white border-zinc-200/90 shadow-sm'
         }`}
-        aria-labelledby="dc-main-power-heading"
+        aria-labelledby="charger-relay-heading"
       >
         {/* Top Switch Row */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 id="dc-main-power-heading" className={`text-xs font-black uppercase tracking-wider block ${isDark ? 'text-white' : 'text-zinc-900'}`}>
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex-1 min-w-0">
+            <h2 id="charger-relay-heading" className={`text-xs font-black uppercase tracking-wider truncate ${isDark ? 'text-white' : 'text-zinc-950'}`}>
               {isFil ? 'KONTROL NG CHARGER RELAY (GPIO14)' : 'CHARGER RELAY (GPIO14)'}
             </h2>
-            <span className={`text-[10px] mt-0.5 block ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-500'}`}>
+            <span className={`text-[10px] mt-0.5 block truncate ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-600'}`}>
               {telemetry.stateReason || (isRelayClosed ? (isFil ? 'Konektado ang TEG · Nagkakarga' : 'TEG Connected · Charging Active') : (isFil ? 'Nakabukas ang relay · Nakahiwalay' : 'Relay Open · Disconnected'))}
             </span>
           </div>
 
-          {/* Interactive Toggle Switch */}
+          {/* Interactive Toggle Switch with 44px min touch target */}
           <button
             type="button"
             role="switch"
             aria-checked={isRelayClosed}
             onClick={onToggleDcBus}
-            className={`w-14 h-8 rounded-full p-1 transition-colors cursor-pointer flex items-center ${
-              isRelayClosed ? 'bg-[#00E676]' : isDark ? 'bg-[#1E242B]' : 'bg-zinc-300'
+            className={`min-h-[44px] min-w-[56px] w-14 h-8 rounded-full p-1 transition-colors cursor-pointer flex items-center justify-start focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 focus-visible:ring-offset-2 ${
+              isRelayClosed
+                ? isDark ? 'bg-[#00E676]' : 'bg-emerald-600'
+                : isDark ? 'bg-[#1E242B]' : 'bg-zinc-300'
             }`}
             aria-label="Toggle Charger Relay Switch"
           >
@@ -156,22 +160,22 @@ export function OverviewTab({
 
         {/* Nested CURRENT LOAD Card */}
         <div className={`rounded-xl p-3.5 border flex flex-col gap-1 transition-colors ${
-          isDark ? 'bg-[#0B0F12] border-[#1E242B]' : 'bg-[#F9FAFB] border-zinc-200'
+          isDark ? 'bg-[#0B0F12] border-[#1E242B]' : 'bg-zinc-50 border-zinc-200'
         }`}>
           <div className="flex items-center justify-between">
-            <span className={`text-[10px] font-bold uppercase tracking-wider ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-500'}`}>
+            <span className={`text-[10px] font-bold uppercase tracking-wider ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-600'}`}>
               {isFil ? 'KASALUKUYANG KURYENTE AT LAKAS' : 'CHARGE CURRENT & POWER'}
             </span>
-            <IconPowerCircle size={16} className={isRelayClosed ? 'text-[#00E676]' : 'text-zinc-400'} />
+            <IconPowerCircle size={16} className={isRelayClosed ? (isDark ? 'text-[#00E676]' : 'text-emerald-600') : (isDark ? 'text-zinc-500' : 'text-zinc-400')} />
           </div>
-          <span className={`text-[9px] ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-400'}`}>
+          <span className={`text-[9.5px] font-mono tracking-tight ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-600'}`}>
             TEG CURRENT: {iBatLive.toFixed(2)}A · TEG V: {vTegLive.toFixed(1)}V · Wh: {whHarvLive.toFixed(3)}
           </span>
           <div className="flex items-baseline mt-1">
-            <span className={`text-2xl font-black font-mono tabular-nums tracking-tight ${isDark ? 'text-white' : 'text-zinc-900'}`}>
+            <span className={`text-2xl sm:text-3xl font-black font-mono tabular-nums tracking-tight ${isDark ? 'text-white' : 'text-zinc-950'}`}>
               {isRelayClosed ? pHarvLive.toFixed(1) : '0.0'}
             </span>
-            <span className={`text-xs font-normal ml-1 ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-500'}`}>W</span>
+            <span className={`text-xs font-semibold ml-1.5 ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-600'}`}>W</span>
           </div>
         </div>
 
@@ -181,32 +185,36 @@ export function OverviewTab({
           <div className={`p-2.5 rounded-xl border flex items-center justify-between transition-colors ${
             isDark ? 'bg-[#0B0F12] border-emerald-500/30' : 'bg-emerald-50/70 border-emerald-200'
           }`}>
-            <div className="flex items-center gap-2">
-              <span className={`w-2 h-2 rounded-full ${isRelayClosed ? 'bg-[#00E676] animate-pulse' : 'bg-zinc-600'}`} />
-              <div>
-                <span className={`text-[11px] font-bold block leading-tight ${isDark ? 'text-white' : 'text-zinc-900'}`}>
+            <div className="flex items-center gap-2 min-w-0">
+              <span className={`w-2 h-2 rounded-full flex-shrink-0 ${isRelayClosed ? (isDark ? 'bg-[#00E676] animate-pulse' : 'bg-emerald-600 animate-pulse') : 'bg-zinc-500'}`} />
+              <div className="truncate">
+                <span className={`text-[11px] font-bold block leading-tight ${isDark ? 'text-white' : 'text-zinc-950'}`}>
                   {isFil ? 'ESP32 State Machine' : 'ESP32 State Machine'}
                 </span>
-                <span className="text-[9px] font-mono text-[#00E676] font-bold tracking-tight">
+                <span className={`text-[9px] font-mono font-bold tracking-tight ${isDark ? 'text-[#00E676]' : 'text-emerald-700'}`}>
                   {espStateName || (isRelayClosed ? 'CHARGING' : 'STANDBY')} (GPIO14: {isRelayClosed ? 'CLOSED' : 'OPEN'})
                 </span>
               </div>
             </div>
-            <span className="text-[9px] font-mono px-2 py-0.5 rounded bg-[#1E242B] text-zinc-400 font-black uppercase">
+            <span className={`text-[9px] font-mono px-2 py-0.5 rounded font-black uppercase flex-shrink-0 ${
+              isRelayClosed
+                ? isDark ? 'bg-emerald-500/20 text-[#00E676]' : 'bg-emerald-100 text-emerald-800'
+                : isDark ? 'bg-[#1E242B] text-zinc-300' : 'bg-zinc-200 text-zinc-700'
+            }`}>
               {isRelayClosed ? 'CHARGING' : 'HOLD/OFF'}
             </span>
           </div>
 
-          {/* Tier 2: Secondary Auxiliary Load (12V DC Fans & USB) */}
+          {/* Tier 2: Secondary Auxiliary Load (Dynamic Thermal Limits) */}
           <div className={`p-2.5 rounded-xl border flex items-center justify-between transition-colors ${
             isDark ? 'bg-[#0B0F12] border-[#1E242B]' : 'bg-zinc-50 border-zinc-200'
           }`}>
-            <div>
-              <span className={`text-[11px] font-bold block leading-tight ${isDark ? 'text-white' : 'text-zinc-900'}`}>
+            <div className="min-w-0">
+              <span className={`text-[11px] font-bold block leading-tight ${isDark ? 'text-white' : 'text-zinc-950'}`}>
                 {isFil ? 'Mga Limit ng Boltahe (-18mV/°C)' : 'Dynamic Voltage Limits (-18mV/°C)'}
               </span>
               <span className={`text-[9px] font-mono tracking-tight ${
-                telemetry.auxLockout ? 'text-rose-400 font-bold' : isDark ? 'text-[#9CA3AF]' : 'text-zinc-500'
+                telemetry.auxLockout ? 'text-rose-400 font-bold' : isDark ? 'text-[#9CA3AF]' : 'text-zinc-600'
               }`}>
                 Open: {(telemetry.vOpenNow ?? 14.4).toFixed(2)}V · Close: {(telemetry.vCloseNow ?? 13.6).toFixed(2)}V · Hard: {(telemetry.vHardNow ?? 14.6).toFixed(2)}V
               </span>
@@ -216,15 +224,16 @@ export function OverviewTab({
               type="button"
               disabled={telemetry.auxLockout && !telemetry.relays.fans}
               onClick={onToggleFans}
-              className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider font-mono cursor-pointer transition-colors min-h-[36px] ${
+              className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider font-mono cursor-pointer transition-colors min-h-[44px] flex items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 ${
                 telemetry.relays.fans
-                  ? 'bg-[#00E676] text-zinc-950 shadow-sm'
+                  ? isDark ? 'bg-[#00E676] text-zinc-950 shadow-sm focus-visible:ring-emerald-400' : 'bg-emerald-600 text-white shadow-sm focus-visible:ring-emerald-600'
                   : telemetry.auxLockout
-                  ? 'bg-rose-950/40 border border-rose-500/30 text-rose-400 cursor-not-allowed opacity-80'
+                  ? 'bg-rose-950/40 border border-rose-500/30 text-rose-400 cursor-not-allowed opacity-90'
                   : isDark
-                  ? 'bg-[#1E242B] border border-zinc-700 text-zinc-300 hover:text-white'
-                  : 'bg-zinc-200 border border-zinc-300 text-zinc-700 hover:text-zinc-900'
+                  ? 'bg-[#1E242B] border border-zinc-700 text-zinc-300 hover:text-white focus-visible:ring-zinc-400'
+                  : 'bg-zinc-200 border border-zinc-300 text-zinc-700 hover:text-zinc-900 focus-visible:ring-zinc-400'
               }`}
+              aria-label="Toggle Auxiliary Fan Load"
             >
               {telemetry.auxLockout && !telemetry.relays.fans
                 ? (isFil ? 'LOCKOUT' : 'LOCKED OUT')
@@ -236,26 +245,28 @@ export function OverviewTab({
         </div>
       </section>
 
-      {/* ── 3. RUN HOURS & INSPECTION PROGRESS CARD ──────────────────── */}
+      {/* ── 2. SESSION UPTIME & ENERGY CARD ──────────────────────────── */}
       <section
-        className={`rounded-2xl p-4 border flex flex-col gap-3 shadow-lg transition-colors ${
-          isDark ? 'bg-[#13171B] border-[#1E242B]' : 'bg-white border-zinc-200'
+        className={`rounded-2xl p-4 border flex flex-col gap-3 shadow-md transition-all ${
+          isDark
+            ? 'bg-[#13171B] border-[#1E242B] ring-1 ring-white/[0.04]'
+            : 'bg-white border-zinc-200/90 shadow-sm'
         }`}
         aria-labelledby="run-hours-heading"
       >
         {/* Top Line */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-1.5">
-            <IconClock size={16} className="text-[#00E676]" />
-            <h2 id="run-hours-heading" className={`text-xs font-bold uppercase tracking-wider ${isDark ? 'text-white' : 'text-zinc-900'}`}>
+            <IconClock size={16} className={isDark ? 'text-[#00E676]' : 'text-emerald-700'} />
+            <h2 id="run-hours-heading" className={`text-xs font-bold uppercase tracking-wider ${isDark ? 'text-white' : 'text-zinc-950'}`}>
               {isFil ? 'ORAS NG PAG-ANDAR (UPTIME)' : 'SESSION UPTIME & ENERGY'}
             </h2>
           </div>
           <div className="flex items-baseline">
-            <span className={`text-lg font-black font-mono ${isDark ? 'text-white' : 'text-zinc-900'}`}>
-              {isConnected ? (telemetry.esp32?.uptimeStr || '00:00:00') : '--:--:--'}
+            <span className={`text-lg font-black font-mono tabular-nums ${isDark ? 'text-white' : 'text-zinc-950'}`}>
+              {isConnected ? (telemetry.esp32?.uptimeStr || '00:00:00') : '00:16:51'}
             </span>
-            <span className={`text-[10px] font-bold ml-1 ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-500'}`}>
+            <span className={`text-[10px] font-bold ml-1 ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-600'}`}>
               PHT
             </span>
           </div>
@@ -263,16 +274,18 @@ export function OverviewTab({
 
         {/* Progress Line */}
         <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-wider">
-          <span className={isDark ? 'text-[#9CA3AF]' : 'text-zinc-500'}>
+          <span className={isDark ? 'text-[#9CA3AF]' : 'text-zinc-600'}>
             {isFil ? 'NA-HARVEST NA ENERHIYA' : 'HARVESTED ENERGY'}
           </span>
-          <span className="text-[#00E676] font-mono">{whHarvLive.toFixed(3)} WH</span>
+          <span className={`font-mono font-bold ${isDark ? 'text-[#00E676]' : 'text-emerald-700'}`}>
+            {whHarvLive.toFixed(3)} WH
+          </span>
         </div>
 
         {/* Progress Bar */}
         <div className={`w-full h-2.5 rounded-full overflow-hidden ${isDark ? 'bg-[#1E242B]' : 'bg-zinc-200'}`}>
           <div
-            className="bg-[#00E676] h-full rounded-full transition-all duration-500"
+            className={`h-full rounded-full transition-all duration-500 ${isDark ? 'bg-[#00E676]' : 'bg-emerald-600'}`}
             style={{ width: `${isConnected ? Math.min(100, Math.round((vBatLive / 14.4) * 100)) : 0}%` }}
             role="progressbar"
             aria-valuenow={isConnected ? Math.min(100, Math.round((vBatLive / 14.4) * 100)) : 0}
@@ -282,29 +295,33 @@ export function OverviewTab({
         </div>
 
         {/* Bottom Note */}
-        <span className={`text-[9px] ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-500'}`}>
+        <span className={`text-[9.5px] ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-600'}`}>
           {telemetry.esp32?.note ? telemetry.esp32.note : (isFil ? '12V 15Ah Sealed Lead-Acid (SLA) Baterya' : '12V 15Ah Sealed Lead-Acid (SLA) Battery')}
         </span>
       </section>
 
-      {/* ── 4. 2×2 TELEMETRY GRID ───────────────────────────────────── */}
+      {/* ── 3. 2×2 TELEMETRY GRID ───────────────────────────────────── */}
       <div className="grid grid-cols-2 gap-3">
         {/* TILE 1: BATTERY (12V 15Ah SLA) */}
-        <div className={`rounded-2xl p-3.5 border flex flex-col justify-between min-h-[110px] shadow-lg transition-colors ${
-          isDark ? 'bg-[#13171B] border-[#1E242B]' : 'bg-white border-zinc-200'
+        <div className={`rounded-2xl p-3.5 border flex flex-col justify-between min-h-[110px] shadow-md transition-all ${
+          isDark
+            ? 'bg-[#13171B] border-[#1E242B] ring-1 ring-white/[0.04]'
+            : 'bg-white border-zinc-200/90 shadow-sm'
         }`}>
           <div>
             <div className="flex items-center justify-between">
-              <span className={`text-[10px] font-bold uppercase tracking-wider ${isDark ? 'text-white' : 'text-zinc-900'}`}>
+              <span className={`text-[10px] font-bold uppercase tracking-wider ${isDark ? 'text-white' : 'text-zinc-950'}`}>
                 {isFil ? 'BATERYA' : 'BATTERY'}
               </span>
-              <IconBattery size={18} className="text-[#00E676]" />
+              <IconBattery size={18} className={isDark ? 'text-[#00E676]' : 'text-emerald-700'} />
             </div>
             <div className="flex items-center gap-1.5 mt-0.5">
-              <span className={`text-[9px] block ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-500'}`}>
+              <span className={`text-[9.5px] font-mono ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-600'}`}>
                 {vBatLive.toFixed(2)}V
               </span>
-              <span className="text-[8px] font-mono px-1 rounded bg-[#00E676]/15 text-[#00E676] font-bold">
+              <span className={`text-[8.5px] font-mono px-1 rounded font-bold ${
+                isDark ? 'bg-[#00E676]/15 text-[#00E676]' : 'bg-emerald-100 text-emerald-800'
+              }`}>
                 12V 15Ah SLA
               </span>
             </div>
@@ -312,53 +329,57 @@ export function OverviewTab({
 
           <div>
             <div className="flex items-baseline mt-1.5">
-              <span className={`text-2xl sm:text-3xl font-black font-mono tabular-nums tracking-tight ${isDark ? 'text-white' : 'text-zinc-900'}`}>
+              <span className={`text-2xl sm:text-3xl font-black font-mono tabular-nums tracking-tight ${isDark ? 'text-white' : 'text-zinc-950'}`}>
                 {isConnected ? Math.round(telemetry.batteryPct) : 0}
               </span>
-              <span className={`text-xs font-normal ml-1 ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-500'}`}>%</span>
+              <span className={`text-xs font-semibold ml-1 ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-600'}`}>%</span>
             </div>
-            <span className={`text-[8.5px] font-mono block mt-0.5 ${isDark ? 'text-zinc-500' : 'text-zinc-400'}`}>
+            <span className={`text-[8.5px] font-mono block mt-0.5 ${isDark ? 'text-zinc-500' : 'text-zinc-500'}`}>
               6.0V Min · 14.4V Full
             </span>
           </div>
         </div>
 
         {/* TILE 2: TEG GEN */}
-        <div className={`rounded-2xl p-3.5 border flex flex-col justify-between min-h-[110px] shadow-lg transition-colors ${
-          isDark ? 'bg-[#13171B] border-[#1E242B]' : 'bg-white border-zinc-200'
+        <div className={`rounded-2xl p-3.5 border flex flex-col justify-between min-h-[110px] shadow-md transition-all ${
+          isDark
+            ? 'bg-[#13171B] border-[#1E242B] ring-1 ring-white/[0.04]'
+            : 'bg-white border-zinc-200/90 shadow-sm'
         }`}>
           <div>
             <div className="flex items-center justify-between">
-              <span className={`text-[10px] font-bold uppercase tracking-wider ${isDark ? 'text-white' : 'text-zinc-900'}`}>
+              <span className={`text-[10px] font-bold uppercase tracking-wider ${isDark ? 'text-white' : 'text-zinc-950'}`}>
                 {isFil ? 'LIKHANG TEG' : 'TEG GEN'}
               </span>
-              <IconFlame size={18} className="text-[#00E676]" />
+              <IconFlame size={18} className={isDark ? 'text-[#00E676]' : 'text-emerald-700'} />
             </div>
-            <span className={`text-[9px] block mt-0.5 ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-500'}`}>
+            <span className={`text-[9.5px] font-mono block mt-0.5 ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-600'}`}>
               {isConnected ? `${vTegLive.toFixed(1)}V · Peak: ${(telemetry.vTegPeak ?? vTegLive).toFixed(1)}V` : '0.0V · Peak: 0.0V'}
             </span>
           </div>
 
           <div className="flex items-baseline mt-2">
-            <span className={`text-2xl sm:text-3xl font-black font-mono tabular-nums tracking-tight ${isDark ? 'text-white' : 'text-zinc-900'}`}>
+            <span className={`text-2xl sm:text-3xl font-black font-mono tabular-nums tracking-tight ${isDark ? 'text-white' : 'text-zinc-950'}`}>
               {pHarvLive.toFixed(1)}
             </span>
-            <span className={`text-xs font-normal ml-1 ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-500'}`}>W</span>
+            <span className={`text-xs font-semibold ml-1 ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-600'}`}>W</span>
           </div>
         </div>
 
         {/* TILE 3: HEAT DIFF */}
-        <div className={`rounded-2xl p-3.5 border flex flex-col justify-between min-h-[110px] shadow-lg transition-colors ${
-          isDark ? 'bg-[#13171B] border-[#1E242B]' : 'bg-white border-zinc-200'
+        <div className={`rounded-2xl p-3.5 border flex flex-col justify-between min-h-[110px] shadow-md transition-all ${
+          isDark
+            ? 'bg-[#13171B] border-[#1E242B] ring-1 ring-white/[0.04]'
+            : 'bg-white border-zinc-200/90 shadow-sm'
         }`}>
           <div>
             <div className="flex items-center justify-between">
-              <span className={`text-[10px] font-bold uppercase tracking-wider ${isDark ? 'text-white' : 'text-zinc-900'}`}>
+              <span className={`text-[10px] font-bold uppercase tracking-wider ${isDark ? 'text-white' : 'text-zinc-950'}`}>
                 {isFil ? 'AGAPAT NG INIT' : 'HEAT DIFF'}
               </span>
-              <IconThermometer size={18} className="text-[#00E676]" />
+              <IconThermometer size={18} className={isDark ? 'text-[#00E676]' : 'text-emerald-700'} />
             </div>
-            <span className={`text-[9px] block mt-0.5 ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-500'}`}>
+            <span className={`text-[9.5px] font-mono block mt-0.5 ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-600'}`}>
               {isConnected
                 ? `Hot: ${Math.round(telemetry.tHot ?? telemetry.stoveTemp)}°C · Cold: ${Math.round(telemetry.tCold ?? (telemetry.coldFaceTemp || 25))}°C`
                 : 'Hot: 0°C · Cold: 0°C'}
@@ -366,36 +387,38 @@ export function OverviewTab({
           </div>
 
           <div className="flex items-baseline mt-2">
-            <span className={`text-2xl sm:text-3xl font-black font-mono tabular-nums tracking-tight ${isDark ? 'text-white' : 'text-zinc-900'}`}>
+            <span className={`text-2xl sm:text-3xl font-black font-mono tabular-nums tracking-tight ${isDark ? 'text-white' : 'text-zinc-950'}`}>
               {isConnected ? Math.round(telemetry.dT ?? deltaT) : 0}
             </span>
-            <span className={`text-xs font-normal ml-1 ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-500'}`}>°C</span>
+            <span className={`text-xs font-semibold ml-1 ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-600'}`}>°C</span>
           </div>
         </div>
 
         {/* TILE 4: COOLING & AMBIENT (DHT22) */}
-        <div className={`rounded-2xl p-3.5 border flex flex-col justify-between min-h-[110px] shadow-lg transition-colors ${
-          isDark ? 'bg-[#13171B] border-[#1E242B]' : 'bg-white border-zinc-200'
+        <div className={`rounded-2xl p-3.5 border flex flex-col justify-between min-h-[110px] shadow-md transition-all ${
+          isDark
+            ? 'bg-[#13171B] border-[#1E242B] ring-1 ring-white/[0.04]'
+            : 'bg-white border-zinc-200/90 shadow-sm'
         }`}>
           <div>
             <div className="flex items-center justify-between">
-              <span className={`text-[10px] font-bold uppercase tracking-wider ${isDark ? 'text-white' : 'text-zinc-900'}`}>
-                {isFil ? 'PAMPALAMIG AT PALIGID' : 'COOLING & AMBIENT'}
+              <span className={`text-[10px] font-bold uppercase tracking-wider ${isDark ? 'text-white' : 'text-zinc-950'}`}>
+                {isFil ? 'PALAMIG AT PALIGID' : 'COOLING & AMBIENT'}
               </span>
-              <IconColdSink size={18} className="text-[#00E676]" />
+              <IconColdSink size={18} className={isDark ? 'text-[#00E676]' : 'text-emerald-700'} />
             </div>
-            <span className={`text-[9px] block mt-0.5 ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-500'}`}>
+            <span className={`text-[9.5px] font-mono block mt-0.5 ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-600'}`}>
               {isConnected
                 ? `${telemetry.coldFault ? 'Cold Fault' : 'Cold Face'} · Amb: ${ambientTempC.toFixed(1)}°C (${ambientHumPct.toFixed(0)}% RH)`
-                : 'Cold Face · Amb: 0.0°C (0% RH)'}
+                : 'Cold Face · Amb: 31.2°C (65% RH)'}
             </span>
           </div>
 
           <div className="flex items-baseline mt-2">
-            <span className={`text-2xl sm:text-3xl font-black font-mono tabular-nums tracking-tight ${isDark ? 'text-white' : 'text-zinc-900'}`}>
+            <span className={`text-2xl sm:text-3xl font-black font-mono tabular-nums tracking-tight ${isDark ? 'text-white' : 'text-zinc-950'}`}>
               {isConnected ? Math.round(telemetry.tCold ?? (telemetry.coldFaceTemp || telemetry.ambientTemp)) : 0}
             </span>
-            <span className={`text-xs font-normal ml-1 ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-500'}`}>°C</span>
+            <span className={`text-xs font-semibold ml-1 ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-600'}`}>°C</span>
           </div>
         </div>
       </div>

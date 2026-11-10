@@ -9,11 +9,19 @@ if ('serviceWorker' in navigator) {
     navigator.serviceWorker
       .register('/sw.js')
       .then((registration) => {
-        console.log('Padayon PWA Service Worker registered with scope:', registration.scope)
+        registration.update()
       })
       .catch((error) => {
         console.warn('Padayon PWA Service Worker registration failed:', error)
       })
+
+    let refreshing = false
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (!refreshing) {
+        refreshing = true
+        window.location.reload()
+      }
+    })
   })
 }
 
