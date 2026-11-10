@@ -23,9 +23,11 @@ interface LogsTabProps {
   hardwareState: HardwareState
   historyManager: TelemetryHistoryManager
   logs: SystemLogEntry[]
+  telemetry?: TelemetryData
   onAddLog?: (message: string, level: SystemLogLevel, messageFil?: string) => void
   onClearLogs?: () => void
   onExportCsv?: () => void
+  onExportEventLogs?: () => void
   lang: Lang
   theme?: 'dark' | 'light'
 }
@@ -35,9 +37,12 @@ type FilterLevel = 'all' | 'info' | 'warning' | 'error'
 export function LogsTab({
   bridge,
   hardwareState,
+  historyManager,
   logs,
+  telemetry,
   onClearLogs,
   onExportCsv,
+  onExportEventLogs,
   lang,
   theme = 'dark',
 }: LogsTabProps) {
@@ -46,7 +51,7 @@ export function LogsTab({
   const isConnected = hardwareState.status === 'connected'
 
   const [filter, setFilter] = useState<FilterLevel>('all')
-  const [exportedNotice, setExportedNotice] = useState<boolean>(false)
+  const [exportedNotice, setExportedNotice] = useState<string | null>(null)
   const [showConsole, setShowConsole] = useState<boolean>(false)
 
   const listContainerRef = useRef<HTMLDivElement>(null)
@@ -72,14 +77,24 @@ export function LogsTab({
     error: logs.filter((l) => l.level === 'error').length,
   }
 
-  const handleExport = () => {
+  const handleExportTelemetry = () => {
     if (onExportCsv) {
       onExportCsv()
     } else {
-      systemLogManager.exportCsv('padayon_system_logs')
+      historyManager.exportCsv(telemetry?.feedstock || 'Biomass_Charcoal', telemetry?.runId || 'RUN-01')
     }
-    setExportedNotice(true)
-    setTimeout(() => setExportedNotice(false), 3000)
+    setExportedNotice('telemetry')
+    setTimeout(() => setExportedNotice(null), 3000)
+  }
+
+  const handleExportEvents = () => {
+    if (onExportEventLogs) {
+      onExportEventLogs()
+    } else {
+      systemLogManager.exportCsv('bteg_system_logs')
+    }
+    setExportedNotice('events')
+    setTimeout(() => setExportedNotice(null), 3000)
   }
 
   return (
@@ -273,48 +288,74 @@ export function LogsTab({
       </div>
 
       {/* ── ACTION BUTTONS ──────────────────────────────────────────── */}
-      <div className="grid grid-cols-2 gap-2 pt-1 font-sans">
+      <div className="flex flex-col gap-2 pt-1 font-sans">
+        {/* Primary Export: Full Telemetry Dataset formatted for Microsoft Excel */}
         <button
           type="button"
-          onClick={handleExport}
-          className={`py-2.5 px-3 rounded-xl border text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 cursor-pointer transition-colors shadow-lg min-h-[44px] ${
+          onClick={handleExportTelemetry}
+          className={`w-full py-3 px-4 rounded-2xl border text-xs font-bold uppercase tracking-wider flex items-center justify-between gap-2 cursor-pointer transition-all shadow-md min-h-[48px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 ${
             isDark
-              ? 'bg-[#13171B] hover:bg-[#1E242B] border-[#1E242B] text-[#00E676]'
-              : 'bg-white hover:bg-zinc-50 border-zinc-200 text-emerald-600'
+              ? 'bg-[#00E676]/15 hover:bg-[#00E676]/25 border-[#00E676]/50 text-[#00E676]'
+              : 'bg-emerald-50 hover:bg-emerald-100 border-emerald-300 text-emerald-800'
           }`}
+          aria-label="Export Telemetry CSV for Excel"
         >
-          <IconDownload size={14} />
-          <span>
-            {exportedNotice
-              ? isFil
-                ? 'NAI-DOWNLOAD NA'
-                : 'CSV DOWNLOADED'
-              : isFil
-              ? 'I-DOWNLOAD ANG CSV'
-              : 'EXPORT CSV'}
+          <div className="flex items-center gap-2.5 min-w-0">
+            <IconDownload size={18} className="flex-shrink-0" />
+            <div className="text-left truncate">
+              <span className="block font-black leading-tight truncate">
+                {exportedNotice === 'telemetry'
+                  ? isFil ? 'NAI-DOWNLOAD NA ANG TELEMETRIYA' : 'TELEMETRY DATA DOWNLOADED'
+                  : isFil ? 'I-EXPORT ANG TELEMETRY DATA SA EXCEL' : 'EXPORT TELEMETRY CSV (EXCEL)'}
+              </span>
+              <span className={`text-[10px] font-normal block truncate ${isDark ? 'text-zinc-400' : 'text-zinc-600'}`}>
+                {isFil ? 'Naka-format na may UTF-8 BOM para sa Excel (V, A, W, Wh, °C)' : 'Excel-ready UTF-8 BOM (V, A, W, Wh, °C, Relay & State)'}
+              </span>
+            </div>
+          </div>
+          <span className={`text-[10px] font-mono px-2 py-0.5 rounded font-black uppercase flex-shrink-0 ${
+            isDark ? 'bg-[#00E676]/20 text-[#00E676]' : 'bg-emerald-200 text-emerald-900'
+          }`}>
+            .CSV
           </span>
         </button>
 
-        <button
-          type="button"
-          onClick={() => setShowConsole(!showConsole)}
-          className={`py-2.5 px-3 rounded-xl border text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 cursor-pointer transition-colors shadow-lg min-h-[44px] ${
-            isDark
-              ? 'bg-[#13171B] hover:bg-[#1E242B] border-[#1E242B] text-white'
-              : 'bg-white hover:bg-zinc-50 border-zinc-200 text-zinc-900'
-          }`}
-        >
-          <IconUsb size={14} className="text-[#00E676]" />
-          <span>
-            {showConsole
-              ? isFil
-                ? 'ITAGO ANG SERIAL'
-                : 'HIDE TERMINAL'
-              : isFil
-              ? 'BUKSAN ANG SERIAL'
-              : 'USB SERIAL'}
-          </span>
-        </button>
+        {/* Secondary Row: Event Logs CSV & Serial Monitor Toggle */}
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            onClick={handleExportEvents}
+            className={`py-2.5 px-3 rounded-xl border text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 cursor-pointer transition-colors shadow-md min-h-[44px] ${
+              isDark
+                ? 'bg-[#13171B] hover:bg-[#1E242B] border-[#1E242B] text-zinc-300 hover:text-white'
+                : 'bg-white hover:bg-zinc-50 border-zinc-200 text-zinc-700 hover:text-zinc-900'
+            }`}
+          >
+            <IconFileText size={15} className={isDark ? 'text-[#00E676]' : 'text-emerald-700'} />
+            <span className="truncate">
+              {exportedNotice === 'events'
+                ? isFil ? 'NA-DOWNLOAD NA' : 'EVENTS SAVED'
+                : isFil ? 'EVENT LOGS' : 'EVENT LOGS CSV'}
+            </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setShowConsole(!showConsole)}
+            className={`py-2.5 px-3 rounded-xl border text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 cursor-pointer transition-colors shadow-md min-h-[44px] ${
+              isDark
+                ? 'bg-[#13171B] hover:bg-[#1E242B] border-[#1E242B] text-zinc-300 hover:text-white'
+                : 'bg-white hover:bg-zinc-50 border-zinc-200 text-zinc-700 hover:text-zinc-900'
+            }`}
+          >
+            <IconUsb size={15} className={isDark ? 'text-[#00E676]' : 'text-emerald-700'} />
+            <span className="truncate">
+              {showConsole
+                ? isFil ? 'ITAGO ANG SERIAL' : 'HIDE SERIAL'
+                : isFil ? 'BUKSAN ANG SERIAL' : 'USB SERIAL'}
+            </span>
+          </button>
+        </div>
       </div>
 
       {/* Secondary reset/clear action */}

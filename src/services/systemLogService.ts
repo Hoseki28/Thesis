@@ -31,38 +31,38 @@ export function getInitialSystemLogs(): SystemLogEntry[] {
   return [
     {
       id: 'init-4',
-      timestamp: formatLogTimestamp(offsetTime(10)),
-      timestampMs: now - 10 * 60 * 1000,
-      level: 'error',
-      message: 'Battery level below 20% cutoff threshold',
-      messageFil: 'Mababa na sa 20% ang lebel ng baterya',
-      source: 'threshold',
+      timestamp: formatLogTimestamp(offsetTime(5)),
+      timestampMs: now - 5 * 60 * 1000,
+      level: 'warning',
+      message: 'State Machine: HOLD/OFF (GPIO14: OPEN) · Standby awaiting battery voltage connection',
+      messageFil: 'State Machine: HOLD/OFF (GPIO14: BUKAS) · Naka-standby habang naghihintay ng baterya',
+      source: 'esp32',
     },
     {
       id: 'init-3',
-      timestamp: formatLogTimestamp(offsetTime(45)),
-      timestampMs: now - 45 * 60 * 1000,
+      timestamp: formatLogTimestamp(offsetTime(15)),
+      timestampMs: now - 15 * 60 * 1000,
       level: 'info',
-      message: 'Cooling pump speed increased to nominal',
-      messageFil: 'Tumaas ang bilis ng cooling pump sa normal',
-      source: 'system',
+      message: 'ACS712 Current Sensor (GPIO4) zero-drift calibrated · Multimeter trim gains armed',
+      messageFil: 'ACS712 Current Sensor (GPIO4) zero-drift na-calibrate · Naka-arm ang trim gains',
+      source: 'esp32',
     },
     {
       id: 'init-2',
-      timestamp: formatLogTimestamp(offsetTime(90)),
-      timestampMs: now - 90 * 60 * 1000,
-      level: 'warning',
-      message: 'TEG temp rising above normal operating window',
-      messageFil: 'Tumaas ang temperatura ng TEG kaysa normal',
-      source: 'threshold',
+      timestamp: formatLogTimestamp(offsetTime(30)),
+      timestampMs: now - 30 * 60 * 1000,
+      level: 'info',
+      message: 'Environmental telemetry online: DHT22 GPIO23 (Amb: 31.2°C, 65% RH), MAX6675 SPI (Hot Face: 0°C)',
+      messageFil: 'Online ang telemetriya ng paligid: DHT22 GPIO23 (31.2°C, 65% RH), MAX6675 SPI (0°C)',
+      source: 'system',
     },
     {
       id: 'init-1',
-      timestamp: formatLogTimestamp(offsetTime(180)),
-      timestampMs: now - 180 * 60 * 1000,
+      timestamp: formatLogTimestamp(offsetTime(60)),
+      timestampMs: now - 60 * 60 * 1000,
       level: 'info',
-      message: 'System started successfully and telemetry loop online',
-      messageFil: 'Matagumpay na nag-umpisa ang sistema at telemetry loop',
+      message: 'B-TEG Core Node #01 Wawa Dam initialized · Nordic UART BLE & Serial telemetry online',
+      messageFil: 'B-TEG Core Node #01 Wawa Dam nag-umpisa · Aktibo ang Nordic UART BLE at Serial telemetry',
       source: 'system',
     },
   ]
@@ -144,7 +144,8 @@ export class SystemLogManager {
     ])
 
     const csvContent = [headers.join(','), ...rows.map((r) => r.join(','))].join('\r\n')
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
+    // Prepend UTF-8 BOM (\uFEFF) for Excel compatibility
+    const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' })
     const url = URL.createObjectURL(blob)
 
     const dateStr = formatLogTimestamp(new Date()).replace(/[: ]/g, '_')

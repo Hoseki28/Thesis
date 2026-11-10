@@ -136,10 +136,10 @@ export default function App() {
         hardwareState.transport === 'serial'
           ? 'USB Serial'
           : hardwareState.transport === 'bluetooth'
-          ? 'Bluetooth BLE'
-          : hardwareState.transport === 'websocket'
-          ? 'Wi-Fi'
-          : 'None'
+            ? 'Bluetooth BLE'
+            : hardwareState.transport === 'websocket'
+              ? 'Wi-Fi'
+              : 'None'
 
       if (hardwareState.status === 'connected') {
         const msg =
@@ -227,6 +227,10 @@ export default function App() {
     bridgeRef.current = bridge
 
     // Simulation is not auto-started: dashboard strictly responds to physical ESP32
+    const initialBaseline = getOfflineTelemetry(calibrationRef.current)
+    historyManagerRef.current.addPoint(initialBaseline)
+    setHistoryPoints(historyManagerRef.current.getPoints())
+
     return () => {
       bridge.disconnectAll()
     }
@@ -394,13 +398,11 @@ export default function App() {
   }, [tooHot, lowHeat, lowBattery, telemetry.stoveTemp, telemetry.batteryPct, telemetry.batteryVoltage, calibration.stoveOverheatThreshold, calibration.stoveLowHeatThreshold])
 
   return (
-    <div className={`flex justify-center items-start min-h-screen transition-colors duration-200 ${
-      theme === 'dark' ? 'bg-[#0B0F12] text-zinc-100' : 'bg-[#F3F4F6] text-zinc-900'
-    } antialiased font-sans`}>
+    <div className={`flex justify-center items-start min-h-screen transition-colors duration-200 ${theme === 'dark' ? 'bg-[#0B0F12] text-zinc-100' : 'bg-[#F3F4F6] text-zinc-900'
+      } antialiased font-sans`}>
       {/* Mobile-first centered container: max-w-md (430px) */}
-      <div className={`flex flex-col min-h-screen w-full max-w-md border-x relative pb-24 transition-colors duration-200 ${
-        theme === 'dark' ? 'bg-[#0B0F12] border-[#1E242B]' : 'bg-[#F9FAFB] border-zinc-200 shadow-sm'
-      }`}>
+      <div className={`flex flex-col min-h-screen w-full max-w-md border-x relative pb-24 transition-colors duration-200 ${theme === 'dark' ? 'bg-[#0B0F12] border-[#1E242B]' : 'bg-[#F9FAFB] border-zinc-200 shadow-sm'
+        }`}>
         {/* ── HEADER ────────────────────────────────────────────────── */}
         <Header
           lang={lang}
@@ -433,20 +435,17 @@ export default function App() {
 
         {/* ── PWA INSTALL BANNER ────────────────────────────────────── */}
         {installPrompt && !isAppInstalled && (
-          <div className={`mx-3 mt-2.5 p-3 rounded-xl border flex items-center justify-between gap-2 shadow-lg transition-colors ${
-            theme === 'dark' ? 'bg-[#13171B] border-[#1E242B]' : 'bg-white border-zinc-200'
-          }`}>
+          <div className={`mx-3 mt-2.5 p-3 rounded-xl border flex items-center justify-between gap-2 shadow-lg transition-colors ${theme === 'dark' ? 'bg-[#13171B] border-[#1E242B]' : 'bg-white border-zinc-200'
+            }`}>
             <div className="flex items-center gap-2">
               <IconDownload size={16} className="text-[#00E676] flex-shrink-0" />
               <div>
-                <span className={`text-[11px] font-bold uppercase tracking-wider block ${
-                  theme === 'dark' ? 'text-white' : 'text-zinc-900'
-                }`}>
+                <span className={`text-[11px] font-bold uppercase tracking-wider block ${theme === 'dark' ? 'text-white' : 'text-zinc-900'
+                  }`}>
                   {lang === 'fil' ? 'I-INSTALL ANG BIOMASS PWA' : 'INSTALL BIOMASS PWA'}
                 </span>
-                <span className={`text-[10px] block ${
-                  theme === 'dark' ? 'text-[#9CA3AF]' : 'text-zinc-500'
-                }`}>
+                <span className={`text-[10px] block ${theme === 'dark' ? 'text-[#9CA3AF]' : 'text-zinc-500'
+                  }`}>
                   {lang === 'fil' ? 'I-save sa cellphone para sa offline field telemetriya' : 'Add to home screen for offline field telemetry'}
                 </span>
               </div>
@@ -516,16 +515,17 @@ export default function App() {
               hardwareState={hardwareState}
               historyManager={historyManagerRef.current}
               logs={systemLogs}
+              telemetry={telemetry}
               onAddLog={(msg, lvl, fil) => systemLogManager.addSystemLog(msg, lvl, fil)}
               onClearLogs={() => systemLogManager.clearLogs()}
               onExportCsv={() => {
-                const exported = historyManagerRef.current.exportCsv(
-                  telemetry.feedstock || 'wood_waste',
+                historyManagerRef.current.exportCsv(
+                  telemetry.feedstock || 'Biomass_Charcoal',
                   telemetry.runId || 'RUN-01'
                 )
-                if (!exported) {
-                  systemLogManager.exportCsv('padayon_system_logs')
-                }
+              }}
+              onExportEventLogs={() => {
+                systemLogManager.exportCsv('bteg_event_logs')
               }}
               lang={lang}
               theme={theme}
