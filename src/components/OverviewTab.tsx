@@ -420,24 +420,11 @@ export function OverviewTab({
           </div>
 
           <div>
-            <div className="flex items-baseline justify-between mt-1">
-              <div className="flex items-baseline">
-                <span className={`text-2xl sm:text-3xl font-black font-mono tabular-nums tracking-tight ${isDark ? 'text-white' : 'text-zinc-950'}`}>
-                  {battPct}
-                </span>
-                <span className={`text-xs font-semibold ml-1 ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-600'}`}>%</span>
-              </div>
-              <span className={`text-[9px] font-mono font-bold px-1.5 py-0.5 rounded ${
-                activeBars === 1
-                  ? 'bg-rose-500/20 text-rose-400'
-                  : activeBars === 2
-                  ? 'bg-amber-500/20 text-amber-400'
-                  : isDark
-                  ? 'bg-[#00E676]/15 text-[#00E676]'
-                  : 'bg-emerald-100 text-emerald-800'
-              }`}>
-                {activeBars}/4 BARS
+            <div className="flex items-baseline mt-1">
+              <span className={`text-2xl sm:text-3xl font-black font-mono tabular-nums tracking-tight ${isDark ? 'text-white' : 'text-zinc-950'}`}>
+                {battPct}
               </span>
+              <span className={`text-xs font-semibold ml-1 ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-600'}`}>%</span>
             </div>
 
             {/* 4-Segment State-of-Charge Bar Gauge */}
