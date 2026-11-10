@@ -247,41 +247,31 @@ export function OverviewTab({
         </div>
       </section>
 
-      {/* ── 2. SESSION UPTIME & ENERGY CARD ──────────────────────────── */}
+      {/* ── 2. HARVESTED ENERGY CARD ──────────────────────────── */}
       <section
         className={`rounded-2xl p-4 border flex flex-col gap-3 shadow-md transition-all ${
           isDark
             ? 'bg-[#13171B] border-[#1E242B] ring-1 ring-white/[0.04]'
             : 'bg-white border-zinc-200/90 shadow-sm'
         }`}
-        aria-labelledby="run-hours-heading"
+        aria-labelledby="harvested-energy-heading"
       >
-        {/* Top Line */}
+        {/* Harvested Energy Title & Live Wh */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-1.5">
-            <IconClock size={16} className={isDark ? 'text-[#00E676]' : 'text-emerald-700'} />
-            <h2 id="run-hours-heading" className={`text-xs font-bold uppercase tracking-wider ${isDark ? 'text-white' : 'text-zinc-950'}`}>
-              {isFil ? 'ORAS NG PAG-ANDAR (UPTIME)' : 'SESSION UPTIME & ENERGY'}
+            <IconFlame size={16} className={isDark ? 'text-[#00E676]' : 'text-emerald-700'} />
+            <h2 id="harvested-energy-heading" className={`text-xs font-bold uppercase tracking-wider ${isDark ? 'text-white' : 'text-zinc-950'}`}>
+              {isFil ? 'NA-HARVEST NA ENERHIYA' : 'HARVESTED ENERGY'}
             </h2>
           </div>
           <div className="flex items-baseline">
-            <span className={`text-lg font-black font-mono tabular-nums ${isDark ? 'text-white' : 'text-zinc-950'}`}>
-              {sessionUptimeStr || (isConnected ? (telemetry.esp32?.uptimeStr || '00:00:00') : '00:00:00')}
+            <span className={`text-lg font-black font-mono tabular-nums ${isDark ? 'text-[#00E676]' : 'text-emerald-700'}`}>
+              {whHarvLive.toFixed(3)}
             </span>
             <span className={`text-[10px] font-bold ml-1 ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-600'}`}>
-              UPTIME
+              WH
             </span>
           </div>
-        </div>
-
-        {/* Progress Line */}
-        <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-wider">
-          <span className={isDark ? 'text-[#9CA3AF]' : 'text-zinc-600'}>
-            {isFil ? 'NA-HARVEST NA ENERHIYA' : 'HARVESTED ENERGY'}
-          </span>
-          <span className={`font-mono font-bold ${isDark ? 'text-[#00E676]' : 'text-emerald-700'}`}>
-            {whHarvLive.toFixed(3)} WH
-          </span>
         </div>
 
         {/* Progress Bar */}
