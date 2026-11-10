@@ -247,109 +247,59 @@ export function OverviewTab({
         </div>
       </section>
 
-      {/* ── 2. SESSION RUNTIME & HARVEST CARD ──────────────────────────── */}
+      {/* ── 2. SESSION UPTIME & ENERGY CARD ──────────────────────────── */}
       <section
         className={`rounded-2xl p-4 border flex flex-col gap-3 shadow-md transition-all ${
           isDark
             ? 'bg-[#13171B] border-[#1E242B] ring-1 ring-white/[0.04]'
             : 'bg-white border-zinc-200/90 shadow-sm'
         }`}
-        aria-labelledby="session-monitor-heading"
+        aria-labelledby="run-hours-heading"
       >
-        {/* Header: Title & Digital Stopwatch Badge */}
-        <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2 min-w-0">
-            <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${
-              isDark ? 'bg-emerald-950/60 text-[#00E676] border border-emerald-500/30' : 'bg-emerald-100 text-emerald-800'
-            }`}>
-              <IconClock size={16} />
-            </div>
-            <div className="min-w-0">
-              <h2 id="session-monitor-heading" className={`text-xs font-black uppercase tracking-wider leading-tight truncate ${
-                isDark ? 'text-white' : 'text-zinc-950'
-              }`}>
-                {isFil ? 'ORAS AT ENERHIYA NG SESYON' : 'SESSION RUNTIME & ENERGY'}
-              </h2>
-              <span className={`text-[10px] font-mono leading-tight block mt-0.5 truncate ${
-                isDark ? 'text-zinc-400' : 'text-zinc-500'
-              }`}>
-                {isConnected
-                  ? (isFil ? 'Aktibong telemetriya at pag-ipon' : 'Active field test telemetry')
-                  : (isFil ? 'Orasan ng tuloy-tuloy na sesyon' : 'Continuous session monitor')}
-              </span>
-            </div>
+        {/* Top Line */}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-1.5">
+            <IconClock size={16} className={isDark ? 'text-[#00E676]' : 'text-emerald-700'} />
+            <h2 id="run-hours-heading" className={`text-xs font-bold uppercase tracking-wider ${isDark ? 'text-white' : 'text-zinc-950'}`}>
+              {isFil ? 'ORAS NG PAG-ANDAR (UPTIME)' : 'SESSION UPTIME & ENERGY'}
+            </h2>
           </div>
-
-          {/* Stopwatch Display */}
-          <div className={`px-2.5 py-1.5 rounded-xl border flex items-center gap-1.5 flex-shrink-0 ${
-            isDark ? 'bg-[#0B0F12] border-[#1E242B]' : 'bg-zinc-100 border-zinc-200'
-          }`}>
-            <span className={`w-2 h-2 rounded-full ${isConnected ? 'bg-[#00E676] animate-pulse' : 'bg-emerald-500'}`} />
-            <span className={`text-base font-black font-mono tabular-nums tracking-tight ${
-              isDark ? 'text-white' : 'text-zinc-950'
-            }`}>
+          <div className="flex items-baseline">
+            <span className={`text-lg font-black font-mono tabular-nums ${isDark ? 'text-white' : 'text-zinc-950'}`}>
               {sessionUptimeStr || (isConnected ? (telemetry.esp32?.uptimeStr || '00:00:00') : '00:00:00')}
             </span>
+            <span className={`text-[10px] font-bold ml-1 ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-600'}`}>
+              UPTIME
+            </span>
           </div>
         </div>
 
-        {/* Dual Stat Metrics */}
-        <div className="grid grid-cols-2 gap-2 pt-0.5">
-          {/* Metric 1: Harvested Energy */}
-          <div className={`p-2.5 rounded-xl border flex flex-col justify-between ${
-            isDark ? 'bg-[#0B0F12]/60 border-[#1E242B]' : 'bg-zinc-50 border-zinc-200'
-          }`}>
-            <span className={`text-[10px] font-bold uppercase tracking-wider ${isDark ? 'text-zinc-400' : 'text-zinc-600'}`}>
-              {isFil ? 'NA-HARVEST NA ENERHIYA' : 'HARVESTED ENERGY'}
-            </span>
-            <div className="flex items-baseline gap-1 mt-1">
-              <span className={`text-lg font-black font-mono tabular-nums leading-none ${
-                isDark ? 'text-[#00E676]' : 'text-emerald-700'
-              }`}>
-                {whHarvLive.toFixed(3)}
-              </span>
-              <span className={`text-[10px] font-bold ${isDark ? 'text-emerald-400' : 'text-emerald-800'}`}>
-                Wh
-              </span>
-            </div>
-          </div>
-
-          {/* Metric 2: Live Generation Power */}
-          <div className={`p-2.5 rounded-xl border flex flex-col justify-between ${
-            isDark ? 'bg-[#0B0F12]/60 border-[#1E242B]' : 'bg-zinc-50 border-zinc-200'
-          }`}>
-            <span className={`text-[10px] font-bold uppercase tracking-wider ${isDark ? 'text-zinc-400' : 'text-zinc-600'}`}>
-              {isFil ? 'KASALUKUYANG TEG' : 'TEG POWER'}
-            </span>
-            <div className="flex items-baseline gap-1 mt-1">
-              <span className={`text-lg font-black font-mono tabular-nums leading-none ${
-                isDark ? 'text-white' : 'text-zinc-900'
-              }`}>
-                {pLive.toFixed(1)}
-              </span>
-              <span className={`text-[10px] font-bold ${isDark ? 'text-zinc-400' : 'text-zinc-600'}`}>
-                W
-              </span>
-            </div>
-          </div>
-        </div>
-
-        {/* Session Status Footer */}
-        <div className={`flex items-center justify-between text-[10px] font-mono pt-1.5 border-t ${
-          isDark ? 'border-[#1E242B] text-zinc-400' : 'border-zinc-200 text-zinc-600'
-        }`}>
-          <span className="flex items-center gap-1.5 truncate">
-            <span className={`w-1.5 h-1.5 rounded-full ${isConnected ? 'bg-[#00E676]' : 'bg-zinc-500'}`} />
-            <span className="truncate">
-              {isConnected
-                ? (telemetry.esp32?.note || (isFil ? '12V 15Ah SLA Baterya · Naka-log' : '12V 15Ah SLA Battery · Logging Active'))
-                : (isFil ? 'Naka-standby · Ikabit ang USB Serial o Bluetooth' : 'Standby · Connect USB Serial or Bluetooth')}
-            </span>
+        {/* Progress Line */}
+        <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-wider">
+          <span className={isDark ? 'text-[#9CA3AF]' : 'text-zinc-600'}>
+            {isFil ? 'NA-HARVEST NA ENERHIYA' : 'HARVESTED ENERGY'}
           </span>
-          <span className="text-[10px] font-bold uppercase flex-shrink-0 text-emerald-500">
-            {isConnected ? 'ONLINE' : 'STANDBY'}
+          <span className={`font-mono font-bold ${isDark ? 'text-[#00E676]' : 'text-emerald-700'}`}>
+            {whHarvLive.toFixed(3)} WH
           </span>
         </div>
+
+        {/* Progress Bar */}
+        <div className={`w-full h-2.5 rounded-full overflow-hidden ${isDark ? 'bg-[#1E242B]' : 'bg-zinc-200'}`}>
+          <div
+            className={`h-full rounded-full transition-all duration-500 ${isDark ? 'bg-[#00E676]' : 'bg-emerald-600'}`}
+            style={{ width: `${isConnected ? Math.min(100, Math.round((vBatLive / 14.4) * 100)) : 0}%` }}
+            role="progressbar"
+            aria-valuenow={isConnected ? Math.min(100, Math.round((vBatLive / 14.4) * 100)) : 0}
+            aria-valuemin={0}
+            aria-valuemax={100}
+          />
+        </div>
+
+        {/* Bottom Note */}
+        <span className={`text-[9.5px] ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-600'}`}>
+          {telemetry.esp32?.note ? telemetry.esp32.note : (isFil ? '12V 15Ah Sealed Lead-Acid (SLA) Baterya' : '12V 15Ah Sealed Lead-Acid (SLA) Battery')}
+        </span>
       </section>
 
       {/* ── 3. 2×2 TELEMETRY GRID ───────────────────────────────────── */}
