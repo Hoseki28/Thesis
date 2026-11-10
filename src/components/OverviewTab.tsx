@@ -117,23 +117,7 @@ export function OverviewTab({
 
   return (
     <div className="flex flex-col gap-3 font-sans">
-      {/* ── 1. SYSTEM STATUS BANNER ───────────────────────────────────── */}
-      <div
-        className={`w-full rounded-xl p-3 flex items-center justify-between font-bold text-xs uppercase tracking-wider border transition-colors shadow-sm ${statusBorder}`}
-      >
-        <div className="flex items-center gap-2.5">
-          <IconShieldCheck size={18} className="flex-shrink-0" />
-          <span>{statusText}</span>
-        </div>
-
-        {isConnected && (
-          <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 font-bold uppercase animate-pulse">
-            LIVE HARDWARE
-          </span>
-        )}
-      </div>
-
-      {/* ── 2. DC MAIN POWER & CURRENT LOAD CARD ─────────────────────── */}
+      {/* ── 1. DC MAIN POWER & CURRENT LOAD CARD ─────────────────────── */}
       <section
         className={`rounded-2xl p-4 border flex flex-col gap-3.5 shadow-lg transition-colors ${
           isDark ? 'bg-[#13171B] border-[#1E242B]' : 'bg-white border-zinc-200'
@@ -147,9 +131,7 @@ export function OverviewTab({
               {isFil ? 'KONTROL NG CHARGER RELAY (GPIO14)' : 'CHARGER RELAY (GPIO14)'}
             </h2>
             <span className={`text-[10px] mt-0.5 block ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-500'}`}>
-              {!isConnected
-                ? (isFil ? 'Hindi nakakonekta ang ESP32 · Naka-standby' : 'ESP32 not connected · Standby')
-                : (telemetry.stateReason || (isRelayClosed ? (isFil ? 'Konektado ang TEG · Nagkakarga' : 'TEG Connected · Charging Active') : (isFil ? 'Nakabukas ang relay · Nakahiwalay' : 'Relay Open · Disconnected')))}
+              {telemetry.stateReason || (isRelayClosed ? (isFil ? 'Konektado ang TEG · Nagkakarga' : 'TEG Connected · Charging Active') : (isFil ? 'Nakabukas ang relay · Nakahiwalay' : 'Relay Open · Disconnected'))}
             </span>
           </div>
 
@@ -206,12 +188,12 @@ export function OverviewTab({
                   {isFil ? 'ESP32 State Machine' : 'ESP32 State Machine'}
                 </span>
                 <span className="text-[9px] font-mono text-[#00E676] font-bold tracking-tight">
-                  {isConnected ? `${espStateName || (isRelayClosed ? 'CHARGING' : 'STANDBY')} (GPIO14: ${isRelayClosed ? 'CLOSED' : 'OPEN'})` : 'OFFLINE (GPIO14: OPEN)'}
+                  {espStateName || (isRelayClosed ? 'CHARGING' : 'STANDBY')} (GPIO14: {isRelayClosed ? 'CLOSED' : 'OPEN'})
                 </span>
               </div>
             </div>
-            <span className={`text-[9px] font-mono px-2 py-0.5 rounded font-black uppercase ${isConnected && isRelayClosed ? 'bg-[#00E676]/20 text-[#00E676]' : 'bg-zinc-800 text-zinc-400'}`}>
-              {isConnected ? (isRelayClosed ? 'CHARGING' : 'HOLD/OFF') : 'DISCONNECTED'}
+            <span className="text-[9px] font-mono px-2 py-0.5 rounded bg-[#1E242B] text-zinc-400 font-black uppercase">
+              {isRelayClosed ? 'CHARGING' : 'HOLD/OFF'}
             </span>
           </div>
 
@@ -284,7 +266,7 @@ export function OverviewTab({
           <span className={isDark ? 'text-[#9CA3AF]' : 'text-zinc-500'}>
             {isFil ? 'NA-HARVEST NA ENERHIYA' : 'HARVESTED ENERGY'}
           </span>
-          <span className="text-[#00E676] font-mono">{whHarvLive.toFixed(3)} Wh</span>
+          <span className="text-[#00E676] font-mono">{whHarvLive.toFixed(3)} WH</span>
         </div>
 
         {/* Progress Bar */}
@@ -301,9 +283,7 @@ export function OverviewTab({
 
         {/* Bottom Note */}
         <span className={`text-[9px] ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-500'}`}>
-          {!isConnected
-            ? (isFil ? 'Hindi nakakabit ang ESP32 · Ikabit sa USB port para mabasa ang sensors' : 'ESP32 not connected · Connect via USB COM port to read live sensors')
-            : (telemetry.esp32?.note ? telemetry.esp32.note : (isFil ? '12V 15Ah Sealed Lead-Acid (SLA) Baterya' : '12V 15Ah Sealed Lead-Acid (SLA) Battery'))}
+          {telemetry.esp32?.note ? telemetry.esp32.note : (isFil ? '12V 15Ah Sealed Lead-Acid (SLA) Baterya' : '12V 15Ah Sealed Lead-Acid (SLA) Battery')}
         </span>
       </section>
 
