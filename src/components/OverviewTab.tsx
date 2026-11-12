@@ -239,25 +239,30 @@ export function OverviewTab({
             </span>
           </div>
 
-          {/* Interactive Toggle Switch with 44px min touch target */}
-          <button
-            type="button"
-            role="switch"
-            aria-checked={isRelayClosed}
-            onClick={onToggleDcBus}
-            className={`min-h-[44px] min-w-[56px] w-14 h-8 rounded-full p-1 transition-colors cursor-pointer flex items-center justify-start focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 focus-visible:ring-offset-2 ${
+          {/* Read-Only Relay Status Indicator (Controlled automatically by ESP32) */}
+          <div
+            className={`px-3 py-1.5 rounded-full border text-[10px] font-mono font-black uppercase tracking-wider flex items-center gap-1.5 flex-shrink-0 select-none ${
               isRelayClosed
-                ? isDark ? 'bg-[#00E676]' : 'bg-emerald-600'
-                : isDark ? 'bg-[#1E242B]' : 'bg-zinc-300'
+                ? isDark
+                  ? 'bg-[#00E676]/15 border-[#00E676]/40 text-[#00E676]'
+                  : 'bg-emerald-100 border-emerald-300 text-emerald-800'
+                : isDark
+                ? 'bg-[#1E242B] border-zinc-700 text-zinc-400'
+                : 'bg-zinc-100 border-zinc-300 text-zinc-600'
             }`}
-            aria-label="Toggle Charger Relay Switch"
+            aria-label={`Charger Relay GPIO14 is ${isRelayClosed ? 'Closed' : 'Open'}`}
           >
-            <div
-              className={`w-6 h-6 bg-white rounded-full shadow-md transform transition-transform duration-200 ease-in-out ${
-                isRelayClosed ? 'translate-x-6' : 'translate-x-0'
+            <span
+              className={`w-2 h-2 rounded-full ${
+                isRelayClosed
+                  ? isDark
+                    ? 'bg-[#00E676] animate-pulse'
+                    : 'bg-emerald-600 animate-pulse'
+                  : 'bg-zinc-500'
               }`}
             />
-          </button>
+            <span>{isRelayClosed ? (isFil ? 'SARADO (ON)' : 'CLOSED') : (isFil ? 'BUKAS (OFF)' : 'OPEN')}</span>
+          </div>
         </div>
 
         {/* Nested CURRENT LOAD Card */}
@@ -322,27 +327,34 @@ export function OverviewTab({
               </span>
             </div>
 
-            <button
-              type="button"
-              disabled={telemetry.auxLockout && !telemetry.relays.fans}
-              onClick={onToggleFans}
-              className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider font-mono cursor-pointer transition-colors min-h-[44px] flex items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 ${
-                telemetry.relays.fans
-                  ? isDark ? 'bg-[#00E676] text-zinc-950 shadow-sm focus-visible:ring-emerald-400' : 'bg-emerald-600 text-white shadow-sm focus-visible:ring-emerald-600'
-                  : telemetry.auxLockout
-                  ? 'bg-rose-950/40 border border-rose-500/30 text-rose-400 cursor-not-allowed opacity-90'
+            <span
+              className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider font-mono flex items-center justify-center select-none ${
+                !isConnected
+                  ? isDark
+                    ? 'bg-[#1E242B] border border-zinc-700 text-zinc-400'
+                    : 'bg-zinc-200 border border-zinc-300 text-zinc-600'
+                  : telemetry.esp32?.dhtOk === false
+                  ? isDark
+                    ? 'bg-amber-500/15 border border-amber-500/30 text-amber-400'
+                    : 'bg-amber-50 border border-amber-300 text-amber-700'
+                  : ambientTempC > 25
+                  ? isDark
+                    ? 'bg-[#00E676]/15 border border-[#00E676]/30 text-[#00E676]'
+                    : 'bg-emerald-50 border border-emerald-300 text-emerald-700'
                   : isDark
-                  ? 'bg-[#1E242B] border border-zinc-700 text-zinc-300 hover:text-white focus-visible:ring-zinc-400'
-                  : 'bg-zinc-200 border border-zinc-300 text-zinc-700 hover:text-zinc-900 focus-visible:ring-zinc-400'
+                  ? 'bg-[#1E242B] border border-zinc-700 text-zinc-300'
+                  : 'bg-zinc-200 border border-zinc-300 text-zinc-700'
               }`}
-              aria-label="Toggle Auxiliary Fan Load"
+              aria-label="Dynamic Voltage Limits Status"
             >
-              {telemetry.auxLockout && !telemetry.relays.fans
-                ? (isFil ? 'LOCKOUT' : 'LOCKED OUT')
-                : telemetry.relays.fans
-                ? (isFil ? 'BUKAS' : 'ACTIVE')
-                : (isFil ? 'SARADO' : 'OFF')}
-            </button>
+              {!isConnected
+                ? (isFil ? 'STANDBY' : 'STANDBY')
+                : telemetry.esp32?.dhtOk === false
+                ? (isFil ? 'WALANG TEMP' : 'NO TEMP')
+                : ambientTempC > 25
+                ? (isFil ? 'AKTIBO' : 'ACTIVE')
+                : (isFil ? 'NORMAL' : 'NOMINAL')}
+            </span>
           </div>
         </div>
       </section>
