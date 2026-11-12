@@ -506,14 +506,14 @@ export function OverviewTab({
             </div>
             <span className={`text-[9.5px] font-mono block mt-0.5 ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-600'}`}>
               {isConnected
-                ? `Hot: ${Math.round(telemetry.tHot ?? telemetry.stoveTemp)}°C · Cold: ${Math.round(telemetry.tCold ?? (telemetry.coldFaceTemp || 25))}°C`
+                ? `Hot: ${telemetry.hotFault ? '---' : `${Math.round(telemetry.tHot ?? telemetry.stoveTemp)}°C`} · Cold: ${telemetry.coldFault ? '---' : `${Math.round(telemetry.tCold ?? telemetry.coldFaceTemp ?? 0)}°C`}`
                 : 'Hot: 0°C · Cold: 0°C'}
             </span>
           </div>
 
           <div className="flex items-baseline mt-2">
             <span className={`text-2xl sm:text-3xl font-black font-mono tabular-nums tracking-tight ${isDark ? 'text-white' : 'text-zinc-950'}`}>
-              {isConnected ? Math.round(telemetry.dT ?? deltaT) : 0}
+              {isConnected && !telemetry.hotFault && !telemetry.coldFault ? Math.round(telemetry.dT ?? deltaT) : 0}
             </span>
             <span className={`text-xs font-semibold ml-1 ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-600'}`}>°C</span>
           </div>
@@ -534,14 +534,14 @@ export function OverviewTab({
             </div>
             <span className={`text-[9.5px] font-mono block mt-0.5 ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-600'}`}>
               {isConnected
-                ? `${telemetry.coldFault ? 'Cold Fault' : 'Cold Face'} · Amb: ${ambientTempC.toFixed(1)}°C (${ambientHumPct.toFixed(0)}% RH)`
-                : 'Cold Face · Amb: 31.2°C (65% RH)'}
+                ? `${telemetry.coldFault ? 'Cold Fault' : 'Cold Face'} · ${telemetry.esp32?.dhtOk === false ? 'DHT22 Fault' : `Amb: ${ambientTempC.toFixed(1)}°C (${ambientHumPct.toFixed(0)}% RH)`}`
+                : 'Cold Face · Amb: 0.0°C (0% RH)'}
             </span>
           </div>
 
           <div className="flex items-baseline mt-2">
             <span className={`text-2xl sm:text-3xl font-black font-mono tabular-nums tracking-tight ${isDark ? 'text-white' : 'text-zinc-950'}`}>
-              {isConnected ? Math.round(telemetry.tCold ?? (telemetry.coldFaceTemp || telemetry.ambientTemp)) : 0}
+              {isConnected && !telemetry.coldFault ? Math.round(telemetry.tCold ?? telemetry.coldFaceTemp ?? 0) : 0}
             </span>
             <span className={`text-xs font-semibold ml-1 ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-600'}`}>°C</span>
           </div>

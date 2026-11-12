@@ -256,10 +256,10 @@ export function applyCalibration(
   const safeRawAmbient = Number.isFinite(raw.rawAmbientTemp) ? raw.rawAmbientTemp : 0
   const safeRawHumidity = Number.isFinite(raw.rawHumidity) ? raw.rawHumidity : 0
   const ambientTemp = isLiveHardware && esp32Data?.tAmb !== undefined
-    ? esp32Data.tAmb
+    ? (esp32Data.dhtOk === false ? 0 : esp32Data.tAmb)
     : Math.round((safeRawAmbient + cal.dhtTempOffset) * 10) / 10
   const humidity = isLiveHardware && esp32Data?.hum !== undefined
-    ? esp32Data.hum
+    ? (esp32Data.dhtOk === false ? 0 : esp32Data.hum)
     : Math.min(100, Math.max(0, Math.round(safeRawHumidity + cal.dhtHumidityOffset)))
 
   // 3. Cold Face Temperature (Water-Cooled Heatsink) & Seebeck Delta T
@@ -267,9 +267,11 @@ export function applyCalibration(
     ? (raw.rawColdFaceTemp as number)
     : Math.round((ambientTemp + 1.2) * 10) / 10
   const coldFaceTemp = isLiveHardware && esp32Data?.tCold !== undefined
-    ? (esp32Data.coldFault ? 25 : esp32Data.tCold)
+    ? (esp32Data.coldFault ? 0 : esp32Data.tCold)
     : safeColdFace
-  const deltaT = isLiveHardware && esp32Data?.dT !== undefined
+  const deltaT = isLiveHardware && (esp32Data?.hotFault || esp32Data?.coldFault)
+    ? 0
+    : isLiveHardware && esp32Data?.dT !== undefined
     ? esp32Data.dT
     : Math.max(0, Math.round((stoveTemp - coldFaceTemp) * 10) / 10)
 
@@ -281,7 +283,7 @@ export function applyCalibration(
     : Math.round((safeRawBattV * cal.batteryVoltageGain) * 100) / 100
   const vMin = Math.min(cal.batteryVMin, cal.batteryVMax - 1.0)
   const vMax = Math.max(cal.batteryVMax, vMin + 1.0)
-  const batteryPctRaw = batteryVoltage > 0 ? ((batteryVoltage - vMin) / (vMax - vMin)) * 100 : 0
+  const batteryPctRaw = batteryVoltage >= 6.0 ? ((batteryVoltage - vMin) / (vMax - vMin)) * 100 : 0
   const batteryPct = Math.min(100, Math.max(0, Math.round(batteryPctRaw)))
 
   // 5. TEG Current & Voltage & Power

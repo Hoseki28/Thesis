@@ -343,14 +343,14 @@ export function SensorsTab({ telemetry, calibration, historyPoints = [], lang, t
           <div className={`p-2 rounded-lg border ${isDark ? 'bg-[#0B0F12] border-[#1E242B]' : 'bg-[#F9FAFB] border-zinc-200'}`}>
             <span className={`block font-bold ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-500'}`}>MAX31855 Cold (GPIO17)</span>
             <span className={telemetry.coldFault ? 'text-rose-400 font-bold' : isDark ? 'text-zinc-300' : 'text-zinc-700'}>
-              {telemetry.coldFault ? `FAULT (${telemetry.coldWhy || 'open'})` : `${(telemetry.tCold ?? (telemetry.coldFaceTemp || 25)).toFixed(1)}°C Cold Face`}
+              {telemetry.coldFault ? `FAULT (${telemetry.coldWhy || 'open'})` : `${(telemetry.tCold ?? telemetry.coldFaceTemp ?? 0).toFixed(1)}°C Cold Face`}
             </span>
           </div>
 
           <div className={`p-2 rounded-lg border ${isDark ? 'bg-[#0B0F12] border-[#1E242B]' : 'bg-[#F9FAFB] border-zinc-200'}`}>
             <span className={`block font-bold ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-500'}`}>DHT22 Battery Area (GPIO23)</span>
             <span className={!telemetry.dhtOk ? 'text-amber-400 font-bold' : isDark ? 'text-zinc-300' : 'text-zinc-700'}>
-              {(telemetry.tAmb ?? telemetry.ambientTemp ?? 28.5).toFixed(1)}°C / {(telemetry.hum ?? telemetry.humidity ?? 65.0).toFixed(0)}% {!telemetry.dhtOk ? '(ERR)' : ''}
+              {(telemetry.tAmb ?? telemetry.ambientTemp ?? 0).toFixed(1)}°C / {(telemetry.hum ?? telemetry.humidity ?? 0).toFixed(0)}% {!telemetry.dhtOk ? '(ERR)' : ''}
             </span>
           </div>
 
@@ -359,7 +359,7 @@ export function SensorsTab({ telemetry, calibration, historyPoints = [], lang, t
               ACS712-5A Current (GPIO35)
             </span>
             <span className={isDark ? 'text-zinc-300' : 'text-zinc-700'}>
-              {(telemetry.iBat ?? telemetry.rawTegCurrent ?? 0.0).toFixed(2)}A (zero: {(telemetry.acsZero ?? 2.5).toFixed(2)}V)
+              {(telemetry.iBat ?? telemetry.rawTegCurrent ?? 0.0).toFixed(2)}A (zero: {(telemetry.acsZero ?? 2.5).toFixed(3)}V)
             </span>
           </div>
         </div>
