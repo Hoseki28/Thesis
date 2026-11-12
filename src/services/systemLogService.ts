@@ -50,8 +50,8 @@ export function getInitialSystemLogs(): SystemLogEntry[] {
       timestamp: formatLogTimestamp(offsetTime(15)),
       timestampMs: now - 15 * 60 * 1000,
       level: 'info',
-      message: 'ACS712 Current Sensor (GPIO4) zero-drift calibrated · Multimeter trim gains armed',
-      messageFil: 'ACS712 Current Sensor (GPIO4) zero-drift na-calibrate · Naka-arm ang trim gains',
+      message: 'ACS712 Current Sensor (GPIO35) zero-drift calibrated · Multimeter trim gains armed',
+      messageFil: 'ACS712 Current Sensor (GPIO35) zero-drift na-calibrate · Naka-arm ang trim gains',
       source: 'esp32',
     },
     {

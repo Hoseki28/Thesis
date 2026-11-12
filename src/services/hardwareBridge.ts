@@ -58,19 +58,21 @@ function mapStateNameToCode(name: string): number {
 function defaultStateReason(stateCode: number): string {
   switch (stateCode) {
     case 0:
-      return 'no valid battery reading (needs 6 to 16.5 V at the battery divider)'
+      return 'voltage out of range (6-16.5 V)'
     case 1:
-      return 'charging allowed, relay closed'
+      return 'normal charging'
     case 2:
-      return 'battery reached its limit, relay open'
+      return 'reached full voltage limit'
     case 3:
-      return 'battery is below the reconnect level, waiting 60 s before closing the relay'
+      return 'waiting for reconnect dwell timer'
     case 4:
-      return 'charging forced OFF by command'
+      return 'manually disabled (send a)'
     case 5:
-      return 'battery temperature too high'
+      return 'ambient temperature >= 45 C'
+    case 6:
+      return 'current exceeded 2.2 A (send r)'
     default:
-      return 'charge current too high (latched), send r to clear'
+      return ''
   }
 }
 
@@ -735,15 +737,19 @@ export class HardwareBridge {
   }
 
   private updateTempCompLimits() {
-    if (this.esp32Cache.dhtOk) {
-      const comp = Math.min(0.2, Math.max(-0.45, -0.018 * (this.esp32Cache.tAmb - 25.0)))
-      this.esp32Cache.vOpenNow = Math.round((14.4 + comp) * 100) / 100
-      this.esp32Cache.vCloseNow = Math.round((13.6 + comp) * 100) / 100
-      this.esp32Cache.vHardNow = Math.round((14.6 + comp) * 100) / 100
-    } else {
+    if (this.esp32Cache.dhtOk && this.esp32Cache.tAmb > 25.0) {
+      const drop = (this.esp32Cache.tAmb - 25.0) * 0.018
+      this.esp32Cache.vOpenNow = Math.round((14.4 - drop) * 100) / 100
+      this.esp32Cache.vCloseNow = Math.round((13.6 - drop) * 100) / 100
+      this.esp32Cache.vHardNow = Math.round((14.6 - drop) * 100) / 100
+    } else if (!this.esp32Cache.dhtOk) {
       this.esp32Cache.vOpenNow = 14.2
-      this.esp32Cache.vCloseNow = 13.4
-      this.esp32Cache.vHardNow = 14.4
+      this.esp32Cache.vCloseNow = 13.6
+      this.esp32Cache.vHardNow = 14.6
+    } else {
+      this.esp32Cache.vOpenNow = 14.4
+      this.esp32Cache.vCloseNow = 13.6
+      this.esp32Cache.vHardNow = 14.6
     }
   }
 
@@ -807,9 +813,9 @@ export class HardwareBridge {
           this.emitFromEsp32Cache(source)
         }
 
-        if (msg.startsWith('Calibration reset to default')) {
-          this.esp32Cache.batTrim = 1.028
-          this.esp32Cache.tegTrim = 1.052
+        if (msg.startsWith('Calibration reset')) {
+          this.esp32Cache.batTrim = 1.1011
+          this.esp32Cache.tegTrim = 1.1679
           this.esp32Cache.curTrim = 1.0
           this.emitFromEsp32Cache(source)
         }
@@ -886,6 +892,13 @@ export class HardwareBridge {
             if (m) {
               const v = parseFloat(m[1])
               if (Number.isFinite(v)) this.esp32Cache.iBat = v
+            }
+            const mAcs = seg.match(/ACS\s+([-\d.]+)\s*V,\s*zero\s+([-\d.]+)\s*V/i)
+            if (mAcs) {
+              const acsV = parseFloat(mAcs[1])
+              const zeroV = parseFloat(mAcs[2])
+              if (Number.isFinite(acsV)) this.esp32Cache.acsVolts = acsV
+              if (Number.isFinite(zeroV)) this.esp32Cache.acsZero = zeroV
             }
           } else if (seg.startsWith('PWR ')) {
             const m = seg.match(/PWR\s+([-\d.]+)\s*W/i)
@@ -999,8 +1012,19 @@ export class HardwareBridge {
         return
       }
 
+      if (line.startsWith('SENSOR    :')) {
+        const m = line.match(/ACS712 output\s*([-\d.]+)\s*V,\s*zero level\s*([-\d.]+)\s*V/i)
+        if (m) {
+          const sv = parseFloat(m[1])
+          const zv = parseFloat(m[2])
+          if (Number.isFinite(sv)) this.esp32Cache.acsVolts = sv
+          if (Number.isFinite(zv)) this.esp32Cache.acsZero = zv
+        }
+        return
+      }
+
       if (line.startsWith('CURRENT   :')) {
-        const m = line.match(/CURRENT\s*:\s*([-\d.]+)\s*A/i)
+        const m = line.match(/CURRENT\s*:\s*(?:TEG\s*)?([-\d.]+)\s*A/i)
         if (m) {
           const ib = parseFloat(m[1])
           if (Number.isFinite(ib)) this.esp32Cache.iBat = ib
@@ -1093,12 +1117,12 @@ export class HardwareBridge {
       }
 
       if (line.startsWith('BATTERY AREA:')) {
-        const m = line.match(/BATTERY AREA:\s*([-\d.]+)\s*C\s+humidity\s+([-\d.]+)\s*%\s*\(([^)]+)\)\s*TS1:\s*(\S+)/i)
+        const m = line.match(/BATTERY AREA:\s*([-\d.]+)\s*C\s+humidity\s+([-\d.]+)\s*%\s*\(([^)]+)\)(?:\s*TS1:\s*(\S+))?/i)
         if (m) {
           const ta = parseFloat(m[1])
           const hm = parseFloat(m[2])
           const dhtStatus = m[3].trim().toLowerCase()
-          const ts1Status = m[4].trim().toLowerCase()
+          const ts1Status = (m[4] || '').trim().toLowerCase()
           this.esp32Cache.dhtOk = dhtStatus.includes('ok')
           if (Number.isFinite(ta) && this.esp32Cache.dhtOk) this.esp32Cache.tAmb = ta
           if (Number.isFinite(hm) && hm >= 0) this.esp32Cache.hum = hm
@@ -1143,6 +1167,7 @@ export class HardwareBridge {
         const json = JSON.parse(line)
 
         if (json.type === 'telemetry' || json.vTeg !== undefined || json.vBat !== undefined || json.stateName !== undefined) {
+          if (typeof json.timestamp === 'string') this.esp32Cache.uptimeStr = json.timestamp
           if (typeof json.uptime === 'string') this.esp32Cache.uptimeStr = json.uptime
           if (typeof json.stateName === 'string') {
             this.esp32Cache.stateName = json.stateName.trim()
@@ -1169,10 +1194,38 @@ export class HardwareBridge {
           if (typeof json.coldFault === 'boolean') this.esp32Cache.coldFault = json.coldFault
           if (typeof json.hotWhy === 'string') this.esp32Cache.hotWhy = json.hotWhy
           if (typeof json.coldWhy === 'string') this.esp32Cache.coldWhy = json.coldWhy
-          if (Number.isFinite(Number(json.tHot)) && Number(json.tHot) >= 0) this.esp32Cache.tHot = Number(json.tHot)
-          if (Number.isFinite(Number(json.tCold)) && Number(json.tCold) >= 0) this.esp32Cache.tCold = Number(json.tCold)
-          if (Number.isFinite(Number(json.tAmb)) && Number(json.tAmb) > 0) this.esp32Cache.tAmb = Number(json.tAmb)
-          if (Number.isFinite(Number(json.hum)) && Number(json.hum) >= 0) this.esp32Cache.hum = Number(json.hum)
+          if (json.tHot !== undefined && Number.isFinite(Number(json.tHot))) {
+            const th = Number(json.tHot)
+            if (th < 0) {
+              this.esp32Cache.hotFault = true
+            } else {
+              this.esp32Cache.tHot = th
+              this.esp32Cache.hotFault = false
+              this.esp32Cache.hotWhy = 'ok'
+            }
+          }
+          if (json.tCold !== undefined && Number.isFinite(Number(json.tCold))) {
+            const tc = Number(json.tCold)
+            if (tc < 0) {
+              this.esp32Cache.coldFault = true
+            } else {
+              this.esp32Cache.tCold = tc
+              this.esp32Cache.coldFault = false
+              this.esp32Cache.coldWhy = 'ok'
+            }
+          }
+          if (json.tAmb !== undefined && Number.isFinite(Number(json.tAmb))) {
+            const ta = Number(json.tAmb)
+            if (ta < 0) {
+              this.esp32Cache.dhtOk = false
+            } else {
+              this.esp32Cache.tAmb = ta
+              this.esp32Cache.dhtOk = true
+            }
+          }
+          if (json.hum !== undefined && Number.isFinite(Number(json.hum)) && Number(json.hum) >= 0) {
+            this.esp32Cache.hum = Number(json.hum)
+          }
           if (typeof json.dhtOK === 'boolean') this.esp32Cache.dhtOk = json.dhtOK
           if (typeof json.ts1 === 'boolean') this.esp32Cache.ts1Tripped = json.ts1
           if (typeof json.overcurrent === 'boolean') this.esp32Cache.overcurrentLatched = json.overcurrent
@@ -1186,8 +1239,23 @@ export class HardwareBridge {
           if (Number.isFinite(Number(json.acsZero))) this.esp32Cache.acsZero = Number(json.acsZero)
           if (Number.isFinite(Number(json.acsVolts))) this.esp32Cache.acsVolts = Number(json.acsVolts)
           if (typeof json.inaOK === 'boolean') this.esp32Cache.inaOk = json.inaOK
-          if (typeof json.alarms === 'string') this.parseAlarmsField(json.alarms)
+          if (typeof json.alarmText === 'string') {
+            this.parseAlarmsField(json.alarmText)
+          } else if (typeof json.alarms === 'string') {
+            this.parseAlarmsField(json.alarms)
+          }
+          if (typeof json.alarms === 'number') {
+            const mask = json.alarms
+            this.esp32Cache.hotFault = this.esp32Cache.hotFault || Boolean(mask & 32)
+            this.esp32Cache.coldFault = this.esp32Cache.coldFault || Boolean(mask & 64)
+            this.esp32Cache.batHot = Boolean(mask & 128) || this.esp32Cache.stateCode === 5
+            this.esp32Cache.overcurrentLatched = Boolean(mask & 256) || this.esp32Cache.stateCode === 6
+            if (mask & 512) this.esp32Cache.dhtOk = false
+          }
 
+          if (json.vOpen === undefined) {
+            this.updateTempCompLimits()
+          }
           this.emitFromEsp32Cache(source)
           return
         }

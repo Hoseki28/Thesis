@@ -290,7 +290,7 @@ export function CalibrationStudio({
 
           <div className={`p-2.5 rounded-xl border flex flex-col gap-0.5 ${isDark ? 'bg-zinc-900/40 border-zinc-800' : 'bg-zinc-50 border-zinc-200'}`}>
             <span className={`text-[10px] uppercase font-bold ${isDark ? 'text-zinc-400' : 'text-zinc-500'}`}>
-              ACS712 Current (GPIO16)
+              ACS712 Current (GPIO35)
             </span>
             <span className="font-bold text-sm tabular-nums text-zinc-100">{rawIVal.toFixed(2)} A</span>
             <span className="text-[10px] text-emerald-400">Trim: x{curTrimVal.toFixed(4)}</span>
@@ -410,7 +410,7 @@ export function CalibrationStudio({
             type="button"
             onClick={handleSendPinCheck}
             className="h-9 px-2 rounded-lg border text-[11px] font-medium cursor-pointer transition-colors flex items-center justify-center bg-zinc-900 hover:bg-zinc-850 border-zinc-800 text-zinc-200"
-            title="Print raw GPIO pin voltages (GPIO32, 33, 15) to Serial Terminal"
+            title="Print raw GPIO pin voltages (GPIO32, 33, 35) to Serial Terminal"
           >
             Cmd v (Pin Check)
           </button>
