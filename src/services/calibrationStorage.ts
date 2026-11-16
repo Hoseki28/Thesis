@@ -87,6 +87,7 @@ export interface RawTelemetryInput {
   operatingHours?: number
   systemHealthPct?: number
   esp32?: Esp32HardwareStatus
+  inaOk?: boolean
   timestamp?: number
   source?: TelemetryData['source']
 }
@@ -181,6 +182,7 @@ export function getOfflineTelemetry(cal: CalibrationConfig = loadCalibration()):
       { id: 4, name: '5V/12V AUX Outlets', active: false, sheddable: true, currentMa: 0 },
     ],
     feedstock: 'wood_waste',
+    runId: 'OFFLINE',
     fuelMassKg: 0,
     criticalLoadActive: false,
     auxLoadActive: false,

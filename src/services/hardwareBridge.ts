@@ -29,6 +29,7 @@ export type HardwareDataCallback = (raw: {
   operatingHours?: number
   systemHealthPct?: number
   esp32?: Esp32HardwareStatus
+  inaOk?: boolean
   timestamp: number
   source: TelemetryData['source']
 }) => void
@@ -665,6 +666,14 @@ export class HardwareBridge {
       activeAlarms: [...c.activeAlarms],
       note: c.note,
       inaOk: c.inaOk,
+      vTeg: c.vTeg,
+      vBat: c.vBat,
+      iBat: c.iBat,
+      tHot: c.tHot,
+      tCold: c.tCold,
+      dT: c.hotFault || c.coldFault ? 0 : Math.max(0, Math.round((c.tHot - c.tCold) * 10) / 10),
+      tAmb: c.tAmb,
+      hum: c.hum,
     }
 
     if (this.onDataCallback) {

@@ -7,6 +7,7 @@ import {
   Lang,
   SystemLogEntry,
   SystemLogLevel,
+  TelemetryData,
 } from '../types/telemetry'
 import {
   IconFileText,

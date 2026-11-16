@@ -2,7 +2,7 @@ export type Lang = 'en' | 'fil'
 
 export type TabId = 'overview' | 'sensors' | 'calibration' | 'logs'
 
-export type DataSource = 'simulated' | 'serial' | 'bluetooth' | 'network' | 'manual'
+export type DataSource = 'simulated' | 'serial' | 'bluetooth' | 'network' | 'manual' | 'offline' | 'esp32' | 'hardware'
 
 export type ConnectionStatus = 'standby' | 'connecting' | 'connected' | 'disconnected' | 'error'
 
@@ -48,6 +48,14 @@ export interface Esp32HardwareStatus {
   activeAlarms: string[]
   note?: string
   inaOk?: boolean
+  vTeg?: number
+  vBat?: number
+  iBat?: number
+  tHot?: number
+  tCold?: number
+  dT?: number
+  tAmb?: number
+  hum?: number
 }
 
 export interface TelemetryData {

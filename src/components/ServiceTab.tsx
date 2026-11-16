@@ -37,7 +37,11 @@ export function ServiceTab({
 }: ServiceTabProps) {
   const isFil = lang === 'fil'
   const isDark = theme === 'dark'
-  const isHardwareConnected = telemetry.source === 'hardware'
+  const isHardwareConnected =
+    telemetry.source === 'hardware' ||
+    telemetry.source === 'serial' ||
+    telemetry.source === 'bluetooth' ||
+    telemetry.source === 'esp32'
 
   const [cmdFeedback, setCmdFeedback] = useState<string | null>(null)
 
