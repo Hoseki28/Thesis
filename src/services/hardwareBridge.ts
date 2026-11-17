@@ -147,7 +147,7 @@ export class HardwareBridge {
     alarmsText: 'none',
     activeAlarms: [],
     note: undefined,
-    inaOk: false,
+    inaOk: true,
     lastIntegrationMs: 0,
   }
 
@@ -261,8 +261,9 @@ export class HardwareBridge {
       this.state.lastError = null
       this.appendLog('sys', `Connected to ESP32 over USB Serial at ${baud} baud.`)
       this.notifyState()
+      this.emitFromEsp32Cache('serial')
 
-      this.startSerialReadLoop()
+      this.startSerialReadLoop('serial')
       return true
     } catch (err: any) {
       this.state.status = 'standby'
@@ -274,7 +275,48 @@ export class HardwareBridge {
     }
   }
 
-  private async startSerialReadLoop() {
+  public async connectBluetoothSerial(baudRate?: number): Promise<boolean> {
+    if (!this.isWebSerialSupported()) {
+      this.state.status = 'error'
+      this.state.lastError = 'Web Serial API is not supported in this browser. Please use Chrome or Edge.'
+      this.appendLog('err', this.state.lastError)
+      this.notifyState()
+      return false
+    }
+
+    const baud = baudRate || this.state.baudRate || 115200
+
+    try {
+      this.state.status = 'connecting'
+      this.notifyState()
+      this.appendLog('sys', `Select paired "TEG_Charger" Bluetooth Serial COM port (${baud} baud)...`)
+
+      // @ts-ignore - Web Serial API (opens OS Bluetooth SPP virtual COM port)
+      this.port = await navigator.serial.requestPort()
+      await this.port.open({ baudRate: baud })
+
+      this.state.status = 'connected'
+      this.state.transport = 'bluetooth'
+      this.state.deviceName = 'TEG_Charger (BT Serial SPP)'
+      this.state.portInfo = `BT Serial SPP (${baud} baud)`
+      this.state.lastError = null
+      this.appendLog('sys', `Connected to TEG_Charger over Classic Bluetooth Serial SPP (${baud} baud).`)
+      this.notifyState()
+      this.emitFromEsp32Cache('bluetooth')
+
+      this.startSerialReadLoop('bluetooth')
+      return true
+    } catch (err: any) {
+      this.state.status = 'standby'
+      this.state.transport = 'none'
+      this.state.lastError = err?.message || 'Failed to open Bluetooth Serial COM port'
+      this.appendLog('err', `Bluetooth Serial Error: ${this.state.lastError}`)
+      this.notifyState()
+      return false
+    }
+  }
+
+  private async startSerialReadLoop(source: 'serial' | 'bluetooth' = 'serial') {
     try {
       // @ts-ignore
       const textDecoder = new TextDecoderStream()
@@ -300,7 +342,7 @@ export class HardwareBridge {
             if (cleanLine.length > 0) {
               this.recordPacket()
               this.appendLog('in', cleanLine)
-              this.parseIncomingPayload(cleanLine, 'serial')
+              this.parseIncomingPayload(cleanLine, source)
             }
           }
         }
@@ -356,10 +398,11 @@ export class HardwareBridge {
       // @ts-ignore - Web Bluetooth API
       this.bleDevice = await navigator.bluetooth.requestDevice({
         filters: [
+          { name: 'TEG_Charger' },
+          { namePrefix: 'TEG' },
           { namePrefix: 'ESP32' },
           { namePrefix: 'B-TEG' },
           { namePrefix: 'Padayon' },
-          { namePrefix: 'TEG' },
           { services: [NORDIC_UART_SERVICE] },
         ],
         optionalServices: [NORDIC_UART_SERVICE, 'generic_access'],
@@ -375,7 +418,7 @@ export class HardwareBridge {
         throw new Error('Bluetooth device selection cancelled')
       }
 
-      const devName = this.bleDevice.name || 'ESP32 BLE Node'
+      const devName = this.bleDevice.name || 'TEG_Charger'
       this.appendLog('sys', `Pairing with ${devName}... Connecting to GATT Server...`)
 
       this.bleDevice.addEventListener('gattserverdisconnected', () => {
@@ -383,44 +426,85 @@ export class HardwareBridge {
         this.disconnectBluetooth()
       })
 
-      const server = await this.bleDevice.gatt.connect()
-      this.appendLog('sys', `GATT Server connected. Getting Telemetry UART Service...`)
-
-      const service = await server.getPrimaryService(NORDIC_UART_SERVICE).catch(() => null)
-      if (service) {
-        this.bleTxChar = await service.getCharacteristic(NORDIC_UART_TX).catch(() => null)
-        this.bleRxChar = await service.getCharacteristic(NORDIC_UART_RX).catch(() => null)
-
-        if (this.bleTxChar) {
-          await this.bleTxChar.startNotifications()
-          let bleBuffer = ''
-          this.bleTxChar.addEventListener('characteristicvaluechanged', (e: any) => {
-            const rawBytes = e.target.value
-            const decoder = new TextDecoder()
-            bleBuffer += decoder.decode(rawBytes)
-            this.state.bytesReceived += rawBytes.byteLength
-
-            const lines = bleBuffer.split('\n')
-            bleBuffer = lines.pop() || ''
-            for (const line of lines) {
-              const clean = line.trim()
-              if (clean.length > 0) {
-                this.recordPacket()
-                this.appendLog('in', clean)
-                this.parseIncomingPayload(clean, 'bluetooth')
-              }
-            }
-          })
+      let server: any = null
+      let lastGattErr: any = null
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+          server = await this.bleDevice.gatt.connect()
+          if (server && server.connected) break
+        } catch (gErr) {
+          lastGattErr = gErr
+          await new Promise((r) => setTimeout(r, 350))
         }
       }
+      if (!server || !server.connected) {
+        throw new Error(
+          lastGattErr?.message ||
+            'GATT Server failed to connect. Make sure ESP32 has BLE enabled or use Paired BT Serial (COM Port).'
+        )
+      }
+      this.appendLog('sys', `GATT Server connected. Getting Telemetry UART Service...`)
+
+      let service = await server.getPrimaryService(NORDIC_UART_SERVICE).catch(() => null)
+      if (!service) {
+        const allServices = await server.getPrimaryServices().catch(() => [])
+        for (const s of allServices) {
+          if (s.uuid && !s.uuid.startsWith('00001800') && !s.uuid.startsWith('00001801')) {
+            service = s
+            break
+          }
+        }
+      }
+
+      if (!service) {
+        throw new Error(
+          `No BLE UART service found on ${devName}. Re-upload firmware/thesis_updated.ino to enable BLE, or click "Connect Paired BT Serial (COM Port)" below.`
+        )
+      }
+
+      this.bleTxChar = await service.getCharacteristic(NORDIC_UART_TX).catch(() => null)
+      this.bleRxChar = await service.getCharacteristic(NORDIC_UART_RX).catch(() => null)
+
+      if (!this.bleTxChar || !this.bleRxChar) {
+        const chars = await service.getCharacteristics().catch(() => [])
+        for (const ch of chars) {
+          if (!this.bleTxChar && ch.properties?.notify) this.bleTxChar = ch
+          if (!this.bleRxChar && (ch.properties?.write || ch.properties?.writeWithoutResponse)) this.bleRxChar = ch
+        }
+      }
+
+      if (!this.bleTxChar) {
+        throw new Error(`BLE TX notify characteristic not found on ${devName}.`)
+      }
+
+      await this.bleTxChar.startNotifications()
+      let bleBuffer = ''
+      this.bleTxChar.addEventListener('characteristicvaluechanged', (e: any) => {
+        const rawBytes = e.target.value
+        const decoder = new TextDecoder()
+        bleBuffer += decoder.decode(rawBytes)
+        this.state.bytesReceived += rawBytes.byteLength
+
+        const lines = bleBuffer.split('\n')
+        bleBuffer = lines.pop() || ''
+        for (const line of lines) {
+          const clean = line.trim()
+          if (clean.length > 0) {
+            this.recordPacket()
+            this.appendLog('in', clean)
+            this.parseIncomingPayload(clean, 'bluetooth')
+          }
+        }
+      })
 
       this.state.status = 'connected'
       this.state.transport = 'bluetooth'
       this.state.deviceName = devName
       this.state.portInfo = `BLE: ${devName}`
       this.state.lastError = null
-      this.appendLog('sys', `ESP32 Bluetooth connection confirmed! Receiving telemetry stream.`)
+      this.appendLog('sys', `ESP32 Bluetooth (${devName}) connected! Receiving live telemetry stream.`)
       this.notifyState()
+      this.emitFromEsp32Cache('bluetooth')
       return true
     } catch (err: any) {
       this.state.status = 'standby'
@@ -434,6 +518,10 @@ export class HardwareBridge {
 
   public disconnectBluetooth() {
     try {
+      if (this.port) {
+        this.disconnectSerial()
+        return
+      }
       if (this.bleDevice && this.bleDevice.gatt && this.bleDevice.gatt.connected) {
         this.bleDevice.gatt.disconnect()
       }
@@ -631,7 +719,7 @@ export class HardwareBridge {
   // Emit assembled thesis.ino cache to the dashboard callback
   private emitFromEsp32Cache(source: TelemetryData['source']) {
     const c = this.esp32Cache
-    const hasSensorFault = c.hotFault || c.coldFault || !c.dhtOk
+    const hasSensorFault = c.hotFault || c.coldFault || !c.dhtOk || c.inaOk === false
     this.state.sensorFault = hasSensorFault
 
     const snapshot: Esp32HardwareStatus = {
@@ -710,6 +798,7 @@ export class HardwareBridge {
     const notePatterns = [
       '(TEG voltage is too low to charge)',
       '(relay closed, no current yet)',
+      '(current sensor not OK: check GPIO35 wiring and the divider)',
     ]
     for (const pat of notePatterns) {
       const idx = text.indexOf(pat)
@@ -717,6 +806,11 @@ export class HardwareBridge {
         note = pat.slice(1, -1)
         text = text.slice(0, idx).trim()
       }
+    }
+    const dynamicAcsNote = text.match(/\s*\((current sensor not OK:[^)]+)\)\s*$/i)
+    if (dynamicAcsNote && dynamicAcsNote.index !== undefined) {
+      note = dynamicAcsNote[1].trim()
+      text = text.slice(0, dynamicAcsNote.index).trim()
     }
 
     this.esp32Cache.note = note
@@ -737,6 +831,10 @@ export class HardwareBridge {
     this.esp32Cache.batHot =
       this.esp32Cache.stateCode === 5 || lower.includes('battery too hot')
     this.esp32Cache.dhtOk = !lower.includes('dht22 not reading')
+    this.esp32Cache.inaOk =
+      !lower.includes('current sensor not ok') &&
+      this.esp32Cache.acsZero >= 2.30 &&
+      this.esp32Cache.acsZero <= 2.70
     if (lower.includes('hot thermocouple fault')) {
       this.esp32Cache.hotFault = true
     }
@@ -832,7 +930,10 @@ export class HardwareBridge {
         const zeroSaved = msg.match(/^(?:Current sensor zeroed at|ACS712 current sensor tared to zero:?)\s*([-\d.]+)\s*V/i)
         if (zeroSaved) {
           const z = parseFloat(zeroSaved[1])
-          if (Number.isFinite(z)) this.esp32Cache.acsZero = z
+          if (Number.isFinite(z)) {
+            this.esp32Cache.acsZero = z
+            this.esp32Cache.inaOk = z >= 2.30 && z <= 2.70
+          }
           this.emitFromEsp32Cache(source)
         }
 
@@ -907,7 +1008,10 @@ export class HardwareBridge {
               const acsV = parseFloat(mAcs[1])
               const zeroV = parseFloat(mAcs[2])
               if (Number.isFinite(acsV)) this.esp32Cache.acsVolts = acsV
-              if (Number.isFinite(zeroV)) this.esp32Cache.acsZero = zeroV
+              if (Number.isFinite(zeroV)) {
+                this.esp32Cache.acsZero = zeroV
+                this.esp32Cache.inaOk = zeroV >= 2.30 && zeroV <= 2.70
+              }
             }
           } else if (seg.startsWith('PWR ')) {
             const m = seg.match(/PWR\s+([-\d.]+)\s*W/i)
@@ -915,7 +1019,7 @@ export class HardwareBridge {
               const p = parseFloat(m[1])
               if (Number.isFinite(p)) {
                 this.esp32Cache.pHarvW = p
-                this.esp32Cache.pBatW = Math.round(this.esp32Cache.vBat * this.esp32Cache.iBat * 10) / 10
+                this.esp32Cache.pBatW = p
               }
             }
           } else if (seg.startsWith('IN-BAT ')) {
@@ -938,12 +1042,18 @@ export class HardwareBridge {
               const ph = parseFloat(mFull[1])
               const wh = parseFloat(mFull[2])
               if (Number.isFinite(ph)) this.esp32Cache.pHarvW = ph
-              if (Number.isFinite(wh)) this.esp32Cache.whHarv = wh
+              if (Number.isFinite(wh)) {
+                this.esp32Cache.whHarv = wh
+                this.esp32Cache.whTotal = wh
+              }
             } else {
               const mWh = seg.match(/HARVEST\s+([-\d.]+)\s*Wh/i)
               if (mWh) {
                 const wh = parseFloat(mWh[1])
-                if (Number.isFinite(wh)) this.esp32Cache.whHarv = wh
+                if (Number.isFinite(wh)) {
+                  this.esp32Cache.whHarv = wh
+                  this.esp32Cache.whTotal = wh
+                }
               }
             }
           } else if (seg.startsWith('HOT ')) {
@@ -1005,7 +1115,13 @@ export class HardwareBridge {
           this.esp32Cache.stateName = sName
           this.esp32Cache.stateCode = sCode
           this.esp32Cache.relayClosed = m[2].toUpperCase() === 'CLOSED'
-          this.esp32Cache.stateReason = m[3].trim()
+          let reasonText = m[3].trim()
+          const trailingNote = reasonText.match(/\s*\(((?:TEG voltage is too low|relay closed, no current|current sensor not OK:)[^)]+)\)\s*$/i)
+          if (trailingNote && trailingNote.index !== undefined) {
+            this.esp32Cache.note = trailingNote[1].trim()
+            reasonText = reasonText.slice(0, trailingNote.index).trim()
+          }
+          this.esp32Cache.stateReason = reasonText
         }
         return
       }
@@ -1027,7 +1143,10 @@ export class HardwareBridge {
           const sv = parseFloat(m[1])
           const zv = parseFloat(m[2])
           if (Number.isFinite(sv)) this.esp32Cache.acsVolts = sv
-          if (Number.isFinite(zv)) this.esp32Cache.acsZero = zv
+          if (Number.isFinite(zv)) {
+            this.esp32Cache.acsZero = zv
+            this.esp32Cache.inaOk = zv >= 2.30 && zv <= 2.70
+          }
         }
         return
       }
@@ -1037,6 +1156,11 @@ export class HardwareBridge {
         if (m) {
           const ib = parseFloat(m[1])
           if (Number.isFinite(ib)) this.esp32Cache.iBat = ib
+        }
+        if (line.toUpperCase().includes('NOT OK')) {
+          this.esp32Cache.inaOk = false
+        } else if (line.toLowerCase().includes('acs712 analog')) {
+          this.esp32Cache.inaOk = true
         }
         const mTrim = line.match(/factor\s*([-\d.]+)/i)
         if (mTrim) {
@@ -1079,7 +1203,10 @@ export class HardwareBridge {
               this.esp32Cache.pHarvW = ph
               this.esp32Cache.pBatW = ph
             }
-            if (Number.isFinite(whh)) this.esp32Cache.whHarv = whh
+            if (Number.isFinite(whh)) {
+              this.esp32Cache.whHarv = whh
+              this.esp32Cache.whTotal = whh
+            }
             if (Number.isFinite(pk)) this.esp32Cache.vTegPeak = pk
           } else {
             const mAlt = line.match(/TEG\s+([-\d.]+)\s*W.*into battery\s+([-\d.]+)\s*W.*harvested\s+([-\d.]+)\s*Wh.*peak TEG\s+([-\d.]+)\s*V/i)
@@ -1159,8 +1286,8 @@ export class HardwareBridge {
         return
       }
 
-      // Startup banner lines in thesis.ino
-      const startupCal = line.match(/^Calibration\s*:\s*battery\s*x([-\d.]+),\s*TEG\s*x([-\d.]+),\s*current\s*x([-\d.]+)/i)
+      // Startup banner & 'v' pin check lines in thesis.ino
+      const startupCal = line.match(/^Calibration\s*:\s*battery\s*x([-\d.]+).*?,\s*TEG\s*x([-\d.]+).*?,\s*current\s*x([-\d.]+)/i)
       if (startupCal) {
         const bt = parseFloat(startupCal[1])
         const tt = parseFloat(startupCal[2])
@@ -1168,6 +1295,33 @@ export class HardwareBridge {
         if (Number.isFinite(bt)) this.esp32Cache.batTrim = bt
         if (Number.isFinite(tt)) this.esp32Cache.tegTrim = tt
         if (Number.isFinite(ct)) this.esp32Cache.curTrim = ct
+        this.emitFromEsp32Cache(source)
+        return
+      }
+
+      const startupAcs = line.match(/^Current sens\.:\s*ACS712 zero level\s*([-\d.]+)\s*V/i)
+      if (startupAcs) {
+        const zv = parseFloat(startupAcs[1])
+        if (Number.isFinite(zv)) {
+          this.esp32Cache.acsZero = zv
+          this.esp32Cache.inaOk = !line.toUpperCase().includes('NOT ABOUT 2.5') && zv >= 2.30 && zv <= 2.70
+        }
+        this.emitFromEsp32Cache(source)
+        return
+      }
+
+      const pinCheckAcs = line.match(/GPIO35\s+ACS712.*->\s*sensor output\s*([-\d.]+)\s*V,\s*zero level\s*([-\d.]+)\s*V,\s*current\s*([-\d.]+)\s*A/i)
+      if (pinCheckAcs) {
+        const sv = parseFloat(pinCheckAcs[1])
+        const zv = parseFloat(pinCheckAcs[2])
+        const cur = parseFloat(pinCheckAcs[3])
+        if (Number.isFinite(sv)) this.esp32Cache.acsVolts = sv
+        if (Number.isFinite(zv)) {
+          this.esp32Cache.acsZero = zv
+          this.esp32Cache.inaOk = zv >= 2.30 && zv <= 2.70
+        }
+        if (Number.isFinite(cur)) this.esp32Cache.iBat = cur
+        this.emitFromEsp32Cache(source)
         return
       }
 
@@ -1434,7 +1588,12 @@ export class HardwareBridge {
 
       if (this.bleRxChar) {
         const encoder = new TextEncoder()
-        await this.bleRxChar.writeValue(encoder.encode(formatted))
+        const payload = encoder.encode(formatted)
+        if (typeof this.bleRxChar.writeValueWithoutResponse === 'function' && this.bleRxChar.properties?.writeWithoutResponse) {
+          await this.bleRxChar.writeValueWithoutResponse(payload)
+        } else {
+          await this.bleRxChar.writeValue(payload)
+        }
         return true
       }
 

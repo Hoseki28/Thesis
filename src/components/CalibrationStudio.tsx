@@ -195,14 +195,15 @@ export function CalibrationStudio({
   }
 
   // Live readings from thesis.ino state
-  const rawBatVal = currentTelemetry.rawBat ?? currentTelemetry.rawBatteryVoltage ?? 12.65
+  const rawBatVal = currentTelemetry.rawBat ?? currentTelemetry.rawBatteryVoltage ?? 0.0
   const rawTegVal = currentTelemetry.rawTeg ?? currentTelemetry.rawTegVoltage ?? 0.0
   const rawIVal = currentTelemetry.rawI ?? currentTelemetry.rawTegCurrent ?? 0.0
-  const batTrimVal = currentTelemetry.batTrim ?? form.batteryVoltageGain ?? 1.028
-  const tegTrimVal = currentTelemetry.tegTrim ?? 1.052
+  const batTrimVal = currentTelemetry.batTrim ?? form.batteryVoltageGain ?? 1.1011
+  const tegTrimVal = currentTelemetry.tegTrim ?? 1.1679
   const curTrimVal = currentTelemetry.curTrim ?? form.tegCurrentGain ?? 1.0
   const acsZeroVal = currentTelemetry.acsZero ?? 2.5
   const acsVoltsVal = currentTelemetry.acsVolts ?? 2.5
+  const acsOkVal = currentTelemetry.inaOk !== false && acsZeroVal >= 2.30 && acsZeroVal <= 2.70
 
   // Industrial workbench input styling (Dark Mode Standard)
   const baseInputClass =
@@ -300,11 +301,11 @@ export function CalibrationStudio({
             <span className={`text-[10px] uppercase font-bold ${isDark ? 'text-zinc-400' : 'text-zinc-500'}`}>
               ACS Zero Point
             </span>
-            <span className="font-bold text-sm tabular-nums text-zinc-100">
+            <span className={`font-bold text-sm tabular-nums ${acsOkVal ? 'text-zinc-100' : 'text-amber-400'}`}>
               {acsZeroVal.toFixed(3)} V
             </span>
-            <span className="text-[10px] text-zinc-400">
-              Sensor: {acsVoltsVal.toFixed(3)} V
+            <span className={`text-[10px] ${acsOkVal ? 'text-zinc-400' : 'text-amber-400'}`}>
+              Sensor: {acsVoltsVal.toFixed(3)} V · {acsOkVal ? 'OK' : 'Check GPIO35'}
             </span>
           </div>
         </div>

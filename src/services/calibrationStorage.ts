@@ -458,7 +458,7 @@ export function applyCalibration(
     vOpenNow: esp32Data?.vOpenNow ?? 14.4,
     vCloseNow: esp32Data?.vCloseNow ?? 13.6,
     vHardNow: esp32Data?.vHardNow ?? 14.6,
-    inaOk: false,
+    inaOk: esp32Data?.inaOk ?? raw.inaOk ?? true,
 
     stoveTemp,
     coldFaceTemp,
@@ -517,7 +517,12 @@ const float K_BAT                  = (47.0f + 10.0f) / 10.0f;  // GPIO32 battery
 const float BAT_TRIM               = ${cal.batteryVoltageGain.toFixed(4)}f;
 const float K_TEG                  = (150.0f + 10.0f) / 10.0f; // GPIO33 TEG divider (x16.0)
 const float TEG_TRIM               = ${(cal.tegVoltageGain ?? 1.1679).toFixed(4)}f;
-const float ACS_K                  = (10.0f + 15.0f) / 15.0f;  // GPIO35 ACS712-5A divider
+const float R_ACS_SERIES_K         = 10.0f;                    // R17: sensor OUT -> GPIO35 (kilo-ohms)
+const float R_ACS_GND_K            = 15.0f;                    // R18: GPIO35 -> GND (kilo-ohms)
+const float ACS_K                  = (R_ACS_SERIES_K + R_ACS_GND_K) / R_ACS_GND_K; // GPIO35 ACS712-5A divider
+const float ACS_ZERO_MIN           = 2.30f;
+const float ACS_ZERO_MAX           = 2.70f;
+const float ACS_V_PER_A            = 0.185f;
 const float CUR_TRIM_DEFAULT       = ${cal.tegCurrentGain.toFixed(4)}f;
 
 // 12V 15Ah SLA charge protection limits (at 25 C, -18 mV/C temp compensation)

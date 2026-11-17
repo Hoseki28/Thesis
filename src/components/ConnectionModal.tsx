@@ -53,6 +53,11 @@ export function ConnectionModal({
     await bridge.connectBluetooth()
   }
 
+  const handleConnectBluetoothSerial = async () => {
+    bridge.setBaudRate(baudRate)
+    await bridge.connectBluetoothSerial(baudRate)
+  }
+
   const handleConnectWifi = () => {
     bridge.connectWebSocket(wifiUrl.trim())
   }
@@ -330,23 +335,23 @@ export function ConnectionModal({
                 </div>
               )}
 
-              {/* ── TAB 2: BLUETOOTH BLE ────────────────────────────────── */}
+              {/* ── TAB 2: BLUETOOTH (BLE + CLASSIC SPP) ────────────────── */}
               {activeTab === 'bluetooth' && (
                 <div className="flex flex-col gap-3">
                   <div className={`p-3 rounded-xl border text-xs flex flex-col gap-1.5 ${
                     isDark ? 'bg-[#0B0F12] border-[#222932]' : 'bg-zinc-50 border-zinc-200'
                   }`}>
                     <span className="font-bold text-[11px] uppercase tracking-wider text-sky-400">
-                      Web Bluetooth (BLE UART)
+                      ESP32 Bluetooth ("TEG_Charger" · BLE + Classic SPP)
                     </span>
                     <p className={`text-[11px] ${isDark ? 'text-zinc-300' : 'text-zinc-700'}`}>
                       {isFil
-                        ? 'Mag-scan ng wireless Bluetooth signal ng ESP32 (Nordic UART Service). Tamang-tama sa tablet o mobile phone sa field.'
-                        : 'Wirelessly scan for ESP32 Bluetooth signals (Nordic UART). Ideal for field use with tablets or phones.'}
+                        ? 'Gamitin ang "Scan & Pair Bluetooth (BLE)" para sa direktang koneksyon sa browser, o "Connect Paired BT Serial (SPP COM)" kung naka-pair ang TEG_Charger sa Bluetooth settings ng PC.'
+                        : 'Use "Scan & Pair Bluetooth (BLE)" for direct browser pairing, or "Connect Paired BT Serial (SPP COM)" if TEG_Charger is paired as a Bluetooth Serial COM port on your PC.'}
                     </p>
-                    {!isBluetoothSupported && (
+                    {!isBluetoothSupported && !isSerialSupported && (
                       <span className="text-amber-500 text-[10px] font-bold">
-                        ⚠️ Web Bluetooth requires Chrome, Edge, or Bluefy Browser.
+                        ⚠️ Bluetooth requires Chrome, Edge, or Bluefy Browser.
                       </span>
                     )}
                   </div>
@@ -361,9 +366,29 @@ export function ConnectionModal({
                     <span>
                       {isConnecting
                         ? (isFil ? 'NAG-II-SCAN...' : 'SCANNING BLE...')
-                        : (isFil ? 'I-SCAN AT IKABIT ANG BLUETOOTH' : 'SCAN & PAIR BLUETOOTH')}
+                        : (isFil ? 'I-SCAN AT IKABIT ANG BLUETOOTH (BLE)' : 'SCAN & PAIR BLUETOOTH (BLE)')}
                     </span>
                   </button>
+
+                  {isSerialSupported && (
+                    <button
+                      type="button"
+                      disabled={isConnecting}
+                      onClick={handleConnectBluetoothSerial}
+                      className={`w-full py-2.5 px-4 rounded-xl border text-[11px] font-black uppercase tracking-wider flex items-center justify-center gap-2 cursor-pointer transition-colors min-h-[44px] ${
+                        isDark
+                          ? 'bg-[#181E24] hover:bg-[#1E262E] border-sky-500/40 text-sky-300'
+                          : 'bg-sky-50 hover:bg-sky-100 border-sky-300 text-sky-800'
+                      }`}
+                    >
+                      <IconBluetooth size={15} />
+                      <span>
+                        {isFil
+                          ? 'IKABIT ANG PAIRED BT SERIAL (TEG_Charger COM)'
+                          : 'CONNECT PAIRED BT SERIAL (TEG_Charger COM)'}
+                      </span>
+                    </button>
+                  )}
                 </div>
               )}
 

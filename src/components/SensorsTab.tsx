@@ -358,8 +358,10 @@ export function SensorsTab({ telemetry, calibration, historyPoints = [], lang, t
             <span className={`block font-bold ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-500'}`}>
               ACS712-5A Current (GPIO35)
             </span>
-            <span className={isDark ? 'text-zinc-300' : 'text-zinc-700'}>
-              {(telemetry.iBat ?? telemetry.rawTegCurrent ?? 0.0).toFixed(2)}A (zero: {(telemetry.acsZero ?? 2.5).toFixed(3)}V)
+            <span className={telemetry.inaOk === false ? 'text-amber-400 font-bold' : isDark ? 'text-zinc-300' : 'text-zinc-700'}>
+              {telemetry.inaOk === false
+                ? `NOT OK (zero: ${(telemetry.acsZero ?? 0).toFixed(3)}V · check GPIO35)`
+                : `${(telemetry.iBat ?? telemetry.rawTegCurrent ?? 0.0).toFixed(2)}A (zero: ${(telemetry.acsZero ?? 2.5).toFixed(3)}V)`}
             </span>
           </div>
         </div>
