@@ -318,12 +318,12 @@ export function OverviewTab({
           }`}>
             <div className="min-w-0">
               <span className={`text-[11px] font-bold block leading-tight ${isDark ? 'text-white' : 'text-zinc-950'}`}>
-                {isFil ? 'Mga Limit ng Boltahe (-18mV/°C)' : 'Dynamic Voltage Limits (-18mV/°C)'}
+                {isFil ? 'Mga Limit ng Boltahe (-24/-18mV/°C)' : 'Dynamic Voltage Limits (-24/-18mV/°C)'}
               </span>
               <span className={`text-[9px] font-mono tracking-tight ${
                 telemetry.auxLockout ? 'text-rose-400 font-bold' : isDark ? 'text-[#9CA3AF]' : 'text-zinc-600'
               }`}>
-                Open: {(telemetry.vOpenNow ?? 14.4).toFixed(2)}V · Close: {(telemetry.vCloseNow ?? 13.6).toFixed(2)}V · Hard: {(telemetry.vHardNow ?? 14.6).toFixed(2)}V
+                Open: {(telemetry.vOpenNow ?? 14.6).toFixed(2)}V · Close: {(telemetry.vCloseNow ?? 13.7).toFixed(2)}V · Hard: {(telemetry.vHardNow ?? 14.8).toFixed(2)}V
               </span>
             </div>
 
@@ -426,7 +426,7 @@ export function OverviewTab({
               <span className={`text-[8.5px] font-mono px-1 rounded font-bold ${
                 isDark ? 'bg-[#00E676]/15 text-[#00E676]' : 'bg-emerald-100 text-emerald-800'
               }`}>
-                12V 15Ah SLA
+                TNE12-15 · 12V 15Ah
               </span>
             </div>
           </div>
@@ -472,7 +472,7 @@ export function OverviewTab({
             </div>
 
             <span className={`text-[8.5px] font-mono block mt-0.5 ${isDark ? 'text-zinc-500' : 'text-zinc-500'}`}>
-              6.0V Min · 14.4V Full
+              10.8V Cutoff · 14.6V Full
             </span>
           </div>
         </div>

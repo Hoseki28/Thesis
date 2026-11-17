@@ -69,9 +69,9 @@ function defaultStateReason(stateCode: number): string {
     case 4:
       return 'manually disabled (send a)'
     case 5:
-      return 'ambient temperature >= 45 C'
+      return 'ambient temperature >= 40 C (TNE12-15 max charge temp)'
     case 6:
-      return 'current exceeded 2.2 A (send r)'
+      return 'current exceeded 2.25 A / 0.15C (send r)'
     default:
       return ''
   }
@@ -136,9 +136,9 @@ export class HardwareBridge {
     ts1Tripped: false,
     overcurrentLatched: false,
     batHot: false,
-    vOpenNow: 14.4,
-    vCloseNow: 13.6,
-    vHardNow: 14.6,
+    vOpenNow: 14.6,
+    vCloseNow: 13.7,
+    vHardNow: 14.8,
     batTrim: 1.1011,
     tegTrim: 1.1679,
     curTrim: 1.0,
@@ -861,18 +861,19 @@ export class HardwareBridge {
 
   private updateTempCompLimits() {
     if (this.esp32Cache.dhtOk && this.esp32Cache.tAmb > 25.0) {
-      const drop = (this.esp32Cache.tAmb - 25.0) * 0.018
-      this.esp32Cache.vOpenNow = Math.round((14.4 - drop) * 100) / 100
-      this.esp32Cache.vCloseNow = Math.round((13.6 - drop) * 100) / 100
-      this.esp32Cache.vHardNow = Math.round((14.6 - drop) * 100) / 100
+      const dropCycle = (this.esp32Cache.tAmb - 25.0) * 0.024
+      const dropFloat = (this.esp32Cache.tAmb - 25.0) * 0.018
+      this.esp32Cache.vOpenNow = Math.round((14.6 - dropCycle) * 100) / 100
+      this.esp32Cache.vCloseNow = Math.round((13.7 - dropFloat) * 100) / 100
+      this.esp32Cache.vHardNow = Math.round((14.8 - dropCycle) * 100) / 100
     } else if (!this.esp32Cache.dhtOk) {
-      this.esp32Cache.vOpenNow = 14.2
-      this.esp32Cache.vCloseNow = 13.6
-      this.esp32Cache.vHardNow = 14.6
-    } else {
       this.esp32Cache.vOpenNow = 14.4
-      this.esp32Cache.vCloseNow = 13.6
-      this.esp32Cache.vHardNow = 14.6
+      this.esp32Cache.vCloseNow = 13.7
+      this.esp32Cache.vHardNow = 14.8
+    } else {
+      this.esp32Cache.vOpenNow = 14.6
+      this.esp32Cache.vCloseNow = 13.7
+      this.esp32Cache.vHardNow = 14.8
     }
   }
 

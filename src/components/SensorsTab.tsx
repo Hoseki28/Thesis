@@ -302,16 +302,16 @@ export function SensorsTab({ telemetry, calibration, historyPoints = [], lang, t
               <span className="w-2 h-2 rounded-full bg-emerald-400" />
               <div>
                 <span className={`text-[11px] font-bold block ${isDark ? 'text-white' : 'text-zinc-900'}`}>
-                  CH4: Dynamic SLA Charge Limits
+                  CH4: Dynamic TNE12-15 Charge Limits
                 </span>
                 <span className={`text-[8.5px] font-mono block ${isDark ? 'text-zinc-500' : 'text-zinc-400'}`}>
-                  Open: {(telemetry.vOpenNow ?? 14.4).toFixed(2)}V · Close: {(telemetry.vCloseNow ?? 13.6).toFixed(2)}V · Hard: {(telemetry.vHardNow ?? 14.6).toFixed(2)}V
+                  Open: {(telemetry.vOpenNow ?? 14.6).toFixed(2)}V · Close: {(telemetry.vCloseNow ?? 13.7).toFixed(2)}V · Hard: {(telemetry.vHardNow ?? 14.8).toFixed(2)}V
                 </span>
               </div>
             </div>
             <div className="text-right">
               <span className={`text-xs font-mono font-black block tabular-nums ${isDark ? 'text-white' : 'text-zinc-900'}`}>
-                {(telemetry.vOpenNow ?? 14.4).toFixed(2)} V
+                {(telemetry.vOpenNow ?? 14.6).toFixed(2)} V
               </span>
               <span className="text-[8.5px] font-mono font-bold uppercase text-[#00E676]">
                 ACTIVE

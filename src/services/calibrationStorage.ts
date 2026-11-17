@@ -1,6 +1,6 @@
 import { CalibrationConfig, Esp32HardwareStatus, FeedstockType, LoadChannel, TelemetryData } from '../types/telemetry'
 
-const STORAGE_KEY = 'padayon_calibration_v4'
+const STORAGE_KEY = 'padayon_calibration_v5'
 
 export const DEFAULT_CALIBRATION: CalibrationConfig = {
   stoveTempOffset: 0.0,
@@ -11,11 +11,12 @@ export const DEFAULT_CALIBRATION: CalibrationConfig = {
   dhtTempOffset: 0.0,
   dhtHumidityOffset: 0.0,
 
-  // 12V 15Ah SLA profile: 10.0V (0% Cutoff) to 14.6V (100% Full)
-  batteryVMin: 10.0,
+  // Tianneng TNE12-15 (12V 15Ah AGM-GEL Deep Cycle) Datasheet Profile:
+  // 10.80V (1.80V/cell 20hr 100% DOD Final Voltage) to 14.60V (Cycle Limited Voltage @ 25°C)
+  batteryVMin: 10.8,
   batteryVMax: 14.6,
   batteryVoltageGain: 1.1011, // Calibrated for measured 9.56V -> 10.24V actual input
-  batteryCutoffPct: 15,
+  batteryCutoffPct: 20,       // 20% SoC (~11.50V = 80% DOD recommended safe cycle cutoff)
 
   tegVoltageGain: 1.1679, // Calibrated for measured 11.80V -> 13.10V actual input
   tegCurrentZeroOffset: 0.0,
@@ -212,9 +213,9 @@ export function getOfflineTelemetry(cal: CalibrationConfig = loadCalibration()):
       ts1Tripped: false,
       overcurrentLatched: false,
       batHot: false,
-      vOpenNow: 14.4,
-      vCloseNow: 13.6,
-      vHardNow: 14.6,
+      vOpenNow: 14.6,
+      vCloseNow: 13.7,
+      vHardNow: 14.8,
       batTrim: 1.1011,
       tegTrim: 1.1679,
       curTrim: 1.0,
@@ -277,15 +278,43 @@ export function applyCalibration(
     ? esp32Data.dT
     : Math.max(0, Math.round((stoveTemp - coldFaceTemp) * 10) / 10)
 
-  // 4. Battery Voltage & SoC (%): 12V 15Ah SLA Profile
-  // When connected to ESP32, safeRawBattV is already trimmed in firmware (e.g. 10.24V)
+  // 4. Battery Voltage & SoC (%): Tianneng TNE12-15 (12V 15Ah AGM-GEL Deep Cycle) Datasheet Curve
+  // - 10.80V (1.80V/cell @ 20hr rate) = 0% SoC (100% DOD)
+  // - 11.50V = 20% SoC (80% DOD safe cycle reserve)
+  // - 11.80V = 35% SoC (ESP32 low-battery warning threshold)
+  // - 12.10V = 50% SoC (50% DOD)
+  // - 12.50V = 75% SoC
+  // - 12.90V+ (resting/float) or vOpenNow (14.60V while charging) = 100% SoC
   const safeRawBattV = Number.isFinite(raw.rawBatteryVoltage) ? raw.rawBatteryVoltage : 0
   const batteryVoltage = isLiveHardware
     ? Math.round(safeRawBattV * 100) / 100
     : Math.round((safeRawBattV * cal.batteryVoltageGain) * 100) / 100
   const vMin = Math.min(cal.batteryVMin, cal.batteryVMax - 1.0)
   const vMax = Math.max(cal.batteryVMax, vMin + 1.0)
-  const batteryPctRaw = batteryVoltage >= 6.0 ? ((batteryVoltage - vMin) / (vMax - vMin)) * 100 : 0
+  const isActivelyCharging =
+    Boolean(esp32Data?.relayClosed ?? raw.relays.dcBus) &&
+    (Number.isFinite(raw.rawTegCurrent) ? raw.rawTegCurrent : 0) > 0.08
+  let batteryPctRaw = 0
+  if (batteryVoltage >= 6.0) {
+    if (isActivelyCharging) {
+      const chargeCeil = esp32Data?.vOpenNow ?? vMax
+      batteryPctRaw = ((batteryVoltage - vMin) / Math.max(1.0, chargeCeil - vMin)) * 100
+    } else if (batteryVoltage <= vMin) {
+      batteryPctRaw = 0
+    } else if (batteryVoltage <= 11.5) {
+      batteryPctRaw = ((batteryVoltage - vMin) / Math.max(0.1, 11.5 - vMin)) * 20
+    } else if (batteryVoltage <= 11.8) {
+      batteryPctRaw = 20 + ((batteryVoltage - 11.5) / 0.3) * 15
+    } else if (batteryVoltage <= 12.1) {
+      batteryPctRaw = 35 + ((batteryVoltage - 11.8) / 0.3) * 15
+    } else if (batteryVoltage <= 12.5) {
+      batteryPctRaw = 50 + ((batteryVoltage - 12.1) / 0.4) * 25
+    } else if (batteryVoltage <= 12.9) {
+      batteryPctRaw = 75 + ((batteryVoltage - 12.5) / 0.4) * 25
+    } else {
+      batteryPctRaw = 100
+    }
+  }
   const batteryPct = Math.min(100, Math.max(0, Math.round(batteryPctRaw)))
 
   // 5. TEG Current & Voltage & Power
@@ -455,9 +484,9 @@ export function applyCalibration(
     batTrim: esp32Data?.batTrim ?? cal.batteryVoltageGain,
     tegTrim: esp32Data?.tegTrim ?? (cal.tegVoltageGain ?? 1.1679),
     curTrim: esp32Data?.curTrim ?? cal.tegCurrentGain,
-    vOpenNow: esp32Data?.vOpenNow ?? 14.4,
-    vCloseNow: esp32Data?.vCloseNow ?? 13.6,
-    vHardNow: esp32Data?.vHardNow ?? 14.6,
+    vOpenNow: esp32Data?.vOpenNow ?? 14.6,
+    vCloseNow: esp32Data?.vCloseNow ?? 13.7,
+    vHardNow: esp32Data?.vHardNow ?? 14.8,
     inaOk: esp32Data?.inaOk ?? raw.inaOk ?? true,
 
     stoveTemp,
@@ -525,11 +554,14 @@ const float ACS_ZERO_MAX           = 2.70f;
 const float ACS_V_PER_A            = 0.185f;
 const float CUR_TRIM_DEFAULT       = ${cal.tegCurrentGain.toFixed(4)}f;
 
-// 12V 15Ah SLA charge protection limits (at 25 C, -18 mV/C temp compensation)
-const float V_BAT_OPEN             = 14.40f;
-const float V_BAT_CLOSE            = 13.60f;
-const float V_BAT_HARD             = ${cal.batteryVMax.toFixed(2)}f;
-const float V_BAT_LOW_WARN         = ${cal.batteryVMin.toFixed(2)}f;
+// Tianneng TNE12-15 (12V 15Ah AGM-GEL) charge protection limits (@ 25 C, -24 mV/C cycle / -18 mV/C float)
+const float V_BAT_OPEN             = 14.60f;
+const float V_BAT_CLOSE            = 13.70f;
+const float V_BAT_HARD             = 14.80f;
+const float V_BAT_LOW_WARN         = 11.80f;
+const float V_BAT_CUTOFF           = ${cal.batteryVMin.toFixed(2)}f; // 1.80 V/cell = 10.80 V (20hr 100% DOD)
+const float I_OVER_A               = 2.25f;  // <= 0.15C A (2.25 A max charge current)
+const float BAT_TEMP_STOP_C        = 40.0f;  // TNE12-15 max charge temp: 40 C
 
 // Thermal & safety alarm limits
 const float HOT_ALARM_C            = ${cal.stoveOverheatThreshold.toFixed(1)}f;

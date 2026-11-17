@@ -112,14 +112,20 @@ const int   CURRENT_SIGN = +1;                 // set to -1 if the charge curren
 float acsVolts = 2.5f, acsZero = 2.5f;         // sensor output now / at 0 A
 bool acsOK = false;                            // true when the zero level is about 2.5 V
 
-// ---------------- limits ----------------
-const float V_BAT_OPEN = 14.4f, V_BAT_CLOSE = 13.6f, V_BAT_HARD = 14.6f;
-const float V_BAT_LOW_WARN = 11.8f, V_BAT_VALID_MIN = 6.0f, V_BAT_VALID_MAX = 16.5f;
+// ---------------- limits (Tianneng TNE12-15 12V 15Ah AGM-GEL Datasheet Verified) ----------------
+// Cycle Limited Voltage : 14.6V ~ 14.8V @ 25 C (Temp. Coefficient: -24 mV/C)
+// Floating Voltage      : 13.6V ~ 13.8V @ 25 C (Temp. Coefficient: -18 mV/C)
+// Limited Charge Current: <= 0.15C A = 2.25 A
+// Charge Temp. Range    : 0 C ~ 40 C (Optimum: 25 C +/- 2 C)
+// 100% DOD Final Voltage: 1.80 V/cell = 10.80 V (20hr rate), 1.75 V/cell = 10.50 V (2hr-10hr rate)
+const float V_BAT_OPEN = 14.6f, V_BAT_CLOSE = 13.7f, V_BAT_HARD = 14.8f;
+const float V_BAT_LOW_WARN = 11.8f, V_BAT_CUTOFF = 10.8f, V_BAT_VALID_MIN = 6.0f, V_BAT_VALID_MAX = 16.5f;
 const uint32_t RECONNECT_DWELL_MS = 60000;
-const float TEMP_COMP_V_PER_C = 0.018f;
-const float V_BAT_OPEN_NO_TEMP = 14.2f;
-const float BAT_TEMP_STOP_C = 45.0f, BAT_TEMP_RESUME_C = 40.0f;
-const float I_OVER_A = 2.2f;
+const float TEMP_COMP_CYCLE_V_PER_C = 0.024f;  // -24 mV/C for cycle limit (14.6V-14.8V)
+const float TEMP_COMP_FLOAT_V_PER_C = 0.018f;  // -18 mV/C for float reconnect (13.7V)
+const float V_BAT_OPEN_NO_TEMP = 14.4f;
+const float BAT_TEMP_STOP_C = 40.0f, BAT_TEMP_RESUME_C = 37.0f;
+const float I_OVER_A = 2.25f;                  // 0.15C of 15Ah = 2.25 A max charge current
 const uint32_t I_OVER_MS = 2000;
 const float TEG_V_ALARM = 45.0f;
 const float TEG_PRESENT_V = 1.0f;              // TEG reading below this = no TEG detected (yellow + red LEDs)
@@ -140,7 +146,7 @@ const char *hotWhy = "not read yet", *coldWhy = "not read yet";
 int state = 0, forceMode = 0;
 bool overcurrentLatched = false, batHot = false, dhtOK = false, dwellActive = false;
 uint32_t tOver = 0, tDhtGood = 0, tLast = 0, tPrint = 0, tLcd = 0, tSense = 0, tDht = 0, tOpened = 0, tTest = 0;
-float vOpenNow = 14.4f, vCloseNow = 13.6f, vHardNow = 14.6f;
+float vOpenNow = 14.6f, vCloseNow = 13.7f, vHardNow = 14.8f;
 String lineBuf;
 String btLineBuf;
 uint32_t tBtRx = 0;
@@ -150,11 +156,11 @@ uint16_t lastAlarms = 0;
 // alarm bits
 enum { A_LOWBAT = 1, A_HIGHBAT = 2, A_HOT = 8, A_TEGV = 16, A_HOTTC = 32, A_COLDTC = 64, A_BATHOT = 128, A_OVERI = 256, A_DHT = 512, A_COLD = 1024, A_ACS = 2048 };
 const struct { uint16_t bit; const char *name; bool critical; } ALARMS[] = {
-  {A_LOWBAT, "battery low (<11.8 V)", false}, {A_HIGHBAT, "battery at charge limit", false},
+  {A_LOWBAT, "battery low (<11.8 V, cutoff 10.8 V)", false}, {A_HIGHBAT, "battery at charge limit (14.6 V)", false},
   {A_HOT, "hot side over 230 C", true},
   {A_TEGV, "TEG voltage over 45 V", true}, {A_HOTTC, "hot thermocouple fault", false},
-  {A_COLDTC, "cold thermocouple fault", false}, {A_BATHOT, "battery too hot (45 C)", true},
-  {A_OVERI, "overcurrent latched (send r)", true}, {A_DHT, "DHT22 not reading", false},
+  {A_COLDTC, "cold thermocouple fault", false}, {A_BATHOT, "battery too hot (>=40 C charge limit)", true},
+  {A_OVERI, "overcurrent latched (>2.25 A, send r)", true}, {A_DHT, "DHT22 not reading", false},
   {A_COLD, "cold side over 60 C", true}, {A_ACS, "current sensor not OK (check GPIO35 wiring)", false}
 };
 const int N_ALARMS = sizeof(ALARMS) / sizeof(ALARMS[0]);
@@ -207,8 +213,8 @@ const char* stateReason() {
     case 2: return "reached full voltage limit";
     case 3: return "waiting for reconnect dwell timer";
     case 4: return "manually disabled (send a)";
-    case 5: return "ambient temperature >= 45 C";
-    case 6: return "current exceeded 2.2 A (send r)";
+    case 5: return "ambient temperature >= 40 C (TNE12-15 max charge temp)";
+    case 6: return "current exceeded 2.25 A / 0.15C (send r)";
     default: return "";
   }
 }
@@ -311,12 +317,13 @@ void readSensors() {
     }
   }
 
-  // temperature compensated thresholds (-18 mV/°C above 25°C)
+  // TNE12-15 temperature compensated thresholds above 25°C (-24 mV/°C cycle, -18 mV/°C float)
   if (dhtOK && tAmb > 25.0f) {
-    float drop = (tAmb - 25.0f) * TEMP_COMP_V_PER_C;
-    vOpenNow = V_BAT_OPEN - drop;
-    vCloseNow = V_BAT_CLOSE - drop;
-    vHardNow = V_BAT_HARD - drop;
+    float dropCycle = (tAmb - 25.0f) * TEMP_COMP_CYCLE_V_PER_C;
+    float dropFloat = (tAmb - 25.0f) * TEMP_COMP_FLOAT_V_PER_C;
+    vOpenNow = V_BAT_OPEN - dropCycle;
+    vCloseNow = V_BAT_CLOSE - dropFloat;
+    vHardNow = V_BAT_HARD - dropCycle;
   } else if (!dhtOK) {
     vOpenNow = V_BAT_OPEN_NO_TEMP;
     vCloseNow = V_BAT_CLOSE;
@@ -345,7 +352,7 @@ void chargeControl() {
       overcurrentLatched = true;
       relayWrite(false);
       state = 6;
-      event("OVERCURRENT LATCHED (>2.2 A for 2 s). Relay opened. Send 'r' to clear.");
+      event("OVERCURRENT LATCHED (>2.25 A / 0.15C for 2 s). Relay opened. Send 'r' to clear.");
       return;
     }
   } else {
