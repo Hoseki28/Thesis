@@ -248,13 +248,22 @@ export class HardwareBridge {
     try {
       // Must invoke requestPort() synchronously during the user click gesture before any state re-renders
       // @ts-ignore - Web Serial API
-      this.port = await navigator.serial.requestPort()
+      const selectedPort = await navigator.serial.requestPort()
+      if (this.port && this.port !== selectedPort) {
+        await this.disconnectSerial()
+      }
+      this.port = selectedPort
 
       this.state.status = 'connecting'
       this.notifyState()
       this.appendLog('sys', `Opening USB serial port (Baud: ${baud})...`)
 
-      await this.port.open({ baudRate: baud })
+      if (!this.port.readable) {
+        await this.port.open({ baudRate: baud })
+      }
+      if (typeof this.port.setSignals === 'function') {
+        await this.port.setSignals({ dataTerminalReady: true, requestToSend: true }).catch(() => {})
+      }
 
       this.state.status = 'connected'
       this.state.transport = 'serial'
@@ -280,7 +289,7 @@ export class HardwareBridge {
   public async connectBluetoothSerial(baudRate?: number): Promise<boolean> {
     if (!this.isWebSerialSupported()) {
       this.state.status = 'error'
-      this.state.lastError = 'Web Serial API is not supported in this browser. Please use Chrome or Edge.'
+      this.state.lastError = 'Web Serial API is not supported in this browser. Please use Chrome, Edge, or Brave.'
       this.appendLog('err', this.state.lastError)
       this.notifyState()
       return false
@@ -290,23 +299,34 @@ export class HardwareBridge {
 
     try {
       // Must invoke requestPort() synchronously during the user click gesture (single call only)
-      // @ts-ignore - Web Serial API (opens OS Bluetooth SPP virtual COM port or RFCOMM SPP UUID 0x1101)
-      this.port = await navigator.serial.requestPort({
+      // Connects to ESP32 Classic Bluetooth ("TEG_Charger" BluetoothSerial SPP COM port or RFCOMM 0x1101)
+      // @ts-ignore - Web Serial API
+      const selectedPort = await navigator.serial.requestPort({
         allowedBluetoothServiceClassIds: ['00001101-0000-1000-8000-00805f9b34fb'],
       })
+      if (this.port && this.port !== selectedPort) {
+        await this.disconnectSerial()
+      }
+      this.port = selectedPort
 
       this.state.status = 'connecting'
       this.notifyState()
       this.appendLog('sys', `Opening "TEG_Charger" Bluetooth Serial port (${baud} baud)...`)
 
-      await this.port.open({ baudRate: baud })
+      if (!this.port.readable) {
+        await this.port.open({ baudRate: baud })
+      }
+      // Critical for Windows Bluetooth Serial (BTHENUM / RFCOMM): assert DTR & RTS so data flows in both directions
+      if (typeof this.port.setSignals === 'function') {
+        await this.port.setSignals({ dataTerminalReady: true, requestToSend: true }).catch(() => {})
+      }
 
       this.state.status = 'connected'
       this.state.transport = 'bluetooth'
-      this.state.deviceName = 'TEG_Charger (BT Serial SPP)'
-      this.state.portInfo = `BT Serial SPP (${baud} baud)`
+      this.state.deviceName = 'TEG_Charger (Bluetooth SPP)'
+      this.state.portInfo = `Bluetooth SPP (${baud} baud)`
       this.state.lastError = null
-      this.appendLog('sys', `Connected to TEG_Charger over Classic Bluetooth Serial SPP (${baud} baud).`)
+      this.appendLog('sys', `Connected to TEG_Charger over Bluetooth Serial (${baud} baud).`)
       this.notifyState()
       this.emitFromEsp32Cache('bluetooth')
 
@@ -340,7 +360,7 @@ export class HardwareBridge {
           buffer += value
           this.state.bytesReceived += value.length
 
-          const lines = buffer.split('\n')
+          const lines = buffer.split(/\r?\n|\r/)
           buffer = lines.pop() || ''
 
           for (const line of lines) {
@@ -500,9 +520,12 @@ export class HardwareBridge {
       this.emitFromEsp32Cache('bluetooth')
       return true
     } catch (err: any) {
+      const rawMsg = err?.message || 'Bluetooth connection failed'
       this.state.status = 'standby'
       this.state.transport = 'none'
-      this.state.lastError = err?.message || 'Bluetooth connection failed'
+      this.state.lastError = rawMsg.includes('globally disabled')
+        ? 'Web Bluetooth (BLE) is disabled in this browser. Use the blue "SCAN & PAIR TEG_Charger (BT SERIAL)" button above to connect to ESP32 BluetoothSerial!'
+        : rawMsg
       this.appendLog('err', `BLE Error: ${this.state.lastError}`)
       this.notifyState()
       return false
@@ -1567,7 +1590,7 @@ export class HardwareBridge {
   public async sendCommand(command: string): Promise<boolean> {
     const trimmed = command.trim()
     if (!trimmed) return false
-    const formatted = trimmed + '\n'
+    const formatted = trimmed + '\r\n'
     this.appendLog('out', trimmed)
 
     try {

@@ -335,48 +335,52 @@ export function ConnectionModal({
                 </div>
               )}
 
-              {/* ── TAB 2: BLUETOOTH (BLE + CLASSIC SPP) ────────────────── */}
+              {/* ── TAB 2: BLUETOOTH (CLASSIC SPP + BLE) ────────────────── */}
               {activeTab === 'bluetooth' && (
                 <div className="flex flex-col gap-3">
                   <div className={`p-3 rounded-xl border text-xs flex flex-col gap-1.5 ${
                     isDark ? 'bg-[#0B0F12] border-[#222932]' : 'bg-zinc-50 border-zinc-200'
                   }`}>
                     <span className="font-bold text-[11px] uppercase tracking-wider text-sky-400">
-                      ESP32 Bluetooth ("TEG_Charger" · BLE + Classic SPP)
+                      ESP32 Bluetooth ("TEG_Charger" · BluetoothSerial SPP)
                     </span>
                     <p className={`text-[11px] ${isDark ? 'text-zinc-300' : 'text-zinc-700'}`}>
                       {isFil
-                        ? 'Gamitin ang "Scan & Pair Bluetooth (BLE)" para sa direktang koneksyon sa browser, o "Connect Paired BT Serial (SPP COM)" kung naka-pair ang TEG_Charger sa Bluetooth settings ng PC.'
-                        : 'Use "Scan & Pair Bluetooth (BLE)" for direct browser pairing, or "Connect Paired BT Serial (SPP COM)" if TEG_Charger is paired as a Bluetooth Serial COM port on your PC.'}
+                        ? '1. I-pair muna ang "TEG_Charger" sa Bluetooth settings ng iyong PC o phone. 2. Pindutin ang "SCAN & PAIR BLUETOOTH (TEG_Charger)" sa ibaba at piliin ang Bluetooth Serial / COM port.'
+                        : '1. Pair "TEG_Charger" in your device Bluetooth settings. 2. Click "SCAN & PAIR BLUETOOTH (TEG_Charger)" below and select the Bluetooth Serial / COM port.'}
                     </p>
-                    {!isBluetoothSupported && !isSerialSupported && (
+                    {!isSerialSupported && !isBluetoothSupported && (
                       <span className="text-amber-500 text-[10px] font-bold">
-                        ⚠️ Bluetooth requires Chrome, Edge, or Bluefy Browser.
+                        ⚠️ Bluetooth Serial requires Chrome, Edge, or Brave on Desktop/Android.
                       </span>
                     )}
                   </div>
 
-                  <button
-                    type="button"
-                    disabled={!isBluetoothSupported || isConnecting}
-                    onClick={handleConnectBluetooth}
-                    className="w-full py-3 px-4 rounded-xl bg-sky-600 hover:bg-sky-500 disabled:opacity-50 text-white text-xs font-black uppercase tracking-wider flex items-center justify-center gap-2 cursor-pointer transition-colors shadow-lg min-h-[44px]"
-                  >
-                    <IconBluetooth size={16} />
-                    <span>
-                      {isConnecting
-                        ? (isFil ? 'NAG-II-SCAN...' : 'SCANNING BLE...')
-                        : (isFil ? 'I-SCAN AT IKABIT ANG BLUETOOTH (BLE)' : 'SCAN & PAIR BLUETOOTH (BLE)')}
-                    </span>
-                  </button>
-
-                  {isSerialSupported && (
+                  {isSerialSupported ? (
                     <button
                       type="button"
                       disabled={isConnecting}
                       onClick={handleConnectBluetoothSerial}
+                      className="w-full py-3 px-4 rounded-xl bg-sky-600 hover:bg-sky-500 disabled:opacity-50 text-white text-xs font-black uppercase tracking-wider flex items-center justify-center gap-2 cursor-pointer transition-colors shadow-lg min-h-[44px]"
+                    >
+                      <IconBluetooth size={16} />
+                      <span>
+                        {isConnecting
+                          ? (isFil ? 'KUMUKONEKTA...' : 'CONNECTING BLUETOOTH...')
+                          : (isFil ? 'I-SCAN AT IKABIT ANG BLUETOOTH (TEG_Charger)' : 'SCAN & PAIR BLUETOOTH (TEG_Charger)')}
+                      </span>
+                    </button>
+                  ) : null}
+
+                  {isBluetoothSupported && (
+                    <button
+                      type="button"
+                      disabled={isConnecting}
+                      onClick={handleConnectBluetooth}
                       className={`w-full py-2.5 px-4 rounded-xl border text-[11px] font-black uppercase tracking-wider flex items-center justify-center gap-2 cursor-pointer transition-colors min-h-[44px] ${
-                        isDark
+                        !isSerialSupported
+                          ? 'bg-sky-600 hover:bg-sky-500 border-sky-500 text-white shadow-lg'
+                          : isDark
                           ? 'bg-[#181E24] hover:bg-[#1E262E] border-sky-500/40 text-sky-300'
                           : 'bg-sky-50 hover:bg-sky-100 border-sky-300 text-sky-800'
                       }`}
@@ -384,8 +388,8 @@ export function ConnectionModal({
                       <IconBluetooth size={15} />
                       <span>
                         {isFil
-                          ? 'IKABIT ANG PAIRED BT SERIAL (TEG_Charger COM)'
-                          : 'CONNECT PAIRED BT SERIAL (TEG_Charger COM)'}
+                          ? 'WEB BLUETOOTH BLE (KUNG MAY BLE MODULE)'
+                          : 'WEB BLUETOOTH BLE (OPTIONAL)'}
                       </span>
                     </button>
                   )}

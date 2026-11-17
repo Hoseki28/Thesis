@@ -47,140 +47,23 @@
 #include <esp_task_wdt.h>
 #include <Preferences.h>
 #include "BluetoothSerial.h"
-#include <BLEDevice.h>
-#include <BLEServer.h>
-#include <BLEUtils.h>
-#include <BLE2902.h>
 #if !defined(CONFIG_BT_ENABLED) || !defined(CONFIG_BLUEDROID_ENABLED)
 #error Bluetooth is not enabled for this board. Select "ESP32 Dev Module" (not an S2/S3/C3 board).
 #endif
 
-// ---------------- Dual Bluetooth (Classic SPP + BLE Nordic UART Service) ----------------
-// Works with BOTH:
-//   1. React PWA Web Bluetooth ("SCAN & PAIR BLUETOOTH" -> BLE Nordic UART Service)
-//   2. Phone / PC Classic Bluetooth ("Serial Bluetooth Terminal" or paired Bluetooth COM port)
+// ---------------- Bluetooth mirror: everything printed to the Serial Monitor is also sent over Bluetooth ----------------
 BluetoothSerial BT;
 const char *BT_NAME = "TEG_Charger";
-
-#define NUS_SERVICE_UUID      "6E400001-B5A3-F393-E0A9-E50E24DCCA9E"
-#define NUS_RX_CHAR_UUID      "6E400002-B5A3-F393-E0A9-E50E24DCCA9E"
-#define NUS_TX_CHAR_UUID      "6E400003-B5A3-F393-E0A9-E50E24DCCA9E"
-
-BLEServer *pBleServer = nullptr;
-BLECharacteristic *pBleTxChar = nullptr;
-volatile bool bleClientConnected = false;
-volatile bool bleCmdPending = false;
-String bleRxLineBuf = "";
-String pendingBleCmd = "";
-
-class BleServerCallbacks : public BLEServerCallbacks {
-  void onConnect(BLEServer *pServer) override {
-    bleClientConnected = true;
-  }
-  void onDisconnect(BLEServer *pServer) override {
-    bleClientConnected = false;
-    BLEDevice::startAdvertising();
-  }
-};
-
-class BleRxCallbacks : public BLECharacteristicCallbacks {
-#if defined(ESP_ARDUINO_VERSION_MAJOR) && ESP_ARDUINO_VERSION_MAJOR >= 3
-  void onWrite(BLECharacteristic *pCharacteristic, esp_ble_gatts_cb_param_t *param) override {
-    String rxVal = pCharacteristic->getValue();
-#else
-  void onWrite(BLECharacteristic *pCharacteristic) override {
-    std::string rxStd = pCharacteristic->getValue();
-    String rxVal = String(rxStd.c_str());
-#endif
-    for (size_t i = 0; i < rxVal.length(); i++) {
-      char c = rxVal[i];
-      if (c == '\n' || c == '\r') {
-        if (bleRxLineBuf.length() > 0) {
-          pendingBleCmd = bleRxLineBuf;
-          bleCmdPending = true;
-          bleRxLineBuf = "";
-        }
-      } else if (bleRxLineBuf.length() < 24) {
-        bleRxLineBuf += c;
-      }
-    }
-    if (bleRxLineBuf.length() > 0 && rxVal.indexOf('\n') == -1 && rxVal.indexOf('\r') == -1) {
-      pendingBleCmd = bleRxLineBuf;
-      bleCmdPending = true;
-      bleRxLineBuf = "";
-    }
-  }
-};
-
-void initBleUart() {
-  BLEDevice::init(BT_NAME);
-  BLEDevice::setMTU(517);
-  pBleServer = BLEDevice::createServer();
-  pBleServer->setCallbacks(new BleServerCallbacks());
-
-  BLEService *pService = pBleServer->createService(NUS_SERVICE_UUID);
-  pBleTxChar = pService->createCharacteristic(
-    NUS_TX_CHAR_UUID,
-    BLECharacteristic::PROPERTY_NOTIFY | BLECharacteristic::PROPERTY_READ
-  );
-  pBleTxChar->addDescriptor(new BLE2902());
-
-  BLECharacteristic *pRxChar = pService->createCharacteristic(
-    NUS_RX_CHAR_UUID,
-    BLECharacteristic::PROPERTY_WRITE | BLECharacteristic::PROPERTY_WRITE_NR
-  );
-  pRxChar->setCallbacks(new BleRxCallbacks());
-
-  pService->start();
-
-  BLEAdvertising *pAdvertising = BLEDevice::getAdvertising();
-  pAdvertising->addServiceUUID(NUS_SERVICE_UUID);
-  pAdvertising->setScanResponse(true);
-  pAdvertising->setMinPreferred(0x06);
-  BLEDevice::startAdvertising();
-}
-
-// ---------------- Bluetooth mirror: everything printed to the Serial Monitor is also sent over Classic BT & BLE ----------------
 class MirrorOut : public Print {
-  char bleBuf[180];
-  size_t bleLen = 0;
-
-  void flushBle() {
-    if (bleLen == 0) return;
-    if (bleClientConnected && pBleTxChar != nullptr) {
-      pBleTxChar->setValue((uint8_t *)bleBuf, bleLen);
-      pBleTxChar->notify();
-    }
-    bleLen = 0;
-  }
-
  public:
   size_t write(uint8_t c) override {
     Serial.write(c);
     if (BT.hasClient()) BT.write(c);
-    if (bleClientConnected && pBleTxChar != nullptr) {
-      bleBuf[bleLen++] = (char)c;
-      if (c == '\n' || bleLen >= sizeof(bleBuf)) {
-        flushBle();
-      }
-    } else {
-      bleLen = 0;
-    }
     return 1;
   }
   size_t write(const uint8_t *b, size_t n) override {
     Serial.write(b, n);
     if (BT.hasClient()) BT.write(b, n);
-    if (bleClientConnected && pBleTxChar != nullptr) {
-      for (size_t i = 0; i < n; i++) {
-        bleBuf[bleLen++] = (char)b[i];
-        if (b[i] == '\n' || bleLen >= sizeof(bleBuf)) {
-          flushBle();
-        }
-      }
-    } else {
-      bleLen = 0;
-    }
     return n;
   }
 } Out;
@@ -259,6 +142,8 @@ bool overcurrentLatched = false, batHot = false, dhtOK = false, dwellActive = fa
 uint32_t tOver = 0, tDhtGood = 0, tLast = 0, tPrint = 0, tLcd = 0, tSense = 0, tDht = 0, tOpened = 0, tTest = 0;
 float vOpenNow = 14.4f, vCloseNow = 13.6f, vHardNow = 14.6f;
 String lineBuf;
+String btLineBuf;
+uint32_t tBtRx = 0;
 int lastState = -1;
 uint16_t lastAlarms = 0;
 
@@ -685,13 +570,12 @@ void setup() {
   digitalWrite(PIN_LED_G, HIGH); digitalWrite(PIN_LED_Y, HIGH); digitalWrite(PIN_LED_R, HIGH);
 
   Serial.begin(115200);
-  BT.begin(BT_NAME);                                      // Classic Bluetooth SPP: "TEG_Charger"
-  initBleUart();                                          // Web Bluetooth BLE UART: "TEG_Charger"
+  BT.begin(BT_NAME);                                      // phone / PC sees "TEG_Charger"
   delay(300);
   Out.println();
   Out.println("=====================================================");
   Out.println("  BIOMASS TEG CHARGER - Schematic Verified Firmware  ");
-  Out.println("  Bluetooth: pair with \"TEG_Charger\" (Classic + BLE)");
+  Out.println("  Bluetooth: pair with \"TEG_Charger\"");
   Out.println("=====================================================");
 
   prefs.begin("cal", false);
@@ -790,16 +674,28 @@ void loop() {
     }
   }
 
-  while (Serial.available() || BT.available()) {          // commands from the Serial Monitor or Classic Bluetooth
-    char c = Serial.available() ? Serial.read() : BT.read();
-    if (c == '\n' || c == '\r') { handleLine(lineBuf); lineBuf = ""; }
-    else if (lineBuf.length() < 16) lineBuf += c;
+  while (Serial.available()) {                            // commands from USB Serial Monitor / Web Serial
+    char c = Serial.read();
+    if (c == '\n' || c == '\r') {
+      if (lineBuf.length() > 0) { handleLine(lineBuf); lineBuf = ""; }
+    } else if (lineBuf.length() < 24) {
+      lineBuf += c;
+    }
   }
 
-  if (bleCmdPending) {                                    // commands from React PWA Web Bluetooth (BLE)
-    String cmd = pendingBleCmd;
-    bleCmdPending = false;
-    handleLine(cmd);
+  while (BT.available()) {                                // commands from Bluetooth ("TEG_Charger")
+    char c = BT.read();
+    tBtRx = millis();
+    if (c == '\n' || c == '\r') {
+      if (btLineBuf.length() > 0) { handleLine(btLineBuf); btLineBuf = ""; }
+    } else if (btLineBuf.length() < 24) {
+      btLineBuf += c;
+    }
+  }
+  // Also handle Bluetooth commands sent without a newline (e.g. 'a', 'c', 'o', 'k', 'r', 'v', 'B10.24')
+  if (btLineBuf.length() > 0 && (uint32_t)(millis() - tBtRx) >= 80) {
+    handleLine(btLineBuf);
+    btLineBuf = "";
   }
 
   uint16_t a = alarmMask();
