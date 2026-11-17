@@ -470,10 +470,6 @@ export function OverviewTab({
                 )
               })}
             </div>
-
-            <span className={`text-[8.5px] font-mono block mt-0.5 ${isDark ? 'text-zinc-500' : 'text-zinc-500'}`}>
-              10.8V Cutoff · 14.6V Full
-            </span>
           </div>
         </div>
 
