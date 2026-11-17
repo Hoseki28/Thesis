@@ -110,7 +110,7 @@ export function CalibrationStudio({
 
   const handleSendMultimeterCurrent = async () => {
     const val = parseFloat(multiCurA)
-    if (!Number.isFinite(val) || val < 0.1 || val > 10) return
+    if (!Number.isFinite(val) || val < 0.03 || val > 10) return
     if (bridge) {
       await bridge.sendCalibrateCurrent(val)
       setSavedNotice(

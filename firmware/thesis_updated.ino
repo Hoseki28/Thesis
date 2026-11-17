@@ -93,11 +93,13 @@ const float K_TEG = (150.0f + 10.0f) / 10.0f;  // 16.0 (R11=150k, R12=10k)
 // Exact multimeter calibration:
 // TEG: 13.10V multimeter / 11.80V measured -> factor = 1.052 * (13.10 / 11.80) = 1.1679
 // BAT: 10.24V multimeter / 9.56V measured  -> factor = 1.028 * (10.24 / 9.56)  = 1.1011
+// CUR: multimeter_A / rawI (calibrate live with I<amps> while current flows, or set CUR_TRIM here)
 const float BAT_TRIM = 1.1011f;
 const float TEG_TRIM = 1.1679f;
+const float CUR_TRIM = 1.0000f;
 const float I_DEADBAND = 0.08f;                // readings below this show as 0 (ACS712 noise)
 
-float batTrim = BAT_TRIM, tegTrim = TEG_TRIM, curTrim = 1.0f;
+float batTrim = BAT_TRIM, tegTrim = TEG_TRIM, curTrim = CUR_TRIM;
 float rawI = 0, whHarv = 0, pHarv = 0, vTegPeak = 0;
 float rawBat = 0, rawTeg = 0;
 Preferences prefs;
@@ -275,8 +277,9 @@ void readSensors() {
   rawI = acsOK ? CURRENT_SIGN * (acsVolts - acsZero) / ACS_V_PER_A : 0.0f;   // before calibration
 
   // Current and Power reading sourced directly from TEG current (0 while the sensor is not OK)
-  if (!acsOK || rawI < I_DEADBAND) iTeg = 0.0f;
-  else iTeg = rawI * curTrim;
+  float calI = rawI * curTrim;
+  if (!acsOK || calI < I_DEADBAND) iTeg = 0.0f;
+  else iTeg = calI;
 
   pTeg = vTeg * iTeg;      // Harvested TEG power in Watts
   pHarv = pTeg;
@@ -521,27 +524,36 @@ void handleLine(String s) {
   }
   if (c == 'I') {
     float v = s.substring(1).toFloat();
-    if (!acsOK || !relayOn || rawI < 0.10f || v < 0.05f) { event("Current calibration requires charging current of at least 0.10 A"); return; }
+    if (!acsOK) { event("Calibration refused: current sensor not OK (check GPIO35 wiring)"); return; }
+    if (v < 0.03f || v > 10.0f || abs(rawI) < 0.03f) {
+      event("Calibration refused: value out of range or no measurable current present (>= 0.03 A)");
+      return;
+    }
+    if (rawI < 0.0f) {
+      event("Calibration refused: raw current is negative (check CURRENT_SIGN or swap ACS712 IP+/IP-)");
+      return;
+    }
     float trim = v / rawI;
-    if (trim < 0.5f || trim > 2.0f) { event("Calibration refused: more than 2x off"); return; }
+    if (trim < 0.20f || trim > 5.00f) { event("Calibration refused: more than 5x away from nominal"); return; }
+    if (trim < 0.85f || trim > 1.25f) event("WARNING: current factor is more than 15% off nominal");
     curTrim = trim; prefs.putFloat("cur", trim);
     snprintf(m, sizeof(m), "Current calibration saved: factor %.4f (raw %.3f A -> %.3f A)", trim, rawI, v); event(m);
     return;
   }
   switch (c) {
     case 'X':
-      batTrim = BAT_TRIM; tegTrim = TEG_TRIM; curTrim = 1.0f;
+      batTrim = BAT_TRIM; tegTrim = TEG_TRIM; curTrim = CUR_TRIM;
       prefs.putFloat("bat", BAT_TRIM);
       prefs.putFloat("teg", TEG_TRIM);
-      prefs.putFloat("cur", 1.0f);
-      event("Calibration reset to accurate defaults (BAT 10.24V / TEG 13.10V)");
+      prefs.putFloat("cur", CUR_TRIM);
+      event("Calibration reset to accurate defaults (BAT 10.24V / TEG 13.10V / CUR 1.0000)");
       break;
     case 'v': {
       float pb = readPinV(PIN_VBAT), pt = readPinV(PIN_VTEG), pa = readPinMv(PIN_ACS);
       Out.printf("\nPIN & HARDWARE CHECK (Multimeter vs GND):\n");
       Out.printf("  GPIO32 battery divider (R9=47k/R10=10k) : Sees %.3f V -> Bat %.2f V (multimeter target: 10.24V)\n", pb, pb * K_BAT * batTrim);
       Out.printf("  GPIO33 TEG divider (R11=150k/R12=10k)   : Sees %.3f V -> TEG %.2f V (multimeter target: 13.10V)\n", pt, pt * K_TEG * tegTrim);
-      Out.printf("  GPIO%02u ACS712 (divider R17/R18)          : Sees %.3f V -> sensor output %.3f V, zero level %.3f V, current %.3f A\n", PIN_ACS, pa, pa * ACS_K, acsZero, iTeg);
+      Out.printf("  GPIO%02u ACS712 (divider R17/R18)          : Sees %.3f V -> sensor %.3f V, zero %.3f V, raw %.3f A -> Cur %.3f A (x%.4f)\n", PIN_ACS, pa, pa * ACS_K, acsZero, rawI, iTeg, curTrim);
       if (pa < 0.05f) Out.println("  !! ACS pin reads 0 V: check the wire on GPIO35, R17/R18 and the sensor 5 V.");
       Out.println();
       break;
@@ -588,7 +600,7 @@ void setup() {
   prefs.begin("cal", false);
   batTrim = prefs.getFloat("bat", BAT_TRIM);
   tegTrim = prefs.getFloat("teg", TEG_TRIM);
-  curTrim = prefs.getFloat("cur", 1.0f);
+  curTrim = prefs.getFloat("cur", CUR_TRIM);
 
   // Automatically update old trims if still at default uncalibrated factors
   if (abs(batTrim - 1.028f) < 0.005f) {
