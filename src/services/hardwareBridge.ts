@@ -246,12 +246,14 @@ export class HardwareBridge {
     const baud = baudRate || this.state.baudRate
 
     try {
-      this.state.status = 'connecting'
-      this.notifyState()
-      this.appendLog('sys', `Requesting USB serial port (Baud: ${baud})...`)
-
+      // Must invoke requestPort() synchronously during the user click gesture before any state re-renders
       // @ts-ignore - Web Serial API
       this.port = await navigator.serial.requestPort()
+
+      this.state.status = 'connecting'
+      this.notifyState()
+      this.appendLog('sys', `Opening USB serial port (Baud: ${baud})...`)
+
       await this.port.open({ baudRate: baud })
 
       this.state.status = 'connected'
@@ -287,17 +289,16 @@ export class HardwareBridge {
     const baud = baudRate || this.state.baudRate || 115200
 
     try {
-      this.state.status = 'connecting'
-      this.notifyState()
-      this.appendLog('sys', `Select paired "TEG_Charger" Bluetooth Serial COM port (${baud} baud)...`)
-
+      // Must invoke requestPort() synchronously during the user click gesture (single call only)
       // @ts-ignore - Web Serial API (opens OS Bluetooth SPP virtual COM port or RFCOMM SPP UUID 0x1101)
       this.port = await navigator.serial.requestPort({
         allowedBluetoothServiceClassIds: ['00001101-0000-1000-8000-00805f9b34fb'],
-      }).catch(async () => {
-        // @ts-ignore
-        return await navigator.serial.requestPort()
       })
+
+      this.state.status = 'connecting'
+      this.notifyState()
+      this.appendLog('sys', `Opening "TEG_Charger" Bluetooth Serial port (${baud} baud)...`)
+
       await this.port.open({ baudRate: baud })
 
       this.state.status = 'connected'
@@ -396,32 +397,19 @@ export class HardwareBridge {
     }
 
     try {
-      this.state.status = 'connecting'
-      this.notifyState()
-      this.appendLog('sys', 'Scanning for ESP32 Bluetooth device...')
-
+      // Must invoke requestDevice() synchronously during the user click gesture (single call only, no .catch retry)
       // @ts-ignore - Web Bluetooth API
       this.bleDevice = await navigator.bluetooth.requestDevice({
-        filters: [
-          { name: 'TEG_Charger' },
-          { namePrefix: 'TEG' },
-          { namePrefix: 'ESP32' },
-          { namePrefix: 'B-TEG' },
-          { namePrefix: 'Padayon' },
-          { services: [NORDIC_UART_SERVICE] },
-        ],
+        acceptAllDevices: true,
         optionalServices: [NORDIC_UART_SERVICE, 'generic_access'],
-      }).catch(async () => {
-        // @ts-ignore
-        return await navigator.bluetooth.requestDevice({
-          acceptAllDevices: true,
-          optionalServices: [NORDIC_UART_SERVICE, 'generic_access'],
-        })
       })
 
       if (!this.bleDevice) {
         throw new Error('Bluetooth device selection cancelled')
       }
+
+      this.state.status = 'connecting'
+      this.notifyState()
 
       const devName = this.bleDevice.name || 'TEG_Charger'
       this.appendLog('sys', `Pairing with ${devName}... Connecting to GATT Server...`)
