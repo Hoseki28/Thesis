@@ -300,10 +300,22 @@ export class HardwareBridge {
     try {
       // Must invoke requestPort() synchronously during the user click gesture (single call only)
       // Connects to ESP32 Classic Bluetooth ("TEG_Charger" BluetoothSerial SPP COM port or RFCOMM 0x1101)
-      // @ts-ignore - Web Serial API
-      const selectedPort = await navigator.serial.requestPort({
-        allowedBluetoothServiceClassIds: ['00001101-0000-1000-8000-00805f9b34fb'],
-      })
+      // On Windows/Mac/Linux, paired Bluetooth SPP devices appear as virtual COM ports ("Standard Serial over Bluetooth link")
+      let selectedPort: any = null
+      try {
+        // @ts-ignore - Web Serial API with Bluetooth SPP class ID
+        selectedPort = await navigator.serial.requestPort({
+          allowedBluetoothServiceClassIds: ['00001101-0000-1000-8000-00805f9b34fb'],
+        })
+      } catch (classIdErr: any) {
+        if (classIdErr?.name === 'TypeError') {
+          // If browser rejected allowedBluetoothServiceClassIds dictionary, use universal requestPort
+          // @ts-ignore
+          selectedPort = await navigator.serial.requestPort()
+        } else {
+          throw classIdErr
+        }
+      }
       if (this.port && this.port !== selectedPort) {
         await this.disconnectSerial()
       }
@@ -523,9 +535,18 @@ export class HardwareBridge {
       const rawMsg = err?.message || 'Bluetooth connection failed'
       this.state.status = 'standby'
       this.state.transport = 'none'
-      this.state.lastError = rawMsg.includes('globally disabled')
-        ? 'Web Bluetooth (BLE) is disabled in this browser. Use the blue "SCAN & PAIR TEG_Charger (BT SERIAL)" button above to connect to ESP32 BluetoothSerial!'
-        : rawMsg
+      if (rawMsg.includes('globally disabled')) {
+        this.state.lastError =
+          'Web Bluetooth is globally disabled. Please turn ON Bluetooth in your device settings. In Chrome on Windows, enable chrome://flags/#enable-web-bluetooth or connect using the Bluetooth Serial COM Port button above.'
+      } else if (rawMsg.includes('user gesture') || rawMsg.includes('User gesture') || rawMsg.includes('handling a user gesture')) {
+        this.state.lastError =
+          'Bluetooth permission request was dismissed or lost user focus. Please click the button again directly to pair.'
+      } else if (rawMsg.includes('cancelled') || rawMsg.includes('User cancelled') || err?.name === 'NotFoundError') {
+        this.state.lastError =
+          'Bluetooth device selection cancelled. Ensure TEG_Charger is powered on and within range, then try again.'
+      } else {
+        this.state.lastError = rawMsg
+      }
       this.appendLog('err', `BLE Error: ${this.state.lastError}`)
       this.notifyState()
       return false

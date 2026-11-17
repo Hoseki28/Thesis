@@ -338,25 +338,32 @@ export function ConnectionModal({
               {/* ── TAB 2: BLUETOOTH (CLASSIC SPP + BLE) ────────────────── */}
               {activeTab === 'bluetooth' && (
                 <div className="flex flex-col gap-3">
-                  <div className={`p-3 rounded-xl border text-xs flex flex-col gap-1.5 ${
+                  {/* Bluetooth Instructions Card */}
+                  <div className={`p-3 rounded-xl border text-xs flex flex-col gap-2 ${
                     isDark ? 'bg-[#0B0F12] border-[#222932]' : 'bg-zinc-50 border-zinc-200'
                   }`}>
-                    <span className="font-bold text-[11px] uppercase tracking-wider text-sky-400">
-                      ESP32 Bluetooth ("TEG_Charger" · BluetoothSerial SPP)
-                    </span>
-                    <p className={`text-[11px] ${isDark ? 'text-zinc-300' : 'text-zinc-700'}`}>
+                    <div className="flex items-center gap-1.5 text-sky-400 font-bold text-[11px] uppercase tracking-wider">
+                      <IconBluetooth size={14} />
+                      <span>ESP32 Bluetooth ("TEG_Charger")</span>
+                    </div>
+
+                    <p className={`text-[11px] leading-relaxed ${isDark ? 'text-zinc-300' : 'text-zinc-700'}`}>
                       {isFil
-                        ? '1. I-pair muna ang "TEG_Charger" sa Bluetooth settings ng iyong PC o phone. 2. Pindutin ang "SCAN & PAIR BLUETOOTH (TEG_Charger)" sa ibaba at piliin ang Bluetooth Serial / COM port.'
-                        : '1. Pair "TEG_Charger" in your device Bluetooth settings. 2. Click "SCAN & PAIR BLUETOOTH (TEG_Charger)" below and select the Bluetooth Serial / COM port.'}
+                        ? '1. I-pair muna ang "TEG_Charger" sa Bluetooth settings ng iyong device (PIN: 1234 o wala). 2. Pindutin ang button sa ibaba upang buksan ang live serial stream.'
+                        : '1. First pair "TEG_Charger" in your device Bluetooth settings (PIN: 1234 or none). 2. Click the button below to connect the live serial stream.'}
                     </p>
-                    {!isSerialSupported && !isBluetoothSupported && (
-                      <span className="text-amber-500 text-[10px] font-bold">
-                        ⚠️ Bluetooth Serial requires Chrome, Edge, or Brave on Desktop/Android.
-                      </span>
+
+                    {!isSerialSupported && (
+                      <div className="p-2 rounded-lg bg-amber-500/10 border border-amber-500/25 text-amber-400 text-[10.5px] leading-relaxed">
+                        {isFil
+                          ? '💡 Paalala sa Mobile: Hindi sinusuportahan ng Android Chrome ang Web Serial para sa Classic Bluetooth. Sa Android phone, gamitin ang "Serial Bluetooth Terminal" app mula sa Play Store, o buksan ang dashboard sa PC/laptop gamit ang Chrome o Edge.'
+                          : '💡 Mobile Note: Android Chrome does not support Web Serial for Classic Bluetooth. On Android phones, use the "Serial Bluetooth Terminal" app from the Play Store, or open this dashboard on a PC/laptop using Chrome or Edge.'}
+                      </div>
                     )}
                   </div>
 
-                  {isSerialSupported ? (
+                  {/* Primary Connection Button: Web Serial to Bluetooth COM port */}
+                  {isSerialSupported && (
                     <button
                       type="button"
                       disabled={isConnecting}
@@ -367,31 +374,39 @@ export function ConnectionModal({
                       <span>
                         {isConnecting
                           ? (isFil ? 'KUMUKONEKTA...' : 'CONNECTING BLUETOOTH...')
-                          : (isFil ? 'I-SCAN AT IKABIT ANG BLUETOOTH (TEG_Charger)' : 'SCAN & PAIR BLUETOOTH (TEG_Charger)')}
+                          : (isFil ? 'IKABIT ANG BLUETOOTH SERIAL (COM PORT)' : 'CONNECT BLUETOOTH SERIAL (COM PORT)')}
                       </span>
                     </button>
-                  ) : null}
+                  )}
 
+                  {/* Secondary/Optional: Direct Web Bluetooth BLE */}
                   {isBluetoothSupported && (
-                    <button
-                      type="button"
-                      disabled={isConnecting}
-                      onClick={handleConnectBluetooth}
-                      className={`w-full py-2.5 px-4 rounded-xl border text-[11px] font-black uppercase tracking-wider flex items-center justify-center gap-2 cursor-pointer transition-colors min-h-[44px] ${
-                        !isSerialSupported
-                          ? 'bg-sky-600 hover:bg-sky-500 border-sky-500 text-white shadow-lg'
-                          : isDark
-                          ? 'bg-[#181E24] hover:bg-[#1E262E] border-sky-500/40 text-sky-300'
-                          : 'bg-sky-50 hover:bg-sky-100 border-sky-300 text-sky-800'
-                      }`}
-                    >
-                      <IconBluetooth size={15} />
-                      <span>
+                    <div className="flex flex-col gap-1.5 pt-1">
+                      <button
+                        type="button"
+                        disabled={isConnecting}
+                        onClick={handleConnectBluetooth}
+                        className={`w-full py-2.5 px-4 rounded-xl border text-[11px] font-black uppercase tracking-wider flex items-center justify-center gap-2 cursor-pointer transition-colors min-h-[42px] ${
+                          !isSerialSupported
+                            ? 'bg-sky-600 hover:bg-sky-500 border-sky-500 text-white shadow-lg'
+                            : isDark
+                            ? 'bg-[#181E24] hover:bg-[#1E262E] border-sky-500/40 text-sky-300'
+                            : 'bg-sky-50 hover:bg-sky-100 border-sky-300 text-sky-800'
+                        }`}
+                      >
+                        <IconBluetooth size={15} />
+                        <span>
+                          {isFil
+                            ? 'SCAN VIA DIRECT WEB BLUETOOTH (BLE)'
+                            : 'SCAN VIA DIRECT WEB BLUETOOTH (BLE)'}
+                        </span>
+                      </button>
+                      <span className={`text-[9.5px] text-center ${isDark ? 'text-zinc-500' : 'text-zinc-500'}`}>
                         {isFil
-                          ? 'WEB BLUETOOTH BLE (KUNG MAY BLE MODULE)'
-                          : 'WEB BLUETOOTH BLE (OPTIONAL)'}
+                          ? 'Kailangan na naka-ON ang Bluetooth sa iyong device at pinapayagan ng browser.'
+                          : 'Requires Bluetooth turned ON in device settings and enabled in browser.'}
                       </span>
-                    </button>
+                    </div>
                   )}
                 </div>
               )}

@@ -390,9 +390,9 @@ export function OverviewTab({
         <div className={`w-full h-2.5 rounded-full overflow-hidden ${isDark ? 'bg-[#1E242B]' : 'bg-zinc-200'}`}>
           <div
             className={`h-full rounded-full transition-all duration-500 ${isDark ? 'bg-[#00E676]' : 'bg-emerald-600'}`}
-            style={{ width: `${isConnected ? Math.min(100, Math.round((vBatLive / 14.4) * 100)) : 0}%` }}
+            style={{ width: `${isConnected ? Math.min(100, Math.round((vBatLive / (telemetry.vOpenNow ?? 14.6)) * 100)) : 0}%` }}
             role="progressbar"
-            aria-valuenow={isConnected ? Math.min(100, Math.round((vBatLive / 14.4) * 100)) : 0}
+            aria-valuenow={isConnected ? Math.min(100, Math.round((vBatLive / (telemetry.vOpenNow ?? 14.6)) * 100)) : 0}
             aria-valuemin={0}
             aria-valuemax={100}
           />
