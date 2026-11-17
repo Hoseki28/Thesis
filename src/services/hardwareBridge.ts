@@ -291,8 +291,13 @@ export class HardwareBridge {
       this.notifyState()
       this.appendLog('sys', `Select paired "TEG_Charger" Bluetooth Serial COM port (${baud} baud)...`)
 
-      // @ts-ignore - Web Serial API (opens OS Bluetooth SPP virtual COM port)
-      this.port = await navigator.serial.requestPort()
+      // @ts-ignore - Web Serial API (opens OS Bluetooth SPP virtual COM port or RFCOMM SPP UUID 0x1101)
+      this.port = await navigator.serial.requestPort({
+        allowedBluetoothServiceClassIds: ['00001101-0000-1000-8000-00805f9b34fb'],
+      }).catch(async () => {
+        // @ts-ignore
+        return await navigator.serial.requestPort()
+      })
       await this.port.open({ baudRate: baud })
 
       this.state.status = 'connected'

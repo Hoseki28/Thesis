@@ -490,8 +490,12 @@ export function OverviewTab({
               </span>
               <IconFlame size={18} className={isDark ? 'text-[#00E676]' : 'text-emerald-700'} />
             </div>
-            <span className={`text-[9.5px] font-mono block mt-0.5 ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-600'}`}>
-              {isConnected ? `${vTegLive.toFixed(1)}V · Peak: ${(telemetry.vTegPeak ?? vTegLive).toFixed(1)}V` : '0.0V · Peak: 0.0V'}
+            <span className={`text-[9.5px] font-mono block mt-0.5 ${isConnected && vTegLive < 1.0 ? 'text-amber-400 font-bold' : isDark ? 'text-[#9CA3AF]' : 'text-zinc-600'}`}>
+              {isConnected
+                ? vTegLive < 1.0
+                  ? `${vTegLive.toFixed(1)}V (No TEG <1.0V) · Peak: ${(telemetry.vTegPeak ?? vTegLive).toFixed(1)}V`
+                  : `${vTegLive.toFixed(1)}V · Peak: ${(telemetry.vTegPeak ?? vTegLive).toFixed(1)}V`
+                : '0.0V · Peak: 0.0V'}
             </span>
           </div>
 

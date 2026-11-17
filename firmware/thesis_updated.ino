@@ -239,6 +239,7 @@ const float BAT_TEMP_STOP_C = 45.0f, BAT_TEMP_RESUME_C = 40.0f;
 const float I_OVER_A = 2.2f;
 const uint32_t I_OVER_MS = 2000;
 const float TEG_V_ALARM = 45.0f;
+const float TEG_PRESENT_V = 1.0f;              // TEG reading below this = no TEG detected (yellow + red LEDs)
 const float HOT_ALARM_C = 230.0f, COLD_ALARM_C = 60.0f;
 #define WDT_SECONDS 8
 const uint32_t PRINT_MS = 1000;
@@ -806,9 +807,23 @@ void loop() {
   for (int i = 0; i < N_ALARMS; i++) if ((a & ALARMS[i].bit) && ALARMS[i].critical) crit = true;
   bool blink = ((now / 300) % 2 == 0);
   digitalWrite(PIN_BUZZ, (crit && blink && !muted) ? HIGH : LOW);
-  digitalWrite(PIN_LED_R, crit ? (blink ? HIGH : LOW) : LOW);
-  digitalWrite(PIN_LED_Y, (!crit && (state == 2 || state == 3 || state == 4 || (a & (A_LOWBAT | A_HOTTC | A_COLDTC | A_DHT | A_ACS)))) ? HIGH : LOW);
-  digitalWrite(PIN_LED_G, (state == 1 && !crit) ? HIGH : LOW);
+  // LED code:  GREEN solid = battery full / charging cut off      YELLOW solid = charging, current flowing
+  //            GREEN+YELLOW = charging with a warning              YELLOW+RED = no battery or no TEG detected
+  //            RED blink + buzzer = critical (hot battery, overcurrent, other critical alarm)   ALL THREE = startup / test
+  bool slow = ((now / 1000) % 2 == 0);
+  bool warn = a & (A_LOWBAT | A_HOTTC | A_COLDTC | A_DHT | A_ACS);
+  bool ledG = false, ledY = false, ledR = false;
+  if (crit || state == 5 || state == 6)      { ledR = blink; }                       // critical: red blinks with the buzzer
+  else if (state == 0 || vTeg < TEG_PRESENT_V) { ledY = true; ledR = true; }         // no battery, or no TEG detected
+  else if (state == 1) {                                                             // charging
+    if (iTeg > 0) { ledY = true; ledG = warn; }                                      // current flowing (+green if a warning is active)
+    else          { ledY = blink; ledG = warn && blink; }                            // relay closed, waiting for current: yellow blinks
+  }
+  else if (state == 2 || state == 3)         { ledG = true; }                        // battery full, charging cut off
+  else if (state == 4)                       { ledG = slow; }                        // charging forced off by command (green slow blink)
+  digitalWrite(PIN_LED_R, ledR);
+  digitalWrite(PIN_LED_Y, ledY);
+  digitalWrite(PIN_LED_G, ledG);
   if ((int32_t)(tTest - now) > 0) {
     digitalWrite(PIN_LED_G, HIGH); digitalWrite(PIN_LED_Y, HIGH); digitalWrite(PIN_LED_R, HIGH);
     digitalWrite(PIN_BUZZ, blink ? HIGH : LOW);
