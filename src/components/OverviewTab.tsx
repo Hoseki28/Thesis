@@ -211,6 +211,9 @@ export function OverviewTab({
   const pHarvLive = isConnected ? (telemetry.pHarv ?? (telemetry.tegPower > 0 ? telemetry.tegPower : Math.round(vTegLive * iBatLive * 10) / 10)) : 0.0
   const whHarvLive = isConnected ? (telemetry.whHarv ?? 0.0) : 0.0
   const isRelayClosed = isConnected ? Boolean(telemetry.relayOn ?? telemetry.relays.dcBus) : false
+  const tHotLive = telemetry.tHot ?? telemetry.stoveTemp ?? 0.0
+  const tColdLive = telemetry.tCold ?? telemetry.coldFaceTemp ?? 0.0
+  const dTLive = !telemetry.hotFault && !telemetry.coldFault ? (telemetry.dT ?? Math.max(0, tHotLive - tColdLive)) : 0.0
 
   // 4-Bar Battery State-of-Charge Calculation
   // 4 bars: 76-100%, 3 bars: 51-75%, 2 bars: 26-50%, 1 bar: 1-25%, 0 bars: 0%
@@ -503,7 +506,7 @@ export function OverviewTab({
           </div>
         </div>
 
-        {/* TILE 3: HEAT DIFF */}
+        {/* TILE 3: HOT SIDE THERMOCOUPLE (MAX31855 · CS GPIO5) */}
         <div className={`rounded-2xl p-3.5 border flex flex-col justify-between min-h-[110px] shadow-md transition-all ${
           isDark
             ? 'bg-[#13171B] border-[#1E242B] ring-1 ring-white/[0.04]'
@@ -512,26 +515,42 @@ export function OverviewTab({
           <div>
             <div className="flex items-center justify-between">
               <span className={`text-[10px] font-bold uppercase tracking-wider ${isDark ? 'text-white' : 'text-zinc-950'}`}>
-                {isFil ? 'AGAPAT NG INIT' : 'HEAT DIFF'}
+                {isFil ? 'MAINIT NA THERMOCOUPLE' : 'HOT THERMOCOUPLE'}
               </span>
-              <IconThermometer size={18} className={isDark ? 'text-[#00E676]' : 'text-emerald-700'} />
+              <IconThermometer size={18} className={isConnected && telemetry.hotFault ? 'text-rose-400' : isDark ? 'text-[#00E676]' : 'text-emerald-700'} />
             </div>
-            <span className={`text-[9.5px] font-mono block mt-0.5 ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-600'}`}>
-              {isConnected
-                ? `Hot: ${telemetry.hotFault ? '---' : `${Math.round(telemetry.tHot ?? telemetry.stoveTemp)}°C`} · Cold: ${telemetry.coldFault ? '---' : `${Math.round(telemetry.tCold ?? telemetry.coldFaceTemp ?? 0)}°C`}`
-                : 'Hot: 0°C · Cold: 0°C'}
+            <span className={`text-[9.5px] font-mono block mt-0.5 truncate ${
+              isConnected && telemetry.hotFault
+                ? 'text-rose-400 font-bold'
+                : isDark ? 'text-[#9CA3AF]' : 'text-zinc-600'
+            }`}>
+              {!isConnected
+                ? 'MAX31855 (GPIO5) · Standby'
+                : telemetry.hotFault
+                ? `MAX31855 (GPIO5) · ${telemetry.hotWhy || 'probe fault'}`
+                : !telemetry.coldFault
+                ? `MAX31855 (GPIO5) · ΔT ${dTLive.toFixed(1)}°C`
+                : 'MAX31855 (GPIO5) · Hot Side'}
             </span>
           </div>
 
           <div className="flex items-baseline mt-2">
-            <span className={`text-2xl sm:text-3xl font-black font-mono tabular-nums tracking-tight ${isDark ? 'text-white' : 'text-zinc-950'}`}>
-              {isConnected && !telemetry.hotFault && !telemetry.coldFault ? Math.round(telemetry.dT ?? deltaT) : 0}
+            <span className={`text-2xl sm:text-3xl font-black font-mono tabular-nums tracking-tight ${
+              !isConnected
+                ? isDark ? 'text-zinc-500' : 'text-zinc-400'
+                : telemetry.hotFault
+                ? 'text-rose-400 text-xl sm:text-2xl'
+                : isDark ? 'text-white' : 'text-zinc-950'
+            }`}>
+              {!isConnected ? '--' : telemetry.hotFault ? 'FAULT' : tHotLive.toFixed(1)}
             </span>
-            <span className={`text-xs font-semibold ml-1 ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-600'}`}>°C</span>
+            {(!isConnected || !telemetry.hotFault) && (
+              <span className={`text-xs font-semibold ml-1 ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-600'}`}>°C</span>
+            )}
           </div>
         </div>
 
-        {/* TILE 4: COOLING & AMBIENT (DHT22) */}
+        {/* TILE 4: COLD SIDE THERMOCOUPLE (MAX31855 · CS GPIO17) */}
         <div className={`rounded-2xl p-3.5 border flex flex-col justify-between min-h-[110px] shadow-md transition-all ${
           isDark
             ? 'bg-[#13171B] border-[#1E242B] ring-1 ring-white/[0.04]'
@@ -540,22 +559,38 @@ export function OverviewTab({
           <div>
             <div className="flex items-center justify-between">
               <span className={`text-[10px] font-bold uppercase tracking-wider ${isDark ? 'text-white' : 'text-zinc-950'}`}>
-                {isFil ? 'PALAMIG AT PALIGID' : 'COOLING & AMBIENT'}
+                {isFil ? 'MALAMIG NA THERMOCOUPLE' : 'COLD THERMOCOUPLE'}
               </span>
-              <IconColdSink size={18} className={isDark ? 'text-[#00E676]' : 'text-emerald-700'} />
+              <IconColdSink size={18} className={isConnected && telemetry.coldFault ? 'text-rose-400' : isDark ? 'text-[#00E676]' : 'text-emerald-700'} />
             </div>
-            <span className={`text-[9.5px] font-mono block mt-0.5 ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-600'}`}>
-              {isConnected
-                ? `${telemetry.coldFault ? 'Cold Fault' : 'Cold Face'} · ${telemetry.esp32?.dhtOk === false ? 'DHT22 Fault' : `Amb: ${ambientTempC.toFixed(1)}°C (${ambientHumPct.toFixed(0)}% RH)`}`
-                : 'Cold Face · Amb: 0.0°C (0% RH)'}
+            <span className={`text-[9.5px] font-mono block mt-0.5 truncate ${
+              isConnected && telemetry.coldFault
+                ? 'text-rose-400 font-bold'
+                : isDark ? 'text-[#9CA3AF]' : 'text-zinc-600'
+            }`}>
+              {!isConnected
+                ? 'MAX31855 (GPIO17) · Standby'
+                : telemetry.coldFault
+                ? `MAX31855 (GPIO17) · ${telemetry.coldWhy || 'probe fault'}`
+                : !telemetry.hotFault
+                ? `MAX31855 (GPIO17) · ΔT ${dTLive.toFixed(1)}°C`
+                : 'MAX31855 (GPIO17) · Cold Side'}
             </span>
           </div>
 
           <div className="flex items-baseline mt-2">
-            <span className={`text-2xl sm:text-3xl font-black font-mono tabular-nums tracking-tight ${isDark ? 'text-white' : 'text-zinc-950'}`}>
-              {isConnected && !telemetry.coldFault ? Math.round(telemetry.tCold ?? telemetry.coldFaceTemp ?? 0) : 0}
+            <span className={`text-2xl sm:text-3xl font-black font-mono tabular-nums tracking-tight ${
+              !isConnected
+                ? isDark ? 'text-zinc-500' : 'text-zinc-400'
+                : telemetry.coldFault
+                ? 'text-rose-400 text-xl sm:text-2xl'
+                : isDark ? 'text-white' : 'text-zinc-950'
+            }`}>
+              {!isConnected ? '--' : telemetry.coldFault ? 'FAULT' : tColdLive.toFixed(1)}
             </span>
-            <span className={`text-xs font-semibold ml-1 ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-600'}`}>°C</span>
+            {(!isConnected || !telemetry.coldFault) && (
+              <span className={`text-xs font-semibold ml-1 ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-600'}`}>°C</span>
+            )}
           </div>
         </div>
       </div>

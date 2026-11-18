@@ -1266,7 +1266,7 @@ export class HardwareBridge {
       if (line.startsWith('TEMPERATURE:')) {
         const m = line.match(/hot\s+(\S+)\s*C\s*\(([^)]+)\)\s*cold\s+(\S+)\s*C\s*\(([^)]+)\)/i)
         if (m) {
-          this.esp32Cache.hotWhy = m[2].trim()
+          this.esp32Cache.hotWhy = m[2].split(', chip')[0].trim()
           if (m[1] === '---') {
             this.esp32Cache.hotFault = true
           } else {
@@ -1276,7 +1276,7 @@ export class HardwareBridge {
               this.esp32Cache.hotFault = false
             }
           }
-          this.esp32Cache.coldWhy = m[4].trim()
+          this.esp32Cache.coldWhy = m[4].split(', chip')[0].trim()
           if (m[3] === '---') {
             this.esp32Cache.coldFault = true
           } else {
@@ -1397,7 +1397,11 @@ export class HardwareBridge {
           if (typeof json.coldWhy === 'string') this.esp32Cache.coldWhy = json.coldWhy
           if (json.tHot !== undefined && Number.isFinite(Number(json.tHot))) {
             const th = Number(json.tHot)
-            if (th < 0) {
+            if (typeof json.hotFault === 'boolean') {
+              if (!json.hotFault) {
+                this.esp32Cache.tHot = th
+              }
+            } else if (th < 0) {
               this.esp32Cache.hotFault = true
             } else {
               this.esp32Cache.tHot = th
@@ -1407,7 +1411,11 @@ export class HardwareBridge {
           }
           if (json.tCold !== undefined && Number.isFinite(Number(json.tCold))) {
             const tc = Number(json.tCold)
-            if (tc < 0) {
+            if (typeof json.coldFault === 'boolean') {
+              if (!json.coldFault) {
+                this.esp32Cache.tCold = tc
+              }
+            } else if (tc < 0) {
               this.esp32Cache.coldFault = true
             } else {
               this.esp32Cache.tCold = tc
@@ -1707,6 +1715,18 @@ export class HardwareBridge {
 
   public async sendCalibrateCurrent(amps: number): Promise<boolean> {
     return this.sendCommand(`I${amps.toFixed(2)}`)
+  }
+
+  public async sendCalibrateHotTc(tempC: number): Promise<boolean> {
+    return this.sendCommand(`TH${tempC.toFixed(1)}`)
+  }
+
+  public async sendCalibrateColdTc(tempC: number): Promise<boolean> {
+    return this.sendCommand(`TC${tempC.toFixed(1)}`)
+  }
+
+  public async sendClearTcOffsets(): Promise<boolean> {
+    return this.sendCommand('TX')
   }
 
   public async sendResetCalibrations(): Promise<boolean> {

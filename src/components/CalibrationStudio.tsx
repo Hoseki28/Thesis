@@ -41,10 +41,12 @@ export function CalibrationStudio({
   const [savedNotice, setSavedNotice] = useState<string | null>(null)
   const [copiedNotice, setCopiedNotice] = useState<boolean>(false)
 
-  // Multimeter manual input values for ESP32 B / G / I serial calibration
+  // Multimeter manual input values for ESP32 B / G / I / TH / TC serial calibration
   const [multiBatV, setMultiBatV] = useState<string>('10.24')
   const [multiTegV, setMultiTegV] = useState<string>('13.10')
   const [multiCurA, setMultiCurA] = useState<string>('0.50')
+  const [refHotC, setRefHotC] = useState<string>('28.0')
+  const [refColdC, setRefColdC] = useState<string>('28.0')
 
   const handleChange = (key: keyof CalibrationConfig, val: number) => {
     setForm((prev) => ({ ...prev, [key]: val }))
@@ -117,6 +119,34 @@ export function CalibrationStudio({
         isFil
           ? `Ipinadala ang I${val.toFixed(2)} sa ESP32!`
           : `Dispatched I${val.toFixed(2)} current calibration to ESP32!`
+      )
+      setTimeout(() => setSavedNotice(null), 3500)
+    }
+  }
+
+  const handleSendRefHotTc = async () => {
+    const val = parseFloat(refHotC)
+    if (!Number.isFinite(val) || val < -20 || val > 1000) return
+    if (bridge) {
+      await bridge.sendCalibrateHotTc(val)
+      setSavedNotice(
+        isFil
+          ? `Ipinadala ang TH${val.toFixed(1)} (Hot MAX31855 GPIO5) sa ESP32!`
+          : `Dispatched TH${val.toFixed(1)} (Hot MAX31855 GPIO5) reference to ESP32!`
+      )
+      setTimeout(() => setSavedNotice(null), 3500)
+    }
+  }
+
+  const handleSendRefColdTc = async () => {
+    const val = parseFloat(refColdC)
+    if (!Number.isFinite(val) || val < -20 || val > 1000) return
+    if (bridge) {
+      await bridge.sendCalibrateColdTc(val)
+      setSavedNotice(
+        isFil
+          ? `Ipinadala ang TC${val.toFixed(1)} (Cold MAX31855 GPIO17) sa ESP32!`
+          : `Dispatched TC${val.toFixed(1)} (Cold MAX31855 GPIO17) reference to ESP32!`
       )
       setTimeout(() => setSavedNotice(null), 3500)
     }
@@ -394,6 +424,54 @@ export function CalibrationStudio({
             className="h-9 px-4 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-medium cursor-pointer transition-colors sm:self-end"
           >
             Send I{multiCurA}
+          </button>
+        </div>
+
+        {/* Hot Thermocouple Reference (TH) */}
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+          <div className="flex-1">
+            <label className={`text-[11px] font-medium block mb-1 ${isDark ? 'text-zinc-400' : 'text-zinc-600'}`}>
+              Reference Hot MAX31855 °C (Cmd TH · CS GPIO5):
+            </label>
+            <input
+              type="number"
+              step="0.1"
+              value={refHotC}
+              onChange={(e) => setRefHotC(e.target.value)}
+              placeholder="e.g. 28.0"
+              className={fullInputClass}
+            />
+          </div>
+          <button
+            type="button"
+            onClick={handleSendRefHotTc}
+            className="h-9 px-4 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-medium cursor-pointer transition-colors sm:self-end"
+          >
+            Send TH{refHotC}
+          </button>
+        </div>
+
+        {/* Cold Thermocouple Reference (TC) */}
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+          <div className="flex-1">
+            <label className={`text-[11px] font-medium block mb-1 ${isDark ? 'text-zinc-400' : 'text-zinc-600'}`}>
+              Reference Cold MAX31855 °C (Cmd TC · CS GPIO17):
+            </label>
+            <input
+              type="number"
+              step="0.1"
+              value={refColdC}
+              onChange={(e) => setRefColdC(e.target.value)}
+              placeholder="e.g. 28.0"
+              className={fullInputClass}
+            />
+          </div>
+          <button
+            type="button"
+            onClick={handleSendRefColdTc}
+            className="h-9 px-4 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-medium cursor-pointer transition-colors sm:self-end"
+          >
+            Send TC{refColdC}
           </button>
         </div>
 

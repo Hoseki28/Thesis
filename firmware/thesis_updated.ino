@@ -42,7 +42,6 @@
 #include <Wire.h>
 #include <SPI.h>
 #include <LiquidCrystal_I2C.h>
-#include <Adafruit_MAX31855.h>
 #include <DHT.h>
 #include <esp_task_wdt.h>
 #include <Preferences.h>
@@ -137,9 +136,39 @@ const uint32_t PRINT_MS = 1000;
 
 // ---------------- state ----------------
 LiquidCrystal_I2C *lcd = nullptr;
-Adafruit_MAX31855 tcHot(PIN_SCK, PIN_CS_HOT, PIN_MISO);
-Adafruit_MAX31855 tcCold(PIN_SCK, PIN_CS_COLD, PIN_MISO);
 DHT dht(PIN_DHT, DHT22);
+
+// ---------------- MAX31855 K-type thermocouples (hot side + cold side) ----------------
+// Both chips share SCK (GPIO18) and SO/MISO (GPIO19); each has its own CS (GPIO5 hot, GPIO17 cold).
+// One 32-bit frame per read (datasheet Table 2), instead of reading the chip twice:
+//   D31..D18  thermocouple temp, 14-bit signed, 0.25 C/LSB
+//   D17       reserved, always 0          D16  fault (any of D2..D0)
+//   D15..D4   cold-junction (die) temp, 12-bit signed, 0.0625 C/LSB
+//   D3        reserved, always 0          D2 SCV  D1 SCG  D0 OC
+// The chip assumes a straight 41.276 uV/C line. Real K-type wire is not linear, so the raw value is
+// corrected with the NIST ITS-90 K-type polynomials (see tcLinearize). Error drops from a few degrees
+// to about the chip's own +/-2 C spec across 0..700 C.
+// Hardware notes from the datasheet: use UNGROUNDED probes (a grounded tip reads as SCG fault),
+// keep a 10 nF cap across T+/T- close to the chip, and do not read faster than one conversion (100 ms max).
+struct Thermocouple {
+  const char *name;
+  int cs;
+  float tc;          // linearized, filtered, calibrated temperature (C)
+  float cj;          // chip die / cold-junction temperature (C)
+  float raw;         // chip's own linear reading before correction (C)
+  float offset;      // user calibration offset from H / C command (C)
+  float hist[5];     // last readings for the median filter
+  uint8_t n, idx;
+  uint8_t badCount;  // consecutive bad frames, fault is raised after TC_FAULT_HOLD
+  bool fault;
+  const char *why;
+  uint32_t frame;    // last raw frame, shown by the v command
+  uint8_t spikes;    // readings skipped by the spike filter in a row
+};
+const uint8_t TC_FAULT_HOLD = 3;          // 3 bad frames in a row (0.75 s) before showing a fault
+const float   TC_SPIKE_C = 25.0f;         // a single reading that jumps more than this vs the median is ignored
+Thermocouple tcHotS  = {"hot",  PIN_CS_HOT,  0, 0, 0, 0, {0}, 0, 0, 0, true, "not read yet", 0};
+Thermocouple tcColdS = {"cold", PIN_CS_COLD, 0, 0, 0, 0, {0}, 0, 0, 0, true, "not read yet", 0};
 
 bool lcdOK = false, relayOn = false, muted = false, detailed = false, jsonMode = false;
 float vBat = 0, vTeg = 0, iTeg = 0, pTeg = 0, whTotal = 0, tHot = -1, tCold = -1, tAmb = -1, hum = -1;
@@ -255,6 +284,112 @@ float readPinMv(uint8_t pin) {                 // calibrated millivolt reading, 
   return sum / 64.0f / 1000.0f;                // volts
 }
 
+// ---------------- MAX31855 driver ----------------
+uint32_t tcReadFrame(int cs) {
+  // SCK idles low. D31 is on SO as soon as CS falls; each falling SCK edge shifts the next bit out.
+  digitalWrite(PIN_SCK, LOW);
+  digitalWrite(cs, LOW);
+  delayMicroseconds(2);                       // tCSS is 100 ns, 2 us leaves margin for long wires
+  uint32_t d = 0;
+  for (int i = 0; i < 32; i++) {
+    digitalWrite(PIN_SCK, HIGH);
+    delayMicroseconds(1);
+    d = (d << 1) | (digitalRead(PIN_MISO) ? 1u : 0u);
+    digitalWrite(PIN_SCK, LOW);
+    delayMicroseconds(1);
+  }
+  digitalWrite(cs, HIGH);                     // CS high starts the next conversion
+  return d;
+}
+
+// NIST ITS-90 type K, temperature (C) -> thermoelectric voltage (mV)
+double kTypeMv(double t) {
+  static const double pos[10] = {-1.7600413686e-02, 3.8921204975e-02, 1.8558770032e-05, -9.9457592874e-08,
+                                 3.1840945719e-10, -5.6072844889e-13, 5.6075059059e-16, -3.2020720003e-19,
+                                 9.7151147152e-23, -1.2104721275e-26};
+  static const double neg[11] = {0.0, 3.9450128025e-02, 2.3622373598e-05, -3.2858906784e-07, -4.9904828777e-09,
+                                 -6.7509059173e-11, -5.7410327428e-13, -3.1088872894e-15, -1.0451609365e-17,
+                                 -1.9889266878e-20, -1.6322697486e-23};
+  const double *c = (t >= 0) ? pos : neg;
+  int n = (t >= 0) ? 10 : 11;
+  double e = 0, p = 1;
+  for (int i = 0; i < n; i++) { e += c[i] * p; p *= t; }
+  if (t >= 0) e += 0.118597600000 * exp(-1.183432e-04 * (t - 126.9686) * (t - 126.9686));
+  return e;
+}
+
+// NIST ITS-90 type K inverse, voltage (mV) -> temperature (C). Valid -5.891 .. 54.886 mV (-200 .. 1372 C)
+double kTypeC(double mv) {
+  static const double dn[9]  = {0.0, 2.5173462e+01, -1.1662878e+00, -1.0833638e+00, -8.9773540e-01,
+                                -3.7342377e-01, -8.6632643e-02, -1.0450598e-02, -5.1920577e-04};
+  static const double dm[10] = {0.0, 2.508355e+01, 7.860106e-02, -2.503131e-01, 8.315270e-02,
+                                -1.228034e-02, 9.804036e-04, -4.413030e-05, 1.057734e-06, -1.052755e-08};
+  static const double dh[7]  = {-1.318058e+02, 4.830222e+01, -1.646031e+00, 5.464731e-02,
+                                -9.650715e-04, 8.802193e-06, -3.110810e-08};
+  const double *d; int n;
+  if (mv < 0)            { d = dn; n = 9; }
+  else if (mv < 20.644)  { d = dm; n = 10; }
+  else                   { d = dh; n = 7; }
+  double t = 0, p = 1;
+  for (int i = 0; i < n; i++) { t += d[i] * p; p *= mv; }
+  return t;
+}
+
+// Undo the chip's straight-line approximation: rebuild the real wire voltage, add the cold-junction
+// voltage, and convert back through the NIST table.
+float tcLinearize(float rawC, float cjC) {
+  double mv = (rawC - cjC) * 0.041276 + kTypeMv(cjC);   // 41.276 uV/C is the chip's built-in slope
+  if (mv < -5.891 || mv > 54.886) return rawC;          // outside the NIST range: keep the chip value
+  return (float)kTypeC(mv);
+}
+
+float median5(const float *v, uint8_t n) {
+  float s[5];
+  for (uint8_t i = 0; i < n; i++) s[i] = v[i];
+  for (uint8_t i = 1; i < n; i++) { float x = s[i]; int j = i - 1; while (j >= 0 && s[j] > x) { s[j + 1] = s[j]; j--; } s[j + 1] = x; }
+  return s[n / 2];
+}
+
+void tcUpdate(Thermocouple &t) {
+  uint32_t f = tcReadFrame(t.cs);
+  t.frame = f;
+  const char *bad = nullptr;
+  if (f == 0x00000000UL)                 bad = "no response (check VCC 3.3V, GND, SO GPIO19, CS wire)";
+  else if (f == 0xFFFFFFFFUL)            bad = "SO stuck high (check SO GPIO19 and chip power)";
+  else if (f & 0x00020008UL)             bad = "corrupt frame (noise on SCK/SO, shorten or shield wires)";
+  else if (f & 0x00010000UL) {
+    if (f & 0x4)      bad = "shorted to VCC";
+    else if (f & 0x2) bad = "shorted to GND (use an ungrounded probe)";
+    else if (f & 0x1) bad = "open circuit / probe disconnected";
+    else              bad = "fault bit set";
+  }
+
+  if (bad) {
+    if (t.badCount < 255) t.badCount++;
+    if (t.badCount >= TC_FAULT_HOLD) { t.fault = true; t.why = bad; t.n = 0; t.idx = 0; }
+    return;                              // keep the last good value during a short glitch
+  }
+  t.badCount = 0;
+
+  int16_t tc14 = (int16_t)((f >> 16) & 0xFFFC) >> 2;   // sign-extend the 14-bit field
+  int16_t cj12 = (int16_t)(f & 0xFFF0) >> 4;           // sign-extend the 12-bit field
+  t.raw = tc14 * 0.25f;
+  t.cj  = cj12 * 0.0625f;
+  float lin = tcLinearize(t.raw, t.cj);
+
+  if (t.n >= 3) {                        // spike rejection, a real change survives 3 reads in a row
+    float med = median5(t.hist, t.n);
+    if (fabsf(lin - med) > TC_SPIKE_C && t.spikes < 2) { t.spikes++; return; }
+  }
+  t.spikes = 0;
+  t.hist[t.idx] = lin;
+  t.idx = (t.idx + 1) % 5;
+  if (t.n < 5) t.n++;
+  t.tc = median5(t.hist, t.n) + t.offset;
+  t.fault = false;
+  t.why = "ok";
+}
+
 // ---------------- sensor reading ----------------
 void readSensors() {
   // Battery voltage via 47k/10k divider on GPIO32
@@ -284,29 +419,11 @@ void readSensors() {
   pTeg = vTeg * iTeg;      // Harvested TEG power in Watts
   pHarv = pTeg;
 
-  double h = tcHot.readCelsius();
-  uint8_t efHot = tcHot.readError();
-  if (isnan(h) || efHot) {
-    hotFault = true;
-    if (efHot & MAX31855_FAULT_OPEN) hotWhy = "open circuit / disconnected";
-    else if (efHot & MAX31855_FAULT_SHORT_GND) hotWhy = "shorted to GND";
-    else if (efHot & MAX31855_FAULT_SHORT_VCC) hotWhy = "shorted to VCC";
-    else hotWhy = "unknown fault";
-  } else {
-    hotFault = false; tHot = (float)h; hotWhy = "ok";
-  }
-
-  double c = tcCold.readCelsius();
-  uint8_t efCold = tcCold.readError();
-  if (isnan(c) || efCold) {
-    coldFault = true;
-    if (efCold & MAX31855_FAULT_OPEN) coldWhy = "open circuit / disconnected";
-    else if (efCold & MAX31855_FAULT_SHORT_GND) coldWhy = "shorted to GND";
-    else if (efCold & MAX31855_FAULT_SHORT_VCC) coldWhy = "shorted to VCC";
-    else coldWhy = "unknown fault";
-  } else {
-    coldFault = false; tCold = (float)c; coldWhy = "ok";
-  }
+  // Hot side and cold side MAX31855 (one frame each, linearized, median filtered)
+  tcUpdate(tcHotS);
+  tcUpdate(tcColdS);
+  hotFault = tcHotS.fault;   tHot = tcHotS.tc;   hotWhy = tcHotS.why;
+  coldFault = tcColdS.fault; tCold = tcColdS.tc; coldWhy = tcColdS.why;
 
   uint32_t now = millis();
   if (now - tDht >= 2000) {
@@ -450,24 +567,25 @@ void updateLcd() {                       // one fixed page, refreshed live
 
 // ---------------- Serial Telemetry Output ----------------
 void printStatus() {
-  char t[12], al[160], sh[8], sc[8], sd[8], note[60] = "";
+  char t[12], al[160], sh[10], sc[10], sd[10], note[60] = "";
   stamp(t, sizeof(t));
   uint16_t a = alarmMask();
   alarmText(a, al, sizeof(al));
-  if (hotFault) snprintf(sh, sizeof(sh), "---"); else snprintf(sh, sizeof(sh), "%.0f", tHot);
-  if (coldFault) snprintf(sc, sizeof(sc), "---"); else snprintf(sc, sizeof(sc), "%.0f", tCold);
-  if (hotFault || coldFault) snprintf(sd, sizeof(sd), "---"); else snprintf(sd, sizeof(sd), "%.0f", tHot - tCold);
+  if (hotFault) snprintf(sh, sizeof(sh), "---"); else snprintf(sh, sizeof(sh), "%.1f", tHot);
+  if (coldFault) snprintf(sc, sizeof(sc), "---"); else snprintf(sc, sizeof(sc), "%.1f", tCold);
+  if (hotFault || coldFault) snprintf(sd, sizeof(sd), "---"); else snprintf(sd, sizeof(sd), "%.1f", tHot - tCold);
   if (!acsOK) snprintf(note, sizeof(note), "  (current sensor not OK: check GPIO%u wiring and the divider)", PIN_ACS);
   else if (state == 1 && iTeg == 0) snprintf(note, sizeof(note), vTeg < vBat + 0.7f ? "  (TEG voltage is too low to charge)" : "  (relay closed, no current yet)");
 
   // Structured JSON mode
   if (jsonMode) {
-    Out.printf("{\"type\":\"telemetry\",\"timestamp\":\"%s\",\"state\":%d,\"stateName\":\"%s\",\"vTeg\":%.2f,\"vBat\":%.2f,\"iBat\":%.2f,\"iTeg\":%.2f,\"pBat\":%.2f,\"pTeg\":%.2f,\"pHarv\":%.2f,\"whTotal\":%.3f,\"whHarv\":%.3f,\"vTegPeak\":%.2f,\"tHot\":%.1f,\"tCold\":%.1f,\"dT\":%.1f,\"tAmb\":%.1f,\"hum\":%.1f,\"relayOn\":%s,\"rawBat\":%.2f,\"rawTeg\":%.2f,\"rawI\":%.2f,\"batTrim\":%.4f,\"tegTrim\":%.4f,\"curTrim\":%.4f,\"inaOK\":%s,\"alarms\":%u,\"alarmText\":\"%s\"}\n",
+    Out.printf("{\"type\":\"telemetry\",\"timestamp\":\"%s\",\"state\":%d,\"stateName\":\"%s\",\"vTeg\":%.2f,\"vBat\":%.2f,\"iBat\":%.2f,\"iTeg\":%.2f,\"pBat\":%.2f,\"pTeg\":%.2f,\"pHarv\":%.2f,\"whTotal\":%.3f,\"whHarv\":%.3f,\"vTegPeak\":%.2f,\"tHot\":%.1f,\"tCold\":%.1f,\"dT\":%.1f,\"tAmb\":%.1f,\"hum\":%.1f,\"relayOn\":%s,\"rawBat\":%.2f,\"rawTeg\":%.2f,\"rawI\":%.2f,\"batTrim\":%.4f,\"tegTrim\":%.4f,\"curTrim\":%.4f,\"inaOK\":%s,\"hotFault\":%s,\"coldFault\":%s,\"hotWhy\":\"%s\",\"coldWhy\":\"%s\",\"tHotCJ\":%.2f,\"tColdCJ\":%.2f,\"alarms\":%u,\"alarmText\":\"%s\"}\n",
       t, state, stateName(), vTeg, vBat, iTeg, iTeg, pTeg, pTeg, pHarv, whTotal, whHarv, vTegPeak,
       hotFault ? -1.0f : tHot, coldFault ? -1.0f : tCold, (hotFault || coldFault) ? 0.0f : (tHot - tCold),
       dhtOK ? tAmb : -1.0f, dhtOK ? hum : -1.0f,
       relayOn ? "true" : "false",
-      rawBat, rawTeg, rawI, batTrim, tegTrim, curTrim, acsOK ? "true" : "false", a, al);
+      rawBat, rawTeg, rawI, batTrim, tegTrim, curTrim, acsOK ? "true" : "false",
+      hotFault ? "true" : "false", coldFault ? "true" : "false", hotWhy, coldWhy, tcHotS.cj, tcColdS.cj, a, al);
   }
 
   // Human-readable compact mode
@@ -484,7 +602,7 @@ void printStatus() {
   Out.printf("SENSOR    : ACS712 output %.3f V, zero level %.3f V\n", acsVolts, acsZero);
   Out.printf("CURRENT   : TEG %.2f A (sensor: %s, raw %.2f, factor %.3f)\n", iTeg, acsOK ? "ACS712 analog" : "NOT OK (zero level off)", rawI, curTrim);
   Out.printf("POWER     : TEG power %.1f W   harvested energy %.3f Wh   peak TEG %.1f V\n", pTeg, whHarv, vTegPeak);
-  Out.printf("TEMPERATURE: hot %s C (%s)   cold %s C (%s)   dT %s C\n", sh, hotWhy, sc, coldWhy, sd);
+  Out.printf("TEMPERATURE: hot %s C (%s, chip %.2f C)   cold %s C (%s, chip %.2f C)   dT %s C\n", sh, hotWhy, tcHotS.cj, sc, coldWhy, tcColdS.cj, sd);
   Out.printf("BATTERY AREA: %.1f C  humidity %.0f %%  (%s)\n", dhtOK ? tAmb : 0.0f, hum, dhtOK ? "DHT22 ok" : "DHT22 NOT READING");
   Out.printf("LIMITS    : open %.2f V, close %.2f V, hard %.2f V\n", vOpenNow, vCloseNow, vHardNow);
   Out.printf("ALARMS    : %s\n", al);
@@ -501,6 +619,8 @@ void printHelp() {
   Out.println("  o  force charging OFF        v  show raw pin voltages & I2C status");
   Out.println("  B10.24 calibrate battery     G13.10 calibrate TEG");
   Out.println("  I0.50  calibrate current     X  reset calibrations");
+  Out.println("  TH25.0 hot thermocouple = reference C    TC25.0 cold thermocouple = reference C");
+  Out.println("  TX     clear thermocouple offsets");
   Out.println();
 }
 
@@ -519,6 +639,29 @@ void handleLine(String s) {
     if (trim < 0.85f || trim > 1.25f) event("WARNING: factor is more than 15% off nominal");
     if (c == 'B') { batTrim = trim; prefs.putFloat("bat", trim); } else { tegTrim = trim; prefs.putFloat("teg", trim); }
     snprintf(m, sizeof(m), "%s calibration saved: factor %.4f (raw %.3f V -> %.3f V)", c == 'B' ? "Battery" : "TEG", trim, raw, v);
+    event(m);
+    return;
+  }
+  if (c == 'T' && s.length() >= 2) {          // TH<C>, TC<C>, TX : thermocouple offset vs a reference thermometer
+    char side = toupper(s[1]);
+    if (side == 'X') {
+      tcHotS.offset = 0; tcColdS.offset = 0;
+      prefs.putFloat("toh", 0); prefs.putFloat("toc", 0);
+      event("Thermocouple offsets cleared");
+      return;
+    }
+    if ((side != 'H' && side != 'C') || s.length() < 3) { event("Use TH<C> for hot side, TC<C> for cold side, TX to clear"); return; }
+    Thermocouple &tc = (side == 'H') ? tcHotS : tcColdS;
+    float ref = s.substring(2).toFloat();
+    if (tc.fault || tc.n < 3) { snprintf(m, sizeof(m), "Calibration refused: %s thermocouple not reading (%s)", tc.name, tc.why); event(m); return; }
+    if (ref < -20.0f || ref > 1000.0f) { event("Calibration refused: reference must be -20 .. 1000 C"); return; }
+    float measured = tc.tc - tc.offset;
+    float off = ref - measured;
+    if (fabsf(off) > 15.0f) { event("Calibration refused: offset over 15 C, check probe contact and reference instead"); return; }
+    tc.offset = off;
+    tc.tc = measured + off;
+    prefs.putFloat(side == 'H' ? "toh" : "toc", off);
+    snprintf(m, sizeof(m), "%s thermocouple offset saved: %+.2f C (%.2f C -> %.2f C)", side == 'H' ? "Hot" : "Cold", off, measured, ref);
     event(m);
     return;
   }
@@ -546,6 +689,8 @@ void handleLine(String s) {
       prefs.putFloat("bat", BAT_TRIM);
       prefs.putFloat("teg", TEG_TRIM);
       prefs.putFloat("cur", CUR_TRIM);
+      tcHotS.offset = 0; tcColdS.offset = 0;
+      prefs.putFloat("toh", 0); prefs.putFloat("toc", 0);
       event("Calibration reset to accurate defaults (BAT 10.24V / TEG 13.10V / CUR 1.0000)");
       break;
     case 'v': {
@@ -555,6 +700,11 @@ void handleLine(String s) {
       Out.printf("  GPIO33 TEG divider (R11=150k/R12=10k)   : Sees %.3f V -> TEG %.2f V (multimeter target: 13.10V)\n", pt, pt * K_TEG * tegTrim);
       Out.printf("  GPIO%02u ACS712 (divider R17/R18)          : Sees %.3f V -> sensor %.3f V, zero %.3f V, raw %.3f A -> Cur %.3f A (x%.4f)\n", PIN_ACS, pa, pa * ACS_K, acsZero, rawI, iTeg, curTrim);
       if (pa < 0.05f) Out.println("  !! ACS pin reads 0 V: check the wire on GPIO35, R17/R18 and the sensor 5 V.");
+      Out.printf("  MAX31855 hot  (CS GPIO%d) : frame 0x%08lX  chip %.2f C  raw %.2f C -> %.2f C (offset %+.2f)  %s\n",
+                 PIN_CS_HOT, (unsigned long)tcHotS.frame, tcHotS.cj, tcHotS.raw, tcHotS.tc, tcHotS.offset, tcHotS.why);
+      Out.printf("  MAX31855 cold (CS GPIO%d): frame 0x%08lX  chip %.2f C  raw %.2f C -> %.2f C (offset %+.2f)  %s\n",
+                 PIN_CS_COLD, (unsigned long)tcColdS.frame, tcColdS.cj, tcColdS.raw, tcColdS.tc, tcColdS.offset, tcColdS.why);
+      Out.println("  Both probes in the same room-temperature air should read within about 2 C of each other.");
       Out.println();
       break;
     }
@@ -642,10 +792,20 @@ void setup() {
     Out.println("LCD         : NOT FOUND (check SDA GPIO21, SCL GPIO22, VCC, GND)");
   }
 
-  tcHot.begin(); tcCold.begin(); dht.begin();
-  delay(500);
+  // MAX31855 shared bus: both CS high (idle, converting), SCK low, SO input
+  pinMode(PIN_CS_HOT, OUTPUT);  digitalWrite(PIN_CS_HOT, HIGH);
+  pinMode(PIN_CS_COLD, OUTPUT); digitalWrite(PIN_CS_COLD, HIGH);
+  pinMode(PIN_SCK, OUTPUT);     digitalWrite(PIN_SCK, LOW);
+  pinMode(PIN_MISO, INPUT);
+  tcHotS.offset  = prefs.getFloat("toh", 0.0f);
+  tcColdS.offset = prefs.getFloat("toc", 0.0f);
+  Out.printf("Thermocouple: hot offset %+.2f C, cold offset %+.2f C (set with TH<C> / TC<C>)\n", tcHotS.offset, tcColdS.offset);
+  dht.begin();
+  delay(500);                                // first MAX31855 conversion needs up to 100 ms
 
   readSensors();
+  Out.printf("Thermocouple: hot %s (%s)   cold %s (%s)\n",
+             tcHotS.fault ? "--" : "ok", tcHotS.why, tcColdS.fault ? "--" : "ok", tcColdS.why);
   printHelp();
 
   delay(1200);
