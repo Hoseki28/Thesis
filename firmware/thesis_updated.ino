@@ -579,8 +579,9 @@ void printStatus() {
 
   // Structured JSON mode
   if (jsonMode) {
+    float pBat = vBat * iTeg;
     Out.printf("{\"type\":\"telemetry\",\"timestamp\":\"%s\",\"state\":%d,\"stateName\":\"%s\",\"vTeg\":%.2f,\"vBat\":%.2f,\"iBat\":%.2f,\"iTeg\":%.2f,\"pBat\":%.2f,\"pTeg\":%.2f,\"pHarv\":%.2f,\"whTotal\":%.3f,\"whHarv\":%.3f,\"vTegPeak\":%.2f,\"tHot\":%.1f,\"tCold\":%.1f,\"dT\":%.1f,\"tAmb\":%.1f,\"hum\":%.1f,\"relayOn\":%s,\"rawBat\":%.2f,\"rawTeg\":%.2f,\"rawI\":%.2f,\"batTrim\":%.4f,\"tegTrim\":%.4f,\"curTrim\":%.4f,\"inaOK\":%s,\"hotFault\":%s,\"coldFault\":%s,\"hotWhy\":\"%s\",\"coldWhy\":\"%s\",\"tHotCJ\":%.2f,\"tColdCJ\":%.2f,\"alarms\":%u,\"alarmText\":\"%s\"}\n",
-      t, state, stateName(), vTeg, vBat, iTeg, iTeg, pTeg, pTeg, pHarv, whTotal, whHarv, vTegPeak,
+      t, state, stateName(), vTeg, vBat, iTeg, iTeg, pBat, pTeg, pHarv, whTotal, whHarv, vTegPeak,
       hotFault ? -1.0f : tHot, coldFault ? -1.0f : tCold, (hotFault || coldFault) ? 0.0f : (tHot - tCold),
       dhtOK ? tAmb : -1.0f, dhtOK ? hum : -1.0f,
       relayOn ? "true" : "false",

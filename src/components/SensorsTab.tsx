@@ -16,12 +16,23 @@ export function SensorsTab({ telemetry, calibration, historyPoints = [], lang, t
   const isFil = lang === 'fil'
   const isDark = theme === 'dark'
 
-  // Voltage reading
+  // Voltage & current readings
   const batteryVoltage = telemetry.vBat ?? telemetry.batteryVoltage ?? 0.0
+  const tegVoltage = telemetry.vTeg ?? telemetry.tegVoltage ?? 0.0
+  const chargeCurrent = telemetry.iBat ?? telemetry.rawTegCurrent ?? 0.0
 
-  // Power values
-  const pBatLive = telemetry.pBat ?? Math.round(batteryVoltage * (telemetry.iBat ?? 0) * 10) / 10
-  const tegWattage = (telemetry.pHarv ?? (telemetry.tegPower > 0 ? telemetry.tegPower : Math.round((telemetry.vTeg ?? 0) * (telemetry.iBat ?? 0) * 10) / 10)).toFixed(1)
+  // Power values: In-Battery Power = Vbat × Icharge, TEG Harvest = Vteg × Icharge
+  const pBatLive =
+    telemetry.pBat && telemetry.pBat > 0
+      ? telemetry.pBat
+      : Math.round(batteryVoltage * chargeCurrent * 10) / 10
+  const pHarvNum =
+    telemetry.pHarv && telemetry.pHarv > 0
+      ? telemetry.pHarv
+      : telemetry.tegPower > 0
+      ? telemetry.tegPower
+      : Math.round(tegVoltage * chargeCurrent * 10) / 10
+  const tegWattage = pHarvNum.toFixed(1)
 
   // SVG Chart rendering (0 to 40W load scale)
   const width = 340
@@ -106,7 +117,7 @@ export function SensorsTab({ telemetry, calibration, historyPoints = [], lang, t
           <svg viewBox={`0 0 ${width + 36} ${height + 24}`} className="w-full h-auto overflow-visible">
             {/* Y-Axis labels & Grid lines */}
             {yTicks.map((tick) => {
-              const y = Math.round(height - (tick / 260) * (height - 20) - 10)
+              const y = Math.round(height - (tick / 40) * (height - 20) - 10)
               return (
                 <g key={tick}>
                   <text
@@ -165,15 +176,24 @@ export function SensorsTab({ telemetry, calibration, historyPoints = [], lang, t
 
       {/* ── 3. LOAD & TEG GEN METRIC TILES ──────────────────────────── */}
       <div className="grid grid-cols-2 gap-3">
-        {/* IN-BATTERY POWER */}
-        <div className={`rounded-2xl p-4 border flex flex-col justify-between min-h-[95px] shadow-lg transition-colors ${
+        {/* IN-BATTERY POWER (Vbat × Icharge) */}
+        <div className={`rounded-2xl p-4 border flex flex-col justify-between min-h-[105px] shadow-lg transition-colors ${
           isDark ? 'bg-[#13171B] border-[#1E242B]' : 'bg-white border-zinc-200'
         }`}>
-          <div className="flex items-center justify-between">
-            <span className={`text-[10px] font-bold uppercase tracking-wider ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-500'}`}>
-              {isFil ? 'LAKAS SA BATERYA' : 'IN-BATTERY POWER'}
+          <div>
+            <div className="flex items-center justify-between">
+              <span className={`text-[10px] font-bold uppercase tracking-wider ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-500'}`}>
+                {isFil ? 'LAKAS SA BATERYA' : 'IN-BATTERY POWER'}
+              </span>
+              <IconZap size={16} className="text-[#00E676]" />
+            </div>
+            <span className={`text-[9.5px] font-mono block mt-0.5 truncate ${
+              telemetry.inaOk === false ? 'text-amber-400 font-bold' : isDark ? 'text-zinc-400' : 'text-zinc-500'
+            }`}>
+              {telemetry.inaOk === false
+                ? 'ACS712 fault (GPIO35)'
+                : `${batteryVoltage.toFixed(2)}V × ${chargeCurrent.toFixed(2)}A`}
             </span>
-            <IconZap size={16} className="text-[#00E676]" />
           </div>
           <div className="flex items-baseline mt-2">
             <span className={`text-2xl sm:text-3xl font-black font-mono tabular-nums ${isDark ? 'text-white' : 'text-zinc-900'}`}>
@@ -183,15 +203,24 @@ export function SensorsTab({ telemetry, calibration, historyPoints = [], lang, t
           </div>
         </div>
 
-        {/* TEG GEN */}
-        <div className={`rounded-2xl p-4 border flex flex-col justify-between min-h-[95px] shadow-lg transition-colors ${
+        {/* TEG HARVEST (Vteg × Icharge) */}
+        <div className={`rounded-2xl p-4 border flex flex-col justify-between min-h-[105px] shadow-lg transition-colors ${
           isDark ? 'bg-[#13171B] border-[#1E242B]' : 'bg-white border-zinc-200'
         }`}>
-          <div className="flex items-center justify-between">
-            <span className={`text-[10px] font-bold uppercase tracking-wider ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-500'}`}>
-              {isFil ? 'LIKHANG TEG' : 'TEG HARVEST'}
+          <div>
+            <div className="flex items-center justify-between">
+              <span className={`text-[10px] font-bold uppercase tracking-wider ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-500'}`}>
+                {isFil ? 'LIKHANG TEG' : 'TEG HARVEST'}
+              </span>
+              <IconFlame size={16} className="text-[#00E676]" />
+            </div>
+            <span className={`text-[9.5px] font-mono block mt-0.5 truncate ${
+              !telemetry.relayOn && chargeCurrent === 0 ? (isDark ? 'text-zinc-400' : 'text-zinc-500') : isDark ? 'text-zinc-400' : 'text-zinc-500'
+            }`}>
+              {telemetry.inaOk === false
+                ? 'ACS712 fault (GPIO35)'
+                : `${tegVoltage.toFixed(2)}V × ${chargeCurrent.toFixed(2)}A`}
             </span>
-            <IconFlame size={16} className="text-[#00E676]" />
           </div>
           <div className="flex items-baseline mt-2">
             <span className={`text-2xl sm:text-3xl font-black font-mono tabular-nums ${isDark ? 'text-white' : 'text-zinc-900'}`}>

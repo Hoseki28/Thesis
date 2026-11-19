@@ -766,8 +766,8 @@ export class HardwareBridge {
       relayClosed: c.relayClosed,
       forceMode: c.forceMode,
       uptimeStr: c.uptimeStr,
-      pBatW: c.pBatW,
-      pHarvW: c.pHarvW,
+      pBatW: c.pBatW > 0 ? c.pBatW : Math.round(c.vBat * c.iBat * 100) / 100,
+      pHarvW: c.pHarvW > 0 ? c.pHarvW : Math.round(c.vTeg * c.iBat * 100) / 100,
       whTotal: c.whTotal,
       whHarv: c.whHarv,
       vTegPeak: c.vTegPeak,
@@ -1057,7 +1057,10 @@ export class HardwareBridge {
               const p = parseFloat(m[1])
               if (Number.isFinite(p)) {
                 this.esp32Cache.pHarvW = p
-                this.esp32Cache.pBatW = p
+                this.esp32Cache.pBatW =
+                  this.esp32Cache.vBat > 0 && this.esp32Cache.iBat > 0
+                    ? Math.round(this.esp32Cache.vBat * this.esp32Cache.iBat * 100) / 100
+                    : p
               }
             }
           } else if (seg.startsWith('IN-BAT ')) {
