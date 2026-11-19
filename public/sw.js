@@ -1,5 +1,5 @@
 // Padayon Power Monitor Service Worker
-const CACHE_NAME = 'padayon-pwa-v4.0'
+const CACHE_NAME = 'padayon-pwa-v4.1'
 const ASSETS_TO_CACHE = [
   '/',
   '/index.html',
@@ -11,14 +11,17 @@ const ASSETS_TO_CACHE = [
 ]
 
 self.addEventListener('install', (event) => {
+  event.waitUntil(
+    caches.open(CACHE_NAME).then((cache) => cache.addAll(ASSETS_TO_CACHE)).catch(() => {})
+  )
   self.skipWaiting()
 })
 
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((keys) => {
-      // Clear all old caches
-      return Promise.all(keys.map((key) => caches.delete(key)))
+      // Only delete older cache versions; keep the current CACHE_NAME intact
+      return Promise.all(keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key)))
     })
   )
   self.clients.claim()
@@ -26,25 +29,26 @@ self.addEventListener('activate', (event) => {
 
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return
+  const url = new URL(event.request.url)
+  if (url.origin !== self.location.origin) return
 
-  // Always fetch fresh from network for all HTML and JS scripts
-  if (event.request.mode === 'navigate' || event.request.destination === 'document' || event.request.destination === 'script') {
-    event.respondWith(
-      fetch(event.request).catch(() => caches.match(event.request))
-    )
-    return
-  }
-
-  // Network-first for everything else
+  // Network-first with persistent cache fallback for HTML, JS, CSS, and assets
   event.respondWith(
     fetch(event.request)
       .then((networkResponse) => {
-        if (networkResponse && networkResponse.status === 200) {
+        if (networkResponse && networkResponse.status === 200 && networkResponse.type === 'basic') {
           const copy = networkResponse.clone()
           caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy))
         }
         return networkResponse
       })
-      .catch(() => caches.match(event.request))
+      .catch(async () => {
+        const cached = await caches.match(event.request)
+        if (cached) return cached
+        if (event.request.mode === 'navigate' || event.request.destination === 'document') {
+          return caches.match('/index.html') || caches.match('/')
+        }
+        return new Response('Offline', { status: 503, statusText: 'Offline' })
+      })
   )
 })
