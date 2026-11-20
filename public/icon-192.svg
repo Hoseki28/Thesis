@@ -18,5 +18,5 @@
     <path d="M 56 12 L 28 64 L 52 64 L 36 112 L 76 52 L 52 52 Z" fill="#FFFFFF" />
   </g>
 
-  <text x="96" y="170" font-family="system-ui, -apple-system, sans-serif" font-weight="900" font-size="16" fill="#F1F5F9" letter-spacing="2" text-anchor="middle">PADAYON</text>
+  <text x="96" y="170" font-family="system-ui, -apple-system, sans-serif" font-weight="900" font-size="18" fill="#F1F5F9" letter-spacing="3" text-anchor="middle">TEG</text>
 </svg>

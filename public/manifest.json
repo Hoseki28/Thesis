@@ -1,8 +1,8 @@
 {
   "id": "/",
-  "name": "Padayon Power Monitor",
-  "short_name": "Padayon",
-  "description": "Smart Biomass-TEG Hybrid Power & Environmental Monitor PWA for Padayon Campsite",
+  "name": "TEG Monitoring",
+  "short_name": "TEG Monitoring",
+  "description": "Biomass-TEG Hybrid Power & Environmental Monitoring PWA",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

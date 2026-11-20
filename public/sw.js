@@ -1,5 +1,5 @@
-// Padayon Power Monitor Service Worker
-const CACHE_NAME = 'padayon-pwa-v4.1'
+// TEG Monitoring Service Worker
+const CACHE_NAME = 'teg-monitoring-pwa-v4.2'
 const ASSETS_TO_CACHE = [
   '/',
   '/index.html',
