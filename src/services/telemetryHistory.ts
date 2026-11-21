@@ -203,14 +203,21 @@ export class TelemetryHistoryManager {
    * Export all recorded telemetry points to a clean CSV file specifically formatted for Excel analysis.
    * Prepends UTF-8 BOM (\uFEFF) so Excel on Windows immediately opens columns without delimiter confusion.
    */
-  public exportCsv(feedstock?: string, runId?: string, filenamePrefix: string = 'bteg_telemetry_excel'): boolean {
+  public exportCsv(
+    feedstock?: string,
+    runId?: string,
+    filenamePrefix: string = 'bteg_esp32_readings_excel',
+    fallbackCurrent?: TelemetryData
+  ): boolean {
     const records = this.fullLog.length > 0
       ? this.fullLog
-      : this.points.map((pt) => ({
+      : this.points.length > 0
+      ? this.points.map((pt) => ({
           ...pt,
           vBat: pt.batteryVoltage,
           vTeg: pt.tegVoltage,
           iBat: pt.tegCurrent,
+          pBat: Math.round(pt.batteryVoltage * pt.tegCurrent * 100) / 100,
           pHarv: pt.tegPower,
           whHarv: 0.0,
           tHot: pt.stoveTemp,
@@ -223,6 +230,21 @@ export class TelemetryHistoryManager {
           espStateStr: 'HOLD/OFF',
           alarmsStr: 'NOMINAL',
         }))
+      : fallbackCurrent
+      ? [
+          {
+            ...fallbackCurrent,
+            relayStr: (fallbackCurrent.relayOn ?? fallbackCurrent.relays?.dcBus)
+              ? 'CLOSED (Charging Active)'
+              : 'OPEN (Standby / Hold)',
+            espStateStr: fallbackCurrent.stateName || fallbackCurrent.esp32?.stateName || 'HOLD/OFF',
+            alarmsStr:
+              fallbackCurrent.activeAlarms && fallbackCurrent.activeAlarms.length > 0
+                ? fallbackCurrent.activeAlarms.join('; ')
+                : fallbackCurrent.alarmsText || 'NOMINAL',
+          },
+        ]
+      : []
 
     if (records.length === 0) {
       return false
@@ -237,6 +259,7 @@ export class TelemetryHistoryManager {
       'Battery_SOC_Percent',
       'TEG_Voltage_V',
       'TEG_Current_A',
+      'In_Battery_Power_W',
       'TEG_Power_W',
       'Harvested_Energy_Wh',
       'Stove_Hot_Face_Temp_C',
@@ -279,11 +302,18 @@ export class TelemetryHistoryManager {
       const activeRunId = runId || row.runId || 'RUN-01'
       const { dateStr, timeStr } = formatExcelDateTime(row.timestamp || Date.now())
 
-      const vBat = Number.isFinite(row.vBat) ? Number(row.vBat).toFixed(2) : Number(row.batteryVoltage || 0).toFixed(2)
+      const vBatNum = Number.isFinite(row.vBat) ? Number(row.vBat) : Number(row.batteryVoltage || 0)
+      const vTegNum = Number.isFinite(row.vTeg) ? Number(row.vTeg) : Number(row.tegVoltage || 0)
+      const iBatNum = Number.isFinite(row.iBat) ? Number(row.iBat) : Number(row.tegCurrent || 0)
+      const pBatNum = Number.isFinite(row.pBat) ? Number(row.pBat) : vBatNum * iBatNum
+      const pHarvNum = Number.isFinite(row.pHarv) ? Number(row.pHarv) : Number(row.tegPower || vTegNum * iBatNum)
+
+      const vBat = vBatNum.toFixed(2)
       const soc = Math.round(row.batteryPct ?? 0)
-      const vTeg = Number.isFinite(row.vTeg) ? Number(row.vTeg).toFixed(2) : Number(row.tegVoltage || 0).toFixed(2)
-      const iBat = Number.isFinite(row.iBat) ? Number(row.iBat).toFixed(3) : Number(row.tegCurrent || 0).toFixed(3)
-      const pHarv = Number.isFinite(row.pHarv) ? Number(row.pHarv).toFixed(2) : Number(row.tegPower || 0).toFixed(2)
+      const vTeg = vTegNum.toFixed(2)
+      const iBat = iBatNum.toFixed(3)
+      const pBat = pBatNum.toFixed(2)
+      const pHarv = pHarvNum.toFixed(2)
       const whHarv = Number.isFinite(row.whHarv) ? Number(row.whHarv).toFixed(4) : '0.0000'
       const tHot = Number.isFinite(row.tHot) ? Number(row.tHot).toFixed(1) : Number(row.stoveTemp || 0).toFixed(1)
       const tCold = Number.isFinite(row.tCold) ? Number(row.tCold).toFixed(1) : Number(row.coldFaceTemp || 25).toFixed(1)
@@ -304,6 +334,7 @@ export class TelemetryHistoryManager {
         soc,
         vTeg,
         iBat,
+        pBat,
         pHarv,
         whHarv,
         tHot,

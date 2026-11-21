@@ -78,11 +78,26 @@ export function LogsTab({
     error: logs.filter((l) => l.level === 'error').length,
   }
 
+  const telemetrySampleCount = historyManager.getStats().sampleCount
+
+  const handleExportTelemetry = () => {
+    if (onExportCsv) {
+      onExportCsv()
+    } else {
+      historyManager.exportCsv(
+        telemetry?.feedstock || 'Biomass_Charcoal',
+        telemetry?.runId || 'RUN-01',
+        'bteg_esp32_readings_excel',
+        telemetry
+      )
+    }
+    setExportedNotice('telemetry')
+    setTimeout(() => setExportedNotice(null), 3000)
+  }
+
   const handleExportEvents = () => {
     if (onExportEventLogs) {
       onExportEventLogs()
-    } else if (onExportCsv) {
-      onExportCsv()
     } else {
       systemLogManager.exportCsv('bteg_event_logs')
     }
@@ -281,45 +296,68 @@ export function LogsTab({
       </div>
 
       {/* ── ACTION BUTTONS ──────────────────────────────────────────── */}
-      <div className="grid grid-cols-2 gap-2 pt-1 font-sans">
+      <div className="flex flex-col gap-2 pt-1 font-sans">
+        {/* Primary Excel Export: Full ESP32 Sensor Readings (Vbat, Vteg, Current, Power, Temps) */}
         <button
           type="button"
-          onClick={handleExportEvents}
-          className={`py-2.5 px-3 rounded-xl border text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 cursor-pointer transition-colors shadow-md min-h-[44px] ${
+          onClick={handleExportTelemetry}
+          className={`w-full py-3 px-3.5 rounded-xl border text-xs font-black uppercase tracking-wider flex items-center justify-center gap-2 cursor-pointer transition-colors shadow-md min-h-[46px] ${
             isDark
-              ? 'bg-[#13171B] hover:bg-[#1E242B] border-[#1E242B] text-[#00E676]'
-              : 'bg-white hover:bg-zinc-50 border-zinc-200 text-emerald-600'
+              ? 'bg-[#00E676]/15 hover:bg-[#00E676]/25 border-[#00E676]/60 text-[#00E676]'
+              : 'bg-emerald-600 hover:bg-emerald-700 border-emerald-700 text-white'
           }`}
-          aria-label="Export Event Logs CSV"
+          aria-label="Export ESP32 Telemetry Readings Excel CSV"
         >
-          <IconDownload size={15} className="text-[#00E676]" />
+          <IconDownload size={16} className={isDark ? 'text-[#00E676]' : 'text-white'} />
           <span className="truncate">
-            {exportedNotice === 'events'
+            {exportedNotice === 'telemetry'
               ? isFil
-                ? 'NA-DOWNLOAD NA'
-                : 'LOGS DOWNLOADED'
+                ? 'NA-DOWNLOAD NA ANG ESP32 EXCEL CSV'
+                : 'ESP32 READINGS CSV DOWNLOADED'
               : isFil
-              ? 'EVENT LOGS CSV'
-              : 'EVENT LOGS CSV'}
+              ? `EXPORT ESP32 READINGS EXCEL (${telemetrySampleCount})`
+              : `EXPORT ESP32 READINGS EXCEL (${telemetrySampleCount})`}
           </span>
         </button>
 
-        <button
-          type="button"
-          onClick={() => setShowConsole(!showConsole)}
-          className={`py-2.5 px-3 rounded-xl border text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 cursor-pointer transition-colors shadow-md min-h-[44px] ${
-            isDark
-              ? 'bg-[#13171B] hover:bg-[#1E242B] border-[#1E242B] text-zinc-300 hover:text-white'
-              : 'bg-white hover:bg-zinc-50 border-zinc-200 text-zinc-700 hover:text-zinc-900'
-          }`}
-        >
-          <IconUsb size={15} className={isDark ? 'text-[#00E676]' : 'text-emerald-700'} />
-          <span className="truncate">
-            {showConsole
-              ? isFil ? 'ITAGO ANG SERIAL' : 'HIDE SERIAL'
-              : isFil ? 'BUKSAN ANG SERIAL' : 'USB SERIAL'}
-          </span>
-        </button>
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            onClick={handleExportEvents}
+            className={`py-2.5 px-3 rounded-xl border text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 cursor-pointer transition-colors shadow-md min-h-[44px] ${
+              isDark
+                ? 'bg-[#13171B] hover:bg-[#1E242B] border-[#1E242B] text-zinc-300 hover:text-white'
+                : 'bg-white hover:bg-zinc-50 border-zinc-200 text-zinc-700 hover:text-zinc-900'
+            }`}
+            aria-label="Export Event Logs CSV"
+          >
+            <IconDownload size={15} className={isDark ? 'text-zinc-400' : 'text-zinc-600'} />
+            <span className="truncate">
+              {exportedNotice === 'events'
+                ? isFil
+                  ? 'NA-DOWNLOAD NA'
+                  : 'EVENTS SAVED'
+                : 'EVENT LOGS CSV'}
+            </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setShowConsole(!showConsole)}
+            className={`py-2.5 px-3 rounded-xl border text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 cursor-pointer transition-colors shadow-md min-h-[44px] ${
+              isDark
+                ? 'bg-[#13171B] hover:bg-[#1E242B] border-[#1E242B] text-zinc-300 hover:text-white'
+                : 'bg-white hover:bg-zinc-50 border-zinc-200 text-zinc-700 hover:text-zinc-900'
+            }`}
+          >
+            <IconUsb size={15} className={isDark ? 'text-[#00E676]' : 'text-emerald-700'} />
+            <span className="truncate">
+              {showConsole
+                ? isFil ? 'ITAGO ANG SERIAL' : 'HIDE SERIAL'
+                : isFil ? 'BUKSAN ANG SERIAL' : 'USB SERIAL'}
+            </span>
+          </button>
+        </div>
       </div>
 
       {/* Secondary reset/clear action */}

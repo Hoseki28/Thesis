@@ -549,7 +549,9 @@ export default function App() {
               onExportCsv={() => {
                 historyManagerRef.current.exportCsv(
                   telemetry.feedstock || 'Biomass_Charcoal',
-                  telemetry.runId || 'RUN-01'
+                  telemetry.runId || 'RUN-01',
+                  'bteg_esp32_readings_excel',
+                  telemetry
                 )
               }}
               onExportEventLogs={() => {
