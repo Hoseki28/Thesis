@@ -26,6 +26,25 @@ export function SensorsTab({ telemetry, lang, theme = 'dark' }: SensorsTabProps)
   const tegVoltage = telemetry.vTeg ?? telemetry.tegVoltage ?? 0.0
   const chargeCurrent = telemetry.iBat ?? telemetry.rawTegCurrent ?? 0.0
   const battPct = isConnected ? Math.max(0, Math.min(100, Math.round(telemetry.batteryPct ?? 0))) : 0
+  const activeBars = !isConnected
+    ? 0
+    : battPct >= 76
+    ? 4
+    : battPct >= 51
+    ? 3
+    : battPct >= 26
+    ? 2
+    : battPct >= 1
+    ? 1
+    : 0
+  const barColor =
+    activeBars === 1
+      ? '#ef4444'
+      : activeBars === 2
+      ? '#f59e0b'
+      : '#00E676'
+  const barInactive = isDark ? '#272F38' : '#e4e4e7'
+  const barStroke = activeBars === 0 ? (isDark ? '#4b5563' : '#a1a1aa') : barColor
 
   // Charge Stage badge for Top Hero Card (IDLE / BULK / FLOAT / LOCKOUT)
   const chargeStage = (() => {
@@ -77,21 +96,23 @@ export function SensorsTab({ telemetry, lang, theme = 'dark' }: SensorsTabProps)
           <span id="battery-voltage-heading" className={`text-[10px] font-bold uppercase tracking-wider ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-500'}`}>
             {isFil ? 'BOLTAHE NG BATERYA' : 'BATTERY VOLTAGE'}
           </span>
-          <div className="flex items-center gap-1.5">
-            {/* SoC % Badge */}
-            <span
-              className={`px-2 py-0.5 rounded-md border text-[10px] font-mono font-bold tabular-nums ${
-                isConnected
-                  ? isDark
-                    ? 'bg-[#0B0F12] border-[#1E242B] text-zinc-200'
-                    : 'bg-zinc-100 border-zinc-200 text-zinc-800'
-                  : isDark
-                  ? 'bg-[#0B0F12] border-[#1E242B] text-zinc-500'
-                  : 'bg-zinc-100 border-zinc-200 text-zinc-400'
-              }`}
+          <div className="flex items-center gap-2">
+            {/* 4-Bar Battery Icon (Bar-only, no % text) */}
+            <svg
+              width={28}
+              height={14}
+              viewBox="0 0 28 14"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+              aria-label={`Battery ${activeBars} of 4 bars`}
             >
-              {isConnected ? `${battPct}% SoC` : '--% SoC'}
-            </span>
+              <rect x="1" y="1" width="22" height="12" rx="2.5" stroke={barStroke} strokeWidth="1.5" />
+              <path d="M25 5C25.5 5 26 5.5 26 6V8C26 8.5 25.5 9 25 9" stroke={barStroke} strokeWidth="1.5" strokeLinecap="round" />
+              <rect x="3" y="3" width="3.6" height="8" rx="0.8" fill={activeBars >= 1 ? barColor : barInactive} />
+              <rect x="7.8" y="3" width="3.6" height="8" rx="0.8" fill={activeBars >= 2 ? barColor : barInactive} />
+              <rect x="12.6" y="3" width="3.6" height="8" rx="0.8" fill={activeBars >= 3 ? barColor : barInactive} />
+              <rect x="17.4" y="3" width="3.6" height="8" rx="0.8" fill={activeBars >= 4 ? barColor : barInactive} />
+            </svg>
 
             {/* Charge Stage Badge (IDLE / BULK / FLOAT / LOCKOUT) */}
             <span

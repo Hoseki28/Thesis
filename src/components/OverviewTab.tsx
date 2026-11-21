@@ -409,7 +409,7 @@ export function OverviewTab({
 
       {/* ── 3. 2×2 TELEMETRY GRID ───────────────────────────────────── */}
       <div className="grid grid-cols-2 gap-3">
-        {/* TILE 1: BATTERY (12V 15Ah SLA) WITH LARGE 4-BAR BATTERY ICON (NO % NUMBER) */}
+        {/* TILE 1: BATTERY (12V 15Ah SLA) WITH 4-BAR BATTERY GRAPHIC ONLY (NO % NUMBER) */}
         <div className={`rounded-2xl p-3.5 border flex flex-col justify-between min-h-[110px] shadow-md transition-all ${
           isDark
             ? 'bg-[#13171B] border-[#1E242B] ring-1 ring-white/[0.04]'
@@ -420,32 +420,29 @@ export function OverviewTab({
               <span className={`text-[10px] font-bold uppercase tracking-wider ${isDark ? 'text-white' : 'text-zinc-950'}`}>
                 {isFil ? 'BATERYA' : 'BATTERY'}
               </span>
+            </div>
+            <div className="flex items-center gap-1.5 mt-0.5">
+              <span className={`text-[9.5px] font-mono ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-600'}`}>
+                {vBatLive.toFixed(2)}V
+              </span>
               <span className={`text-[8.5px] font-mono px-1 rounded font-bold ${
                 isDark ? 'bg-[#00E676]/15 text-[#00E676]' : 'bg-emerald-100 text-emerald-800'
               }`}>
-                TNE12-15 · 12V
-              </span>
-            </div>
-            <div className="flex items-center gap-1.5 mt-0.5">
-              <span className={`text-[10.5px] font-mono font-bold tabular-nums ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-600'}`}>
-                {vBatLive.toFixed(2)}V
-              </span>
-              <span className={`text-[9px] font-mono ${isDark ? 'text-zinc-500' : 'text-zinc-500'}`}>
-                · 15Ah
+                TNE12-15 · 12V 15Ah
               </span>
             </div>
           </div>
 
-          {/* Large 4-Bar Battery Graphic (Bar-only, no percentage text) */}
+          {/* Large 4-Bar Battery Casing Graphic (Replaces 0% text + thin lines) */}
           <div
-            className="flex items-center justify-start mt-2"
+            className="flex items-center justify-start mt-2 mb-0.5"
             role="meter"
             aria-valuenow={activeBars}
             aria-valuemin={0}
             aria-valuemax={4}
             aria-label={`Battery level ${activeBars} of 4 bars`}
           >
-            <Battery4BarIcon activeBars={activeBars} isDark={isDark} size={56} />
+            <Battery4BarIcon activeBars={activeBars} isDark={isDark} size={96} />
           </div>
         </div>
 
