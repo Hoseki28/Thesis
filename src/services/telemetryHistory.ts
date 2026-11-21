@@ -200,16 +200,45 @@ export class TelemetryHistoryManager {
   }
 
   /**
-   * Export all recorded telemetry points to a clean CSV file specifically formatted for Excel analysis.
+   * Filter chronological records to at most one sample per `intervalSeconds` (e.g. 900s = 15 minutes).
+   * Always keeps the first sample (t = 0) and then the first sample at or after each interval boundary.
+   * Passing `intervalSeconds <= 0` returns all recorded samples.
+   */
+  public filterByInterval<T extends { timestamp?: number }>(records: T[], intervalSeconds: number): T[] {
+    if (!records.length || intervalSeconds <= 0) return records
+    const intervalMs = intervalSeconds * 1000
+    const selected: T[] = [records[0]]
+    let lastTs = records[0].timestamp ?? 0
+
+    for (let i = 1; i < records.length; i++) {
+      const ts = records[i].timestamp ?? 0
+      if (ts - lastTs >= intervalMs) {
+        selected.push(records[i])
+        lastTs = ts
+      }
+    }
+    return selected
+  }
+
+  public getExportRowCount(intervalSeconds: number = 900): number {
+    const base = this.fullLog.length > 0 ? this.fullLog : this.points
+    if (base.length === 0) return 0
+    return this.filterByInterval(base, intervalSeconds).length
+  }
+
+  /**
+   * Export recorded telemetry points to a clean CSV file specifically formatted for Excel analysis.
+   * Defaults to 15-minute (900s) intervals so multi-hour thesis runs produce clean, compact Excel tables.
    * Prepends UTF-8 BOM (\uFEFF) so Excel on Windows immediately opens columns without delimiter confusion.
    */
   public exportCsv(
     feedstock?: string,
     runId?: string,
     filenamePrefix: string = 'bteg_esp32_readings_excel',
-    fallbackCurrent?: TelemetryData
+    fallbackCurrent?: TelemetryData,
+    intervalSeconds: number = 900
   ): boolean {
-    const records = this.fullLog.length > 0
+    const rawRecords = this.fullLog.length > 0
       ? this.fullLog
       : this.points.length > 0
       ? this.points.map((pt) => ({
@@ -246,13 +275,17 @@ export class TelemetryHistoryManager {
         ]
       : []
 
-    if (records.length === 0) {
+    if (rawRecords.length === 0) {
       return false
     }
+
+    const records = this.filterByInterval(rawRecords, intervalSeconds)
+    const firstTs = records[0].timestamp || Date.now()
 
     const headers = [
       'Date (PHT)',
       'Time (PHT)',
+      'Elapsed_Min',
       'Run_ID',
       'Feedstock',
       'Battery_Voltage_V',
@@ -300,7 +333,9 @@ export class TelemetryHistoryManager {
     const rows = records.map((row: any) => {
       const activeFeedstock = feedstock || row.feedstock || 'Biomass_Charcoal'
       const activeRunId = runId || row.runId || 'RUN-01'
-      const { dateStr, timeStr } = formatExcelDateTime(row.timestamp || Date.now())
+      const rowTs = row.timestamp || Date.now()
+      const { dateStr, timeStr } = formatExcelDateTime(rowTs)
+      const elapsedMin = Math.max(0, (rowTs - firstTs) / 60000).toFixed(1)
 
       const vBatNum = Number.isFinite(row.vBat) ? Number(row.vBat) : Number(row.batteryVoltage || 0)
       const vTegNum = Number.isFinite(row.vTeg) ? Number(row.vTeg) : Number(row.tegVoltage || 0)
@@ -328,6 +363,7 @@ export class TelemetryHistoryManager {
       return [
         `="${dateStr}"`,
         `="${timeStr}"`,
+        elapsedMin,
         `"${activeRunId}"`,
         `"${activeFeedstock}"`,
         vBat,
@@ -353,10 +389,11 @@ export class TelemetryHistoryManager {
     const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' })
     const url = URL.createObjectURL(blob)
 
+    const intervalTag = intervalSeconds > 0 ? `${Math.round(intervalSeconds / 60)}min` : '1s'
     const link = document.createElement('a')
     const nowPht = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
     link.setAttribute('href', url)
-    link.setAttribute('download', `${filenamePrefix}_${nowPht}.csv`)
+    link.setAttribute('download', `${filenamePrefix}_${intervalTag}_${nowPht}.csv`)
     document.body.appendChild(link)
     link.click()
     document.body.removeChild(link)

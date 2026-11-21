@@ -27,7 +27,7 @@ interface LogsTabProps {
   telemetry?: TelemetryData
   onAddLog?: (message: string, level: SystemLogLevel, messageFil?: string) => void
   onClearLogs?: () => void
-  onExportCsv?: () => void
+  onExportCsv?: (intervalSeconds: number) => void
   onExportEventLogs?: () => void
   lang: Lang
   theme?: 'dark' | 'light'
@@ -52,6 +52,7 @@ export function LogsTab({
   const isConnected = hardwareState.status === 'connected'
 
   const [filter, setFilter] = useState<FilterLevel>('all')
+  const [exportIntervalSec, setExportIntervalSec] = useState<number>(900)
   const [exportedNotice, setExportedNotice] = useState<string | null>(null)
   const [showConsole, setShowConsole] = useState<boolean>(false)
 
@@ -78,17 +79,26 @@ export function LogsTab({
     error: logs.filter((l) => l.level === 'error').length,
   }
 
-  const telemetrySampleCount = historyManager.getStats().sampleCount
+  const telemetryRowCount = historyManager.getExportRowCount(exportIntervalSec)
+  const intervalLabel =
+    exportIntervalSec === 900
+      ? '15 MIN'
+      : exportIntervalSec === 300
+      ? '5 MIN'
+      : exportIntervalSec === 60
+      ? '1 MIN'
+      : '1 SEC'
 
   const handleExportTelemetry = () => {
     if (onExportCsv) {
-      onExportCsv()
+      onExportCsv(exportIntervalSec)
     } else {
       historyManager.exportCsv(
         telemetry?.feedstock || 'Biomass_Charcoal',
         telemetry?.runId || 'RUN-01',
         'bteg_esp32_readings_excel',
-        telemetry
+        telemetry,
+        exportIntervalSec
       )
     }
     setExportedNotice('telemetry')
@@ -297,6 +307,45 @@ export function LogsTab({
 
       {/* ── ACTION BUTTONS ──────────────────────────────────────────── */}
       <div className="flex flex-col gap-2 pt-1 font-sans">
+        {/* CSV Sampling Interval Selector (Default: Every 15 Minutes) */}
+        <div
+          className={`p-2 rounded-xl border flex items-center justify-between gap-2 ${
+            isDark ? 'bg-[#13171B] border-[#1E242B]' : 'bg-white border-zinc-200'
+          }`}
+        >
+          <span className={`text-[10px] font-mono font-bold uppercase tracking-wider pl-1 ${isDark ? 'text-zinc-400' : 'text-zinc-600'}`}>
+            {isFil ? 'Agwat ng CSV:' : 'CSV Interval:'}
+          </span>
+          <div className="flex items-center gap-1">
+            {[
+              { sec: 900, label: '15m' },
+              { sec: 300, label: '5m' },
+              { sec: 60, label: '1m' },
+              { sec: 0, label: '1s' },
+            ].map((opt) => {
+              const active = exportIntervalSec === opt.sec
+              return (
+                <button
+                  key={opt.sec}
+                  type="button"
+                  onClick={() => setExportIntervalSec(opt.sec)}
+                  className={`px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold uppercase transition-colors cursor-pointer min-h-[32px] ${
+                    active
+                      ? isDark
+                        ? 'bg-[#00E676] text-zinc-950'
+                        : 'bg-emerald-600 text-white'
+                      : isDark
+                      ? 'bg-[#0B0F12] text-zinc-400 hover:text-white border border-[#1E242B]'
+                      : 'bg-zinc-100 text-zinc-600 hover:text-zinc-900'
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              )
+            })}
+          </div>
+        </div>
+
         {/* Primary Excel Export: Full ESP32 Sensor Readings (Vbat, Vteg, Current, Power, Temps) */}
         <button
           type="button"
@@ -312,11 +361,9 @@ export function LogsTab({
           <span className="truncate">
             {exportedNotice === 'telemetry'
               ? isFil
-                ? 'NA-DOWNLOAD NA ANG ESP32 EXCEL CSV'
-                : 'ESP32 READINGS CSV DOWNLOADED'
-              : isFil
-              ? `EXPORT ESP32 READINGS EXCEL (${telemetrySampleCount})`
-              : `EXPORT ESP32 READINGS EXCEL (${telemetrySampleCount})`}
+                ? `NA-DOWNLOAD NA (${intervalLabel})`
+                : `ESP32 CSV DOWNLOADED (${intervalLabel})`
+              : `EXPORT ESP32 EXCEL · ${intervalLabel} (${telemetryRowCount})`}
           </span>
         </button>
 

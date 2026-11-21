@@ -546,12 +546,13 @@ export default function App() {
               telemetry={telemetry}
               onAddLog={(msg, lvl, fil) => systemLogManager.addSystemLog(msg, lvl, fil)}
               onClearLogs={() => systemLogManager.clearLogs()}
-              onExportCsv={() => {
+              onExportCsv={(intervalSeconds = 900) => {
                 historyManagerRef.current.exportCsv(
                   telemetry.feedstock || 'Biomass_Charcoal',
                   telemetry.runId || 'RUN-01',
                   'bteg_esp32_readings_excel',
-                  telemetry
+                  telemetry,
+                  intervalSeconds
                 )
               }}
               onExportEventLogs={() => {
