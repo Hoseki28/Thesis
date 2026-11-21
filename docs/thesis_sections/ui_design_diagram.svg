@@ -1,0 +1,129 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 680" width="1600" height="680" font-family="'Segoe UI', Inter, -apple-system, BlinkMacSystemFont, Arial, sans-serif">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 1 1 L 9 5 L 1 9" fill="none" stroke="#9ca3af" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+    <marker id="arrow-bi" viewBox="0 0 10 10" refX="2" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M 9 1 L 1 5 L 9 9" fill="none" stroke="#9ca3af" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+    <filter id="shadow" x="-5%" y="-5%" width="110%" height="115%">
+      <feDropShadow dx="0" dy="4" stdDeviation="6" flood-color="#000000" flood-opacity="0.35"/>
+    </filter>
+  </defs>
+
+  <rect width="1600" height="680" fill="#2b2b2b"/>
+
+  <!-- Top Container: Persistent HMI Shell -->
+  <rect x="40" y="36" width="1520" height="210" rx="16" fill="none" stroke="#3f3f46" stroke-width="1.5" stroke-dasharray="6 6"/>
+  <text x="65" y="64" fill="#9ca3af" font-size="13" font-weight="600" letter-spacing="1.2">PERSISTENT HMI APPLICATION SHELL &amp; CONNECTION WORKFLOW (App.tsx, Header.tsx, BottomNav.tsx)</text>
+
+  <!-- User / Operator -->
+  <g filter="url(#shadow)">
+    <rect x="75" y="92" width="215" height="122" rx="18" fill="#002b54" stroke="#1e4f82" stroke-width="1.8"/>
+    <text x="182.5" y="124" fill="#99d1ff" font-size="15.5" font-weight="700" text-anchor="middle">User / Operator</text>
+    <line x1="95" y1="136" x2="270" y2="136" stroke="#1e4f82" stroke-width="1"/>
+    <text x="182.5" y="156" fill="#c7e5ff" font-size="12" text-anchor="middle">Smartphone / Laptop PWA</text>
+    <text x="182.5" y="176" fill="#c7e5ff" font-size="12" text-anchor="middle">Dark / Light Theme Toggle</text>
+    <text x="182.5" y="196" fill="#c7e5ff" font-size="12" text-anchor="middle">English / Filipino (EN/FIL)</text>
+  </g>
+
+  <line x1="290" y1="153" x2="345" y2="153" stroke="#9ca3af" stroke-width="1.8" marker-end="url(#arrow)"/>
+
+  <!-- Persistent Header -->
+  <g filter="url(#shadow)">
+    <rect x="350" y="92" width="280" height="122" rx="18" fill="#002b54" stroke="#1e4f82" stroke-width="1.8"/>
+    <text x="490" y="124" fill="#99d1ff" font-size="15.5" font-weight="700" text-anchor="middle">Persistent Header (Header.tsx)</text>
+    <line x1="370" y1="136" x2="610" y2="136" stroke="#1e4f82" stroke-width="1"/>
+    <text x="490" y="156" fill="#c7e5ff" font-size="12" text-anchor="middle">TEG Monitoring Brand &amp; PHT Clock</text>
+    <text x="490" y="176" fill="#c7e5ff" font-size="12" text-anchor="middle">ESP32 LIVE / CONNECT ESP32 Pill</text>
+    <text x="490" y="196" fill="#c7e5ff" font-size="12" text-anchor="middle">Theme, Language &amp; Connect Trigger</text>
+  </g>
+
+  <line x1="635" y1="153" x2="685" y2="153" stroke="#9ca3af" stroke-width="1.8" marker-start="url(#arrow-bi)" marker-end="url(#arrow)"/>
+
+  <!-- Bottom Navigation -->
+  <g filter="url(#shadow)">
+    <rect x="690" y="92" width="280" height="122" rx="18" fill="#002b54" stroke="#1e4f82" stroke-width="1.8"/>
+    <text x="830" y="124" fill="#99d1ff" font-size="15.5" font-weight="700" text-anchor="middle">Bottom Navigation (BottomNav.tsx)</text>
+    <line x1="710" y1="136" x2="950" y2="136" stroke="#1e4f82" stroke-width="1"/>
+    <text x="830" y="156" fill="#c7e5ff" font-size="12" text-anchor="middle">4-Tab Mobile Thumb-Zone Bar</text>
+    <text x="830" y="176" fill="#c7e5ff" font-size="12" text-anchor="middle">Overview · Sensors · Service · Logs</text>
+    <text x="830" y="196" fill="#c7e5ff" font-size="12" text-anchor="middle">Switches Active Zero-Scroll View</text>
+  </g>
+
+  <line x1="975" y1="153" x2="1030" y2="153" stroke="#9ca3af" stroke-width="1.8" marker-start="url(#arrow-bi)" marker-end="url(#arrow)"/>
+
+  <!-- Connection Modal -->
+  <g filter="url(#shadow)">
+    <rect x="1035" y="92" width="280" height="122" rx="18" fill="#002b54" stroke="#1e4f82" stroke-width="1.8"/>
+    <text x="1175" y="124" fill="#99d1ff" font-size="15.5" font-weight="700" text-anchor="middle">Connection Modal (2-Tab Hub)</text>
+    <line x1="1055" y1="136" x2="1295" y2="136" stroke="#1e4f82" stroke-width="1"/>
+    <text x="1175" y="156" fill="#c7e5ff" font-size="12" text-anchor="middle">1. Bluetooth BLE ("TEG_Charger" NUS)</text>
+    <text x="1175" y="176" fill="#c7e5ff" font-size="12" text-anchor="middle">2. Wired USB Serial (115200 bps)</text>
+    <text x="1175" y="196" fill="#c7e5ff" font-size="12" text-anchor="middle">Live Packet &amp; Link Diagnostics</text>
+  </g>
+
+  <!-- Bottom Container: Primary HMI Screen Views (4-Tab Architecture) -->
+  <rect x="40" y="282" width="1520" height="360" rx="16" fill="none" stroke="#3f3f46" stroke-width="1.5" stroke-dasharray="6 6"/>
+  <text x="65" y="310" fill="#9ca3af" font-size="13" font-weight="600" letter-spacing="1.2">PRIMARY HMI SCREEN VIEWS (4-TAB ZERO-SCROLL MOBILE ARCHITECTURE)</text>
+
+  <!-- Tree connector from BottomNav to 4 tabs -->
+  <line x1="830" y1="214" x2="830" y2="332" stroke="#9ca3af" stroke-width="1.8"/>
+  <line x1="230" y1="332" x2="1370" y2="332" stroke="#9ca3af" stroke-width="1.8"/>
+  <line x1="230" y1="332" x2="230" y2="365" stroke="#9ca3af" stroke-width="1.8" marker-end="url(#arrow)"/>
+  <line x1="610" y1="332" x2="610" y2="365" stroke="#9ca3af" stroke-width="1.8" marker-end="url(#arrow)"/>
+  <line x1="990" y1="332" x2="990" y2="365" stroke="#9ca3af" stroke-width="1.8" marker-end="url(#arrow)"/>
+  <line x1="1370" y1="332" x2="1370" y2="365" stroke="#9ca3af" stroke-width="1.8" marker-end="url(#arrow)"/>
+
+  <!-- 1. Overview Tab -->
+  <g filter="url(#shadow)">
+    <rect x="70" y="370" width="320" height="235" rx="18" fill="#002b54" stroke="#1e4f82" stroke-width="1.8"/>
+    <text x="230" y="402" fill="#99d1ff" font-size="16" font-weight="700" text-anchor="middle">1. Overview Tab (Electrical)</text>
+    <line x1="95" y1="414" x2="365" y2="414" stroke="#1e4f82" stroke-width="1"/>
+    <text x="230" y="438" fill="#c7e5ff" font-size="12" text-anchor="middle">Charger Relay (GPIO14) OPEN / CLOSED</text>
+    <text x="230" y="460" fill="#c7e5ff" font-size="12" text-anchor="middle">ESP32 6-State Machine Status Row</text>
+    <text x="230" y="482" fill="#c7e5ff" font-size="12" text-anchor="middle">Harvested Energy (Wh) Progress Bar</text>
+    <text x="230" y="504" fill="#c7e5ff" font-size="12" text-anchor="middle">Battery (GPIO32) 4-Bar Graphic &amp; V</text>
+    <text x="230" y="526" fill="#c7e5ff" font-size="12" text-anchor="middle">TEG Boost (GPIO33) Voltage &amp; Peak V</text>
+    <text x="230" y="548" fill="#c7e5ff" font-size="12" text-anchor="middle">Current (GPIO35) &amp; Charge Power (W)</text>
+  </g>
+
+  <!-- 2. Sensors Tab -->
+  <g filter="url(#shadow)">
+    <rect x="450" y="370" width="320" height="235" rx="18" fill="#002b54" stroke="#1e4f82" stroke-width="1.8"/>
+    <text x="610" y="402" fill="#99d1ff" font-size="16" font-weight="700" text-anchor="middle">2. Sensors Tab (Thermal)</text>
+    <line x1="475" y1="414" x2="745" y2="414" stroke="#1e4f82" stroke-width="1"/>
+    <text x="610" y="438" fill="#c7e5ff" font-size="12" text-anchor="middle">Thermal Safety &amp; Cutoff Monitor Card</text>
+    <text x="610" y="460" fill="#c7e5ff" font-size="12" text-anchor="middle">Stove (&lt;230°C) · Sink (&lt;60°C) · Bat (0-40°C)</text>
+    <text x="610" y="482" fill="#c7e5ff" font-size="12" text-anchor="middle">Temp Difference (Hot − Cold ΔT °C)</text>
+    <text x="610" y="504" fill="#c7e5ff" font-size="12" text-anchor="middle">Hot TC (GPIO5) &amp; Cold TC (GPIO17)</text>
+    <text x="610" y="526" fill="#c7e5ff" font-size="12" text-anchor="middle">DHT22 Battery Temp &amp; Humidity (%RH)</text>
+    <text x="610" y="548" fill="#c7e5ff" font-size="12" text-anchor="middle">Thermal Voltage Comp (-24/-18 mV/°C)</text>
+  </g>
+
+  <!-- 3. Service & Calibration Tab -->
+  <g filter="url(#shadow)">
+    <rect x="830" y="370" width="320" height="235" rx="18" fill="#002b54" stroke="#1e4f82" stroke-width="1.8"/>
+    <text x="990" y="402" fill="#99d1ff" font-size="16" font-weight="700" text-anchor="middle">3. Service &amp; Calibration Tab</text>
+    <line x1="855" y1="414" x2="1125" y2="414" stroke="#1e4f82" stroke-width="1"/>
+    <text x="990" y="438" fill="#c7e5ff" font-size="12" text-anchor="middle">2×4 Live ESP32 Sensor Health Grid</text>
+    <text x="990" y="460" fill="#c7e5ff" font-size="12" text-anchor="middle">Charge Mode Override (Auto/On/Off/r)</text>
+    <text x="990" y="482" fill="#c7e5ff" font-size="12" text-anchor="middle">Quick Hardware Cmds (Reset Wh/LED/Mute)</text>
+    <text x="990" y="504" fill="#c7e5ff" font-size="12" text-anchor="middle">Calibration Studio Drawer (B, G, I)</text>
+    <text x="990" y="526" fill="#c7e5ff" font-size="12" text-anchor="middle">Hot &amp; Cold TC Calibration (TH, TC, TX)</text>
+    <text x="990" y="548" fill="#c7e5ff" font-size="12" text-anchor="middle">Zero ACS712 (k), Pins (v), Reset NVS (X)</text>
+  </g>
+
+  <!-- 4. Logs Tab -->
+  <g filter="url(#shadow)">
+    <rect x="1210" y="370" width="320" height="235" rx="18" fill="#002b54" stroke="#1e4f82" stroke-width="1.8"/>
+    <text x="1370" y="402" fill="#99d1ff" font-size="16" font-weight="700" text-anchor="middle">4. Logs Tab (CSV &amp; Events)</text>
+    <line x1="1235" y1="414" x2="1505" y2="414" stroke="#1e4f82" stroke-width="1"/>
+    <text x="1370" y="438" fill="#c7e5ff" font-size="12" text-anchor="middle">CSV Interval Selector (15M/5M/1M/1S)</text>
+    <text x="1370" y="460" fill="#c7e5ff" font-size="12" text-anchor="middle">20-Col ESP32 Excel .CSV Export Button</text>
+    <text x="1370" y="482" fill="#c7e5ff" font-size="12" text-anchor="middle">Split Date &amp; Time PHT (No ### Error)</text>
+    <text x="1370" y="504" fill="#c7e5ff" font-size="12" text-anchor="middle">Severity Filter (ALL/INFO/WARN/ERROR)</text>
+    <text x="1370" y="526" fill="#c7e5ff" font-size="12" text-anchor="middle">Expandable Live USB/BLE Serial Console</text>
+    <text x="1370" y="548" fill="#c7e5ff" font-size="12" text-anchor="middle">Clear Log Buffer &amp; Session Counter</text>
+  </g>
+</svg>

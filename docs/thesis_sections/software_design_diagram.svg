@@ -1,0 +1,126 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 680" width="1600" height="680" font-family="'Segoe UI', Inter, -apple-system, BlinkMacSystemFont, Arial, sans-serif">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 1 1 L 9 5 L 1 9" fill="none" stroke="#9ca3af" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+    <marker id="arrow-bi" viewBox="0 0 10 10" refX="2" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M 9 1 L 1 5 L 9 9" fill="none" stroke="#9ca3af" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+    <filter id="shadow" x="-5%" y="-5%" width="110%" height="115%">
+      <feDropShadow dx="0" dy="4" stdDeviation="6" flood-color="#000000" flood-opacity="0.35"/>
+    </filter>
+  </defs>
+
+  <rect width="1600" height="680" fill="#2b2b2b"/>
+
+  <rect x="45" y="42" width="765" height="440" rx="16" fill="none" stroke="#3f3f46" stroke-width="1.5" stroke-dasharray="6 6"/>
+  <text x="65" y="70" fill="#9ca3af" font-size="13" font-weight="600" letter-spacing="1.2">TIER 1: EMBEDDED HARDWARE &amp; ESP32 FIRMWARE (firmware/thesis_updated.ino)</text>
+
+  <rect x="850" y="42" width="705" height="590" rx="16" fill="none" stroke="#3f3f46" stroke-width="1.5" stroke-dasharray="6 6"/>
+  <text x="870" y="70" fill="#9ca3af" font-size="13" font-weight="600" letter-spacing="1.2">TIER 2: TEG MONITORING PWA CLIENT (React 19 + TypeScript + Vite 8)</text>
+
+  <!-- 1. MEASUREMENT DEVICE -->
+  <g filter="url(#shadow)">
+    <rect x="70" y="210" width="215" height="125" rx="18" fill="#002b54" stroke="#1e4f82" stroke-width="1.8"/>
+    <text x="177.5" y="246" fill="#99d1ff" font-size="16" font-weight="700" text-anchor="middle">Measurement device</text>
+    <line x1="95" y1="258" x2="260" y2="258" stroke="#1e4f82" stroke-width="1"/>
+    <text x="177.5" y="278" fill="#c7e5ff" font-size="12" text-anchor="middle">• 2× MAX31855 Type-K (GPIO5/17)</text>
+    <text x="177.5" y="296" fill="#c7e5ff" font-size="12" text-anchor="middle">• ACS712-5A Current (GPIO35)</text>
+    <text x="177.5" y="314" fill="#c7e5ff" font-size="12" text-anchor="middle">• 47k/10k &amp; 150k/10k + DHT22 (GPIO23)</text>
+  </g>
+
+  <line x1="285" y1="272.5" x2="323" y2="272.5" stroke="#9ca3af" stroke-width="1.8" marker-end="url(#arrow)"/>
+  <text x="304" y="258" fill="#9ca3af" font-size="10.5" text-anchor="middle">SPI / ADC</text>
+
+  <!-- 2. DATA COLLECTION -->
+  <g filter="url(#shadow)">
+    <rect x="328" y="210" width="210" height="125" rx="18" fill="#002b54" stroke="#1e4f82" stroke-width="1.8"/>
+    <text x="433" y="246" fill="#99d1ff" font-size="16" font-weight="700" text-anchor="middle">Data collection</text>
+    <line x1="353" y1="258" x2="513" y2="258" stroke="#1e4f82" stroke-width="1"/>
+    <text x="433" y="278" fill="#c7e5ff" font-size="12" text-anchor="middle">• ESP32 readSensors() (250 ms)</text>
+    <text x="433" y="296" fill="#c7e5ff" font-size="12" text-anchor="middle">• 64× ADC Oversampling (12-bit)</text>
+    <text x="433" y="314" fill="#c7e5ff" font-size="12" text-anchor="middle">• 32-bit SPI Frame (GPIO 5,17,18,19)</text>
+  </g>
+
+  <line x1="538" y1="272.5" x2="576" y2="272.5" stroke="#9ca3af" stroke-width="1.8" marker-end="url(#arrow)"/>
+  <text x="557" y="258" fill="#9ca3af" font-size="10.5" text-anchor="middle">Raw</text>
+
+  <!-- 3. VALIDATION AND PROCESSING -->
+  <g filter="url(#shadow)">
+    <rect x="581" y="210" width="210" height="125" rx="18" fill="#002b54" stroke="#1e4f82" stroke-width="1.8"/>
+    <text x="686" y="246" fill="#99d1ff" font-size="16" font-weight="700" text-anchor="middle">Validation and processing</text>
+    <line x1="601" y1="258" x2="771" y2="258" stroke="#1e4f82" stroke-width="1"/>
+    <text x="686" y="278" fill="#c7e5ff" font-size="12" text-anchor="middle">• Thermal Safety (&lt;230°C/&lt;60°C/0-40°C)</text>
+    <text x="686" y="296" fill="#c7e5ff" font-size="12" text-anchor="middle">• chargeControl() (-24/-18 mV/°C)</text>
+    <text x="686" y="314" fill="#c7e5ff" font-size="12" text-anchor="middle">• Relay GPIO14, I2C LCD, 8s WDT</text>
+  </g>
+
+  <!-- ESP32 NVS Flash Cylinder -->
+  <g filter="url(#shadow)">
+    <path d="M 626 395 L 626 445 A 60 12 0 0 0 746 445 L 746 395 Z" fill="#002b54" stroke="#1e4f82" stroke-width="1.8"/>
+    <ellipse cx="686" cy="395" rx="60" ry="12" fill="#003566" stroke="#1e4f82" stroke-width="1.8"/>
+    <text x="686" y="422" fill="#99d1ff" font-size="13.5" font-weight="700" text-anchor="middle">ESP32 NVS Flash</text>
+    <text x="686" y="440" fill="#c7e5ff" font-size="11" text-anchor="middle">Preferences "cal"</text>
+  </g>
+  <line x1="686" y1="340" x2="686" y2="378" stroke="#9ca3af" stroke-width="1.8" marker-start="url(#arrow-bi)" marker-end="url(#arrow)"/>
+
+  <!-- Arrow 3 <-> 4 -->
+  <line x1="796" y1="272.5" x2="868" y2="272.5" stroke="#9ca3af" stroke-width="1.8" marker-start="url(#arrow-bi)" marker-end="url(#arrow)"/>
+  <text x="832" y="252" fill="#99d1ff" font-size="11" font-weight="600" text-anchor="middle">BLE / USB</text>
+  <text x="832" y="292" fill="#9ca3af" font-size="10.5" text-anchor="middle">115200 bps</text>
+
+  <!-- 4. APPLICATION SERVICE -->
+  <g filter="url(#shadow)">
+    <rect x="874" y="210" width="225" height="125" rx="18" fill="#002b54" stroke="#1e4f82" stroke-width="1.8"/>
+    <text x="986.5" y="246" fill="#99d1ff" font-size="16" font-weight="700" text-anchor="middle">Application service</text>
+    <line x1="896" y1="258" x2="1077" y2="258" stroke="#1e4f82" stroke-width="1"/>
+    <text x="986.5" y="278" fill="#c7e5ff" font-size="12" text-anchor="middle">• hardwareBridge.ts (BLE / USB Serial)</text>
+    <text x="986.5" y="296" fill="#c7e5ff" font-size="12" text-anchor="middle">• Telemetry Parser &amp; Command Sync</text>
+    <text x="986.5" y="314" fill="#c7e5ff" font-size="12" text-anchor="middle">• B, G, I, TH, TC, TX, k, v, X</text>
+  </g>
+
+  <line x1="1104" y1="262" x2="1158" y2="262" stroke="#9ca3af" stroke-width="1.8" marker-start="url(#arrow-bi)" marker-end="url(#arrow)"/>
+
+  <!-- 5. LOCAL DATA STORE (CYLINDER) -->
+  <g filter="url(#shadow)">
+    <path d="M 1165 208 L 1165 314 A 95 18 0 0 0 1355 314 L 1355 208 Z" fill="#002b54" stroke="#1e4f82" stroke-width="1.8"/>
+    <ellipse cx="1260" cy="208" rx="95" ry="18" fill="#003566" stroke="#1e4f82" stroke-width="1.8"/>
+    <text x="1260" y="248" fill="#99d1ff" font-size="15.5" font-weight="700" text-anchor="middle">Local Data Store</text>
+    <text x="1260" y="268" fill="#c7e5ff" font-size="11.5" text-anchor="middle">• Browser localStorage (v5 Cal)</text>
+    <text x="1260" y="286" fill="#c7e5ff" font-size="11.5" text-anchor="middle">• 36,000-Row Telemetry Buffer</text>
+    <text x="1260" y="304" fill="#c7e5ff" font-size="11.5" text-anchor="middle">• 20-Col Excel .CSV (15m/5m/1m/1s)</text>
+  </g>
+
+  <path d="M 1099 295 L 1122 295 Q 1132 295 1132 305 L 1132 455 Q 1132 465 1142 465 L 1158 465" fill="none" stroke="#9ca3af" stroke-width="1.8" marker-end="url(#arrow)"/>
+
+  <!-- 6. USER -->
+  <g filter="url(#shadow)">
+    <rect x="945" y="435" width="145" height="95" rx="18" fill="#002b54" stroke="#1e4f82" stroke-width="1.8"/>
+    <text x="1017.5" y="476" fill="#99d1ff" font-size="16" font-weight="700" text-anchor="middle">User</text>
+    <text x="1017.5" y="500" fill="#c7e5ff" font-size="12" text-anchor="middle">Operator / Researcher</text>
+  </g>
+
+  <line x1="1090" y1="495" x2="1158" y2="495" stroke="#9ca3af" stroke-width="1.8" marker-end="url(#arrow)"/>
+
+  <!-- 7. PWA DASHBOARD -->
+  <g filter="url(#shadow)">
+    <rect x="1165" y="420" width="215" height="125" rx="18" fill="#002b54" stroke="#1e4f82" stroke-width="1.8"/>
+    <text x="1272.5" y="456" fill="#99d1ff" font-size="16" font-weight="700" text-anchor="middle">TEG Monitoring PWA</text>
+    <line x1="1187" y1="468" x2="1358" y2="468" stroke="#1e4f82" stroke-width="1"/>
+    <text x="1272.5" y="488" fill="#c7e5ff" font-size="12" text-anchor="middle">• 1. Overview (Electrical) &amp; 2. Sensors</text>
+    <text x="1272.5" y="506" fill="#c7e5ff" font-size="12" text-anchor="middle">• 3. Service &amp; Calibration (B,G,I,TH,TC)</text>
+    <text x="1272.5" y="524" fill="#c7e5ff" font-size="12" text-anchor="middle">• 4. Logs &amp; 15-Min Excel CSV Export</text>
+  </g>
+
+  <line x1="1385" y1="482.5" x2="1415" y2="482.5" stroke="#9ca3af" stroke-width="1.8" marker-start="url(#arrow-bi)" marker-end="url(#arrow)"/>
+
+  <!-- 8. OFFLINE CACHE -->
+  <g filter="url(#shadow)">
+    <rect x="1420" y="420" width="120" height="125" rx="18" fill="#002b54" stroke="#1e4f82" stroke-width="1.8"/>
+    <text x="1480" y="456" fill="#99d1ff" font-size="15.5" font-weight="700" text-anchor="middle">Offline cache</text>
+    <line x1="1434" y1="468" x2="1526" y2="468" stroke="#1e4f82" stroke-width="1"/>
+    <text x="1480" y="488" fill="#c7e5ff" font-size="11.5" text-anchor="middle">Service Worker</text>
+    <text x="1480" y="506" fill="#c7e5ff" font-size="11.5" text-anchor="middle">public/sw.js</text>
+    <text x="1480" y="524" fill="#c7e5ff" font-size="10.5" text-anchor="middle">teg-pwa-v4.15</text>
+  </g>
+</svg>

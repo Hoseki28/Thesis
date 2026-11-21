@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1560 520" width="1560" height="520" font-family="'Segoe UI', Inter, -apple-system, BlinkMacSystemFont, Arial, sans-serif">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
+      <path d="M 1 1 L 9 5 L 1 9" fill="none" stroke="#8e8e93" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+    <marker id="arrow-bi" viewBox="0 0 10 10" refX="2" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto">
+      <path d="M 9 1 L 1 5 L 9 9" fill="none" stroke="#8e8e93" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+  </defs>
+
+  <rect width="1560" height="520" fill="#2b2b2b"/>
+
+  <rect x="65" y="160" width="205" height="82" rx="18" fill="#002b54" stroke="#1a4977" stroke-width="1.4"/>
+  <text x="167.5" y="196" fill="#99d1ff" font-size="15" font-weight="700" text-anchor="middle">ESP32 Firmware</text>
+  <text x="167.5" y="218" fill="#7ab8eb" font-size="11.5" text-anchor="middle">loadCalibration &amp; handleLine</text>
+
+  <line x1="167.5" y1="246" x2="167.5" y2="294" stroke="#8e8e93" stroke-width="1.5" marker-start="url(#arrow-bi)" marker-end="url(#arrow)"/>
+
+  <path d="M 75 314 L 75 396 A 92.5 16 0 0 0 260 396 L 260 314 Z" fill="#002b54" stroke="#1a4977" stroke-width="1.4"/>
+  <ellipse cx="167.5" cy="314" rx="92.5" ry="16" fill="#002b54" stroke="#1a4977" stroke-width="1.4"/>
+  <text x="167.5" y="356" fill="#99d1ff" font-size="15" font-weight="700" text-anchor="middle">ESP32 NVS Flash</text>
+  <text x="167.5" y="378" fill="#7ab8eb" font-size="11.5" text-anchor="middle">Namespace "cal" (5 keys)</text>
+
+  <line x1="274" y1="201" x2="328" y2="201" stroke="#8e8e93" stroke-width="1.5" marker-start="url(#arrow-bi)" marker-end="url(#arrow)"/>
+
+  <rect x="334" y="160" width="215" height="82" rx="18" fill="#002b54" stroke="#1a4977" stroke-width="1.4"/>
+  <text x="441.5" y="196" fill="#99d1ff" font-size="15" font-weight="700" text-anchor="middle">Hardware Bridge Sync</text>
+  <text x="441.5" y="218" fill="#7ab8eb" font-size="11.5" text-anchor="middle">hardwareBridge &amp; calibrationStorage</text>
+
+  <line x1="441.5" y1="246" x2="441.5" y2="294" stroke="#8e8e93" stroke-width="1.5" marker-start="url(#arrow-bi)" marker-end="url(#arrow)"/>
+
+  <path d="M 341.5 314 L 341.5 396 A 100 16 0 0 0 541.5 396 L 541.5 314 Z" fill="#002b54" stroke="#1a4977" stroke-width="1.4"/>
+  <ellipse cx="441.5" cy="314" rx="100" ry="16" fill="#002b54" stroke="#1a4977" stroke-width="1.4"/>
+  <text x="441.5" y="356" fill="#99d1ff" font-size="15" font-weight="700" text-anchor="middle">Browser localStorage</text>
+  <text x="441.5" y="378" fill="#7ab8eb" font-size="11.5" text-anchor="middle">padayon_calibration_v5</text>
+
+  <line x1="553" y1="201" x2="607" y2="201" stroke="#8e8e93" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <path d="M 612 164 L 612 246 A 95 16 0 0 0 802 246 L 802 164 Z" fill="#002b54" stroke="#1a4977" stroke-width="1.4"/>
+  <ellipse cx="707" cy="164" rx="95" ry="16" fill="#002b54" stroke="#1a4977" stroke-width="1.4"/>
+  <text x="707" y="204" fill="#99d1ff" font-size="15" font-weight="700" text-anchor="middle">Telemetry Buffer</text>
+  <text x="707" y="226" fill="#7ab8eb" font-size="11.5" text-anchor="middle">36,000-Row RAM Ring (15m-1s)</text>
+
+  <line x1="806" y1="201" x2="860" y2="201" stroke="#8e8e93" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <rect x="866" y="160" width="210" height="82" rx="18" fill="#002b54" stroke="#1a4977" stroke-width="1.4"/>
+  <text x="971" y="196" fill="#99d1ff" font-size="15" font-weight="700" text-anchor="middle">Excel .CSV Export</text>
+  <text x="971" y="218" fill="#7ab8eb" font-size="11.5" text-anchor="middle">20-Col Split Date/Time (.csv)</text>
+
+  <line x1="707" y1="266" x2="707" y2="302" stroke="#8e8e93" stroke-width="1.5" marker-start="url(#arrow-bi)" marker-end="url(#arrow)"/>
+
+  <rect x="607" y="308" width="200" height="82" rx="18" fill="#002b54" stroke="#1a4977" stroke-width="1.4"/>
+  <text x="707" y="344" fill="#99d1ff" font-size="15" font-weight="700" text-anchor="middle">TEG Monitoring PWA</text>
+  <text x="707" y="366" fill="#7ab8eb" font-size="11.5" text-anchor="middle">4-Tab React 19 UI Views</text>
+
+  <line x1="811" y1="349" x2="860" y2="349" stroke="#8e8e93" stroke-width="1.5" marker-start="url(#arrow-bi)" marker-end="url(#arrow)"/>
+
+  <path d="M 866 314 L 866 396 A 105 16 0 0 0 1076 396 L 1076 314 Z" fill="#002b54" stroke="#1a4977" stroke-width="1.4"/>
+  <ellipse cx="971" cy="314" rx="105" ry="16" fill="#002b54" stroke="#1a4977" stroke-width="1.4"/>
+  <text x="971" y="356" fill="#99d1ff" font-size="15" font-weight="700" text-anchor="middle">Offline CacheStorage</text>
+  <text x="971" y="378" fill="#7ab8eb" font-size="11.5" text-anchor="middle">Service Worker (sw.js v4.15)</text>
+</svg>
