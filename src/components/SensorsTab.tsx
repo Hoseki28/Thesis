@@ -2,7 +2,7 @@ import { CalibrationConfig, Lang, TelemetryData, TelemetryPoint } from '../types
 import {
   IconThermometer,
   IconColdSink,
-  IconFlame,
+  IconShieldCheck,
 } from './Icons'
 
 interface SensorsTabProps {
@@ -32,6 +32,9 @@ export function SensorsTab({ telemetry, lang, theme = 'dark' }: SensorsTabProps)
   const dhtOk = telemetry.esp32?.dhtOk !== false && telemetry.dhtOk !== false
   const ambTemp = telemetry.tAmb ?? telemetry.ambientTemp ?? 0.0
   const ambHum = telemetry.hum ?? telemetry.humidity ?? 0.0
+
+  const hotOver = isConnected && !telemetry.hotFault && tHotLive >= 230
+  const coldOver = isConnected && !telemetry.coldFault && tColdLive >= 60
   const thermalGuardTripped =
     isConnected &&
     (!dhtOk ||
@@ -57,42 +60,51 @@ export function SensorsTab({ telemetry, lang, theme = 'dark' }: SensorsTabProps)
         </h2>
         <p className={`text-[11px] ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-500'}`}>
           {isFil
-            ? 'MAX31855 Seebeck gradient at DHT22 battery thermal guard'
-            : 'MAX31855 Seebeck gradient & DHT22 battery thermal guard'}
+            ? 'ESP32 thermal cutoffs, MAX31855 thermocouples, at DHT22 guard'
+            : 'ESP32 thermal cutoffs, MAX31855 thermocouples & DHT22 guard'}
         </p>
       </div>
 
-      {/* ── 1. SEEBECK TEMPERATURE DIFFERENTIAL (ΔT = THOT - TCOLD) ─── */}
+      {/* ── 1. THERMAL SAFETY & CUTOFF MONITOR (<230°C / <60°C / 0–40°C) ── */}
       <section
-        className={`rounded-2xl p-4 border flex flex-col gap-2.5 shadow-md transition-colors ${
+        className={`rounded-2xl p-3.5 border flex flex-col gap-2.5 shadow-md transition-colors ${
           isDark ? 'bg-[#13171B] border-[#1E242B]' : 'bg-white border-zinc-200'
         }`}
-        aria-labelledby="seebeck-dt-heading"
+        aria-labelledby="thermal-safety-heading"
       >
         <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-1.5">
-            <IconFlame size={16} className={isDark ? 'text-[#00E676]' : 'text-emerald-700'} />
+          <div className="flex items-center gap-1.5 min-w-0">
+            <IconShieldCheck
+              size={16}
+              className={
+                thermalGuardTripped || hotOver || coldOver
+                  ? 'text-rose-400'
+                  : isDark
+                  ? 'text-[#00E676]'
+                  : 'text-emerald-700'
+              }
+            />
             <span
-              id="seebeck-dt-heading"
-              className={`text-[10px] font-bold uppercase tracking-wider ${
+              id="thermal-safety-heading"
+              className={`text-[10px] font-bold uppercase tracking-wider truncate ${
                 isDark ? 'text-[#9CA3AF]' : 'text-zinc-500'
               }`}
             >
-              {isFil ? 'SEEBECK THERMAL GRADIENT (ΔT)' : 'SEEBECK THERMAL GRADIENT (ΔT)'}
+              {isFil ? 'THERMAL SAFETY & CUTOFF MONITOR' : 'THERMAL SAFETY & CUTOFF MONITOR'}
             </span>
           </div>
 
           <span
-            className={`px-2 py-0.5 rounded-md border text-[9.5px] font-mono font-black uppercase tracking-wider ${
+            className={`px-2 py-0.5 rounded-md border text-[9.5px] font-mono font-black uppercase tracking-wider flex-shrink-0 ${
               !isConnected
                 ? isDark
                   ? 'bg-zinc-800/80 border-zinc-700 text-zinc-400'
                   : 'bg-zinc-100 border-zinc-300 text-zinc-600'
-                : telemetry.hotFault || telemetry.coldFault
+                : thermalGuardTripped
                 ? isDark
                   ? 'bg-rose-500/15 border-rose-500/40 text-rose-400'
                   : 'bg-rose-50 border-rose-300 text-rose-700'
-                : tHotLive >= 230 || tColdLive >= 60
+                : hotOver || coldOver || telemetry.hotFault || telemetry.coldFault
                 ? isDark
                   ? 'bg-amber-500/15 border-amber-500/40 text-amber-400'
                   : 'bg-amber-50 border-amber-300 text-amber-700'
@@ -103,58 +115,129 @@ export function SensorsTab({ telemetry, lang, theme = 'dark' }: SensorsTabProps)
           >
             {!isConnected
               ? 'STANDBY'
+              : thermalGuardTripped
+              ? 'TEMP LOCKOUT'
+              : hotOver
+              ? 'HOT >230°C'
+              : coldOver
+              ? 'SINK >60°C'
               : telemetry.hotFault || telemetry.coldFault
               ? 'PROBE FAULT'
-              : tHotLive >= 230
-              ? 'HOT >230°C'
-              : tColdLive >= 60
-              ? 'SINK >60°C'
-              : 'NOMINAL ΔT'}
+              : 'ALL SAFE'}
           </span>
         </div>
 
-        <div className="flex items-end justify-between">
-          <div className="flex items-baseline">
-            <span
-              className={`text-3xl font-black font-mono tabular-nums tracking-tight ${
-                isDark ? 'text-white' : 'text-zinc-900'
-              }`}
-            >
-              {!isConnected || telemetry.hotFault || telemetry.coldFault
-                ? '--'
-                : dTLive.toFixed(1)}
+        {/* 3 Thermal Protection Zones */}
+        <div className="grid grid-cols-3 gap-2 text-center font-mono">
+          {/* Zone 1: Stove Max <230°C */}
+          <div
+            className={`p-2 rounded-xl border ${
+              hotOver
+                ? 'bg-rose-950/30 border-rose-500/50'
+                : isDark
+                ? 'bg-[#0B0F12] border-[#1E242B]'
+                : 'bg-zinc-50 border-zinc-200'
+            }`}
+          >
+            <span className={`text-[8.5px] block ${isDark ? 'text-zinc-400' : 'text-zinc-500'}`}>
+              STOVE (&lt;230°C)
             </span>
             <span
-              className={`text-xs font-bold ml-1.5 ${
-                isDark ? 'text-[#9CA3AF]' : 'text-zinc-500'
+              className={`text-xs font-black block mt-0.5 ${
+                !isConnected
+                  ? isDark
+                    ? 'text-zinc-400'
+                    : 'text-zinc-500'
+                  : hotOver || telemetry.hotFault
+                  ? 'text-rose-400'
+                  : 'text-[#00E676]'
               }`}
             >
-              °C ΔT
+              {!isConnected
+                ? '-- / 230°C'
+                : telemetry.hotFault
+                ? 'FAULT'
+                : `${tHotLive.toFixed(0)}° / 230°C`}
             </span>
           </div>
-          <span className={`text-[10px] font-mono ${isDark ? 'text-zinc-400' : 'text-zinc-500'}`}>
-            T_hot − T_cold (200°C target)
-          </span>
+
+          {/* Zone 2: Heatsink Max <60°C */}
+          <div
+            className={`p-2 rounded-xl border ${
+              coldOver
+                ? 'bg-rose-950/30 border-rose-500/50'
+                : isDark
+                ? 'bg-[#0B0F12] border-[#1E242B]'
+                : 'bg-zinc-50 border-zinc-200'
+            }`}
+          >
+            <span className={`text-[8.5px] block ${isDark ? 'text-zinc-400' : 'text-zinc-500'}`}>
+              SINK (&lt;60°C)
+            </span>
+            <span
+              className={`text-xs font-black block mt-0.5 ${
+                !isConnected
+                  ? isDark
+                    ? 'text-zinc-400'
+                    : 'text-zinc-500'
+                  : coldOver || telemetry.coldFault
+                  ? 'text-rose-400'
+                  : 'text-[#00E676]'
+              }`}
+            >
+              {!isConnected
+                ? '-- / 60°C'
+                : telemetry.coldFault
+                ? 'FAULT'
+                : `${tColdLive.toFixed(0)}° / 60°C`}
+            </span>
+          </div>
+
+          {/* Zone 3: Battery Charge Guard 0–40°C */}
+          <div
+            className={`p-2 rounded-xl border ${
+              thermalGuardTripped
+                ? 'bg-rose-950/30 border-rose-500/50'
+                : isDark
+                ? 'bg-[#0B0F12] border-[#1E242B]'
+                : 'bg-zinc-50 border-zinc-200'
+            }`}
+          >
+            <span className={`text-[8.5px] block ${isDark ? 'text-zinc-400' : 'text-zinc-500'}`}>
+              BATTERY (0–40°C)
+            </span>
+            <span
+              className={`text-xs font-black block mt-0.5 ${
+                !isConnected
+                  ? isDark
+                    ? 'text-zinc-400'
+                    : 'text-zinc-500'
+                  : thermalGuardTripped
+                  ? 'text-rose-400'
+                  : 'text-[#00E676]'
+              }`}
+            >
+              {!isConnected
+                ? '0–40°C OK'
+                : !dhtOk
+                ? 'DHT ERR'
+                : thermalGuardTripped
+                ? 'LOCKOUT'
+                : `${ambTemp.toFixed(0)}°C SAFE`}
+            </span>
+          </div>
         </div>
 
-        {/* Gradient Progress Bar (0 to 200°C ΔT) */}
-        <div
-          className={`w-full h-2 rounded-full overflow-hidden ${
-            isDark ? 'bg-[#1E242B]' : 'bg-zinc-200'
-          }`}
-        >
-          <div
-            className={`h-full rounded-full transition-all duration-500 ${
-              isDark ? 'bg-[#00E676]' : 'bg-emerald-600'
-            }`}
-            style={{
-              width: `${
-                !isConnected || telemetry.hotFault || telemetry.coldFault
-                  ? 0
-                  : Math.min(100, Math.round((dTLive / 200) * 100))
-              }%`,
-            }}
-          />
+        {/* Compact Temperature Difference (ΔT) Footer */}
+        <div className="flex items-center justify-between text-[10px] font-mono pt-0.5">
+          <span className={isDark ? 'text-zinc-400' : 'text-zinc-500'}>
+            {isFil ? 'Agwat ng Init (Hot − Cold ΔT):' : 'Temp Difference (Hot − Cold ΔT):'}
+          </span>
+          <span className={`font-black ${isDark ? 'text-white' : 'text-zinc-900'}`}>
+            {!isConnected || telemetry.hotFault || telemetry.coldFault
+              ? '-- °C'
+              : `${dTLive.toFixed(1)} °C`}
+          </span>
         </div>
       </section>
 
