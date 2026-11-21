@@ -229,7 +229,8 @@ export class TelemetryHistoryManager {
     }
 
     const headers = [
-      'Timestamp (PHT)',
+      'Date (PHT)',
+      'Time (PHT)',
       'Run_ID',
       'Feedstock',
       'Battery_Voltage_V',
@@ -248,10 +249,35 @@ export class TelemetryHistoryManager {
       'Active_Alarms',
     ]
 
+    const formatExcelDateTime = (tsMs: number) => {
+      try {
+        const d = new Date(tsMs)
+        const parts = new Intl.DateTimeFormat('en-US', {
+          timeZone: 'Asia/Manila',
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit',
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit',
+          hour12: true,
+        }).formatToParts(d)
+        const get = (type: string) => parts.find((p) => p.type === type)?.value || ''
+        const period = get('dayPeriod').toUpperCase() || (d.getHours() >= 12 ? 'PM' : 'AM')
+        return {
+          dateStr: `${get('year')}-${get('month')}-${get('day')}`,
+          timeStr: `${get('hour')}:${get('minute')}:${get('second')} ${period}`,
+        }
+      } catch {
+        const iso = new Date(tsMs).toISOString()
+        return { dateStr: iso.slice(0, 10), timeStr: iso.slice(11, 19) }
+      }
+    }
+
     const rows = records.map((row: any) => {
       const activeFeedstock = feedstock || row.feedstock || 'Biomass_Charcoal'
       const activeRunId = runId || row.runId || 'RUN-01'
-      const timeCell = row.phtTime || row.isoTime || new Date().toLocaleString('en-US', { timeZone: 'Asia/Manila' })
+      const { dateStr, timeStr } = formatExcelDateTime(row.timestamp || Date.now())
 
       const vBat = Number.isFinite(row.vBat) ? Number(row.vBat).toFixed(2) : Number(row.batteryVoltage || 0).toFixed(2)
       const soc = Math.round(row.batteryPct ?? 0)
@@ -270,7 +296,8 @@ export class TelemetryHistoryManager {
       const alarms = row.alarmsStr || 'NOMINAL'
 
       return [
-        `"${timeCell}"`,
+        `="${dateStr}"`,
+        `="${timeStr}"`,
         `"${activeRunId}"`,
         `"${activeFeedstock}"`,
         vBat,

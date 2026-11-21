@@ -3,7 +3,7 @@ import { SystemLogEntry, SystemLogLevel } from '../types/telemetry'
 export const MAX_SYSTEM_LOGS = 50
 
 /**
- * Format timestamps as `YYYY-MM-DD hh:mm AM/PM` in Asia/Manila (PHT, UTC+8) - strictly 12-hour format.
+ * Format timestamps as `YYYY-MM-DD h:mm:ss AM/PM` in Asia/Manila (PHT, UTC+8) - strictly 12-hour format.
  */
 export function formatLogTimestamp(date: Date = new Date()): string {
   try {
@@ -14,16 +14,46 @@ export function formatLogTimestamp(date: Date = new Date()): string {
       day: '2-digit',
       hour: 'numeric',
       minute: '2-digit',
+      second: '2-digit',
       hour12: true,
     })
     const parts = formatter.formatToParts(date)
     const get = (type: string) => parts.find((p) => p.type === type)?.value || ''
     const hour = get('hour') || '12'
     const minute = get('minute') || '00'
+    const second = get('second') || '00'
     const period = parts.find((p) => p.type === 'dayPeriod')?.value?.toUpperCase() || (date.getHours() >= 12 ? 'PM' : 'AM')
-    return `${get('year')}-${get('month')}-${get('day')} ${hour}:${minute} ${period}`
+    return `${get('year')}-${get('month')}-${get('day')} ${hour}:${minute}:${second} ${period}`
   } catch {
     return date.toLocaleString('en-US', { hour12: true })
+  }
+}
+
+/**
+ * Split a timestamp into Excel-safe Date and Time parts (Asia/Manila PHT).
+ */
+export function formatPhtDateAndTime(date: Date): { dateStr: string; timeStr: string } {
+  try {
+    const formatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'Asia/Manila',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: true,
+    })
+    const parts = formatter.formatToParts(date)
+    const get = (type: string) => parts.find((p) => p.type === type)?.value || ''
+    const period = get('dayPeriod').toUpperCase() || (date.getHours() >= 12 ? 'PM' : 'AM')
+    return {
+      dateStr: `${get('year')}-${get('month')}-${get('day')}`,
+      timeStr: `${get('hour')}:${get('minute')}:${get('second')} ${period}`,
+    }
+  } catch {
+    const iso = date.toISOString()
+    return { dateStr: iso.slice(0, 10), timeStr: iso.slice(11, 19) }
   }
 }
 
@@ -136,29 +166,36 @@ export class SystemLogManager {
   }
 
   /**
-   * Export the current dynamic log list as CSV.
+   * Export the current dynamic log list as an Excel-friendly CSV.
+   * Date and Time are split and wrapped in Excel text formulas (`="..."`)
+   * so Microsoft Excel never converts them into numeric date serials that render as `#########`.
    */
   public exportCsv(filename = 'bteg_system_logs'): boolean {
     if (this.logs.length === 0) return false
 
-    const headers = ['Timestamp (PHT)', 'Level', 'Event Description', 'Source', 'Log ID']
-    const rows = this.logs.map((log) => [
-      `"${log.timestamp}"`,
-      `"${log.level.toUpperCase()}"`,
-      `"${log.message.replace(/"/g, '""')}"`,
-      `"${log.source || 'system'}"`,
-      `"${log.id}"`,
-    ])
+    const headers = ['Date (PHT)', 'Time (PHT)', 'Level', 'Event Description', 'Source', 'Log ID']
+    const rows = this.logs.map((log) => {
+      const { dateStr, timeStr } = formatPhtDateAndTime(new Date(log.timestampMs || Date.now()))
+      return [
+        `="${dateStr}"`,
+        `="${timeStr}"`,
+        `"${log.level.toUpperCase()}"`,
+        `"${log.message.replace(/"/g, '""')}"`,
+        `"${log.source || 'system'}"`,
+        `"${log.id}"`,
+      ]
+    })
 
     const csvContent = [headers.join(','), ...rows.map((r) => r.join(','))].join('\r\n')
     // Prepend UTF-8 BOM (\uFEFF) for Excel compatibility
     const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' })
     const url = URL.createObjectURL(blob)
 
-    const dateStr = formatLogTimestamp(new Date()).replace(/[: ]/g, '_')
+    const { dateStr, timeStr } = formatPhtDateAndTime(new Date())
+    const fileStamp = `${dateStr}_${timeStr.replace(/[: ]/g, '-')}`
     const link = document.createElement('a')
     link.href = url
-    link.setAttribute('download', `${filename}_${dateStr}.csv`)
+    link.setAttribute('download', `${filename}_${fileStamp}.csv`)
     document.body.appendChild(link)
     link.click()
     document.body.removeChild(link)
