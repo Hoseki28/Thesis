@@ -170,13 +170,13 @@ export function CalibrationStudio({
   const hotTempVal = currentTelemetry.tHot ?? currentTelemetry.stoveTemp ?? 0.0
   const coldTempVal = currentTelemetry.tCold ?? currentTelemetry.coldFaceTemp ?? 0.0
 
-  const inputClass = `flex-1 rounded-lg px-2.5 py-1.5 text-xs font-mono tabular-nums border focus:outline-none focus:ring-1 focus:ring-emerald-500 ${
+  const inputClass = `flex-1 min-w-0 w-full rounded-lg px-2.5 py-1.5 text-xs font-mono tabular-nums border focus:outline-none focus:ring-1 focus:ring-emerald-500 ${
     isDark
       ? 'bg-[#0B0F12] border-[#1E242B] text-zinc-100 placeholder-zinc-500'
       : 'bg-zinc-50 border-zinc-300 text-zinc-900 placeholder-zinc-400'
   }`
 
-  const cardClass = `rounded-xl p-3 border transition-colors ${
+  const cardClass = `rounded-xl p-3 border overflow-hidden transition-colors ${
     isDark ? 'bg-[#0B0F12] border-[#1E242B]' : 'bg-zinc-50 border-zinc-200'
   }`
 
@@ -282,8 +282,8 @@ export function CalibrationStudio({
         </div>
 
         {/* Battery Volts (B) */}
-        <div className="flex items-center gap-2">
-          <span className={`text-[10.5px] font-mono w-24 flex-shrink-0 ${isDark ? 'text-zinc-400' : 'text-zinc-600'}`}>
+        <div className="flex items-center gap-1.5 min-w-0">
+          <span className={`text-[10.5px] font-mono w-20 sm:w-24 flex-shrink-0 truncate ${isDark ? 'text-zinc-400' : 'text-zinc-600'}`}>
             Battery (V):
           </span>
           <input
@@ -297,15 +297,15 @@ export function CalibrationStudio({
           <button
             type="button"
             onClick={handleSendMultimeterBat}
-            className="h-8 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-mono font-bold cursor-pointer transition-colors flex-shrink-0"
+            className="h-8 min-w-[62px] px-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-mono font-bold cursor-pointer transition-colors flex-shrink-0 text-center"
           >
             B{multiBatV}
           </button>
         </div>
 
         {/* TEG Volts (G) */}
-        <div className="flex items-center gap-2">
-          <span className={`text-[10.5px] font-mono w-24 flex-shrink-0 ${isDark ? 'text-zinc-400' : 'text-zinc-600'}`}>
+        <div className="flex items-center gap-1.5 min-w-0">
+          <span className={`text-[10.5px] font-mono w-20 sm:w-24 flex-shrink-0 truncate ${isDark ? 'text-zinc-400' : 'text-zinc-600'}`}>
             TEG Boost (V):
           </span>
           <input
@@ -319,15 +319,15 @@ export function CalibrationStudio({
           <button
             type="button"
             onClick={handleSendMultimeterTeg}
-            className="h-8 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-mono font-bold cursor-pointer transition-colors flex-shrink-0"
+            className="h-8 min-w-[62px] px-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-mono font-bold cursor-pointer transition-colors flex-shrink-0 text-center"
           >
             G{multiTegV}
           </button>
         </div>
 
         {/* Charge Current Amps (I) */}
-        <div className="flex items-center gap-2">
-          <span className={`text-[10.5px] font-mono w-24 flex-shrink-0 ${isDark ? 'text-zinc-400' : 'text-zinc-600'}`}>
+        <div className="flex items-center gap-1.5 min-w-0">
+          <span className={`text-[10.5px] font-mono w-20 sm:w-24 flex-shrink-0 truncate ${isDark ? 'text-zinc-400' : 'text-zinc-600'}`}>
             Current (A):
           </span>
           <input
@@ -341,15 +341,15 @@ export function CalibrationStudio({
           <button
             type="button"
             onClick={handleSendMultimeterCurrent}
-            className="h-8 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-mono font-bold cursor-pointer transition-colors flex-shrink-0"
+            className="h-8 min-w-[62px] px-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-mono font-bold cursor-pointer transition-colors flex-shrink-0 text-center"
           >
             I{multiCurA}
           </button>
         </div>
 
         {/* Hot Thermocouple Reference °C (TH) */}
-        <div className="flex items-center gap-2">
-          <span className={`text-[10.5px] font-mono w-24 flex-shrink-0 ${isDark ? 'text-zinc-400' : 'text-zinc-600'}`}>
+        <div className="flex items-center gap-1.5 min-w-0">
+          <span className={`text-[10.5px] font-mono w-20 sm:w-24 flex-shrink-0 truncate ${isDark ? 'text-zinc-400' : 'text-zinc-600'}`}>
             Hot TC (°C):
           </span>
           <input
@@ -363,15 +363,15 @@ export function CalibrationStudio({
           <button
             type="button"
             onClick={handleSendRefHotTc}
-            className="h-8 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-mono font-bold cursor-pointer transition-colors flex-shrink-0"
+            className="h-8 min-w-[62px] px-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-mono font-bold cursor-pointer transition-colors flex-shrink-0 text-center"
           >
             TH{refHotC}
           </button>
         </div>
 
         {/* Cold Thermocouple Reference °C (TC) */}
-        <div className="flex items-center gap-2">
-          <span className={`text-[10.5px] font-mono w-24 flex-shrink-0 ${isDark ? 'text-zinc-400' : 'text-zinc-600'}`}>
+        <div className="flex items-center gap-1.5 min-w-0">
+          <span className={`text-[10.5px] font-mono w-20 sm:w-24 flex-shrink-0 truncate ${isDark ? 'text-zinc-400' : 'text-zinc-600'}`}>
             Cold TC (°C):
           </span>
           <input
@@ -385,7 +385,7 @@ export function CalibrationStudio({
           <button
             type="button"
             onClick={handleSendRefColdTc}
-            className="h-8 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-mono font-bold cursor-pointer transition-colors flex-shrink-0"
+            className="h-8 min-w-[62px] px-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-mono font-bold cursor-pointer transition-colors flex-shrink-0 text-center"
           >
             TC{refColdC}
           </button>
