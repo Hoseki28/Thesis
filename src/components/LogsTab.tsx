@@ -305,7 +305,7 @@ export function LogsTab({
         )}
       </div>
 
-      {/* ── ACTION BUTTONS ──────────────────────────────────────────── */}
+      {/* ── ACTION BUTTONS (SINGLE CSV EXPORT + SERIAL CONSOLE) ──────── */}
       <div className="flex flex-col gap-2 pt-1 font-sans">
         {/* CSV Sampling Interval Selector (Default: Every 15 Minutes) */}
         <div
@@ -346,45 +346,25 @@ export function LogsTab({
           </div>
         </div>
 
-        {/* Primary Excel Export: Full ESP32 Sensor Readings (Vbat, Vteg, Current, Power, Temps) */}
-        <button
-          type="button"
-          onClick={handleExportTelemetry}
-          className={`w-full py-3 px-3.5 rounded-xl border text-xs font-black uppercase tracking-wider flex items-center justify-center gap-2 cursor-pointer transition-colors shadow-md min-h-[46px] ${
-            isDark
-              ? 'bg-[#00E676]/15 hover:bg-[#00E676]/25 border-[#00E676]/60 text-[#00E676]'
-              : 'bg-emerald-600 hover:bg-emerald-700 border-emerald-700 text-white'
-          }`}
-          aria-label="Export ESP32 Telemetry Readings Excel CSV"
-        >
-          <IconDownload size={16} className={isDark ? 'text-[#00E676]' : 'text-white'} />
-          <span className="truncate">
-            {exportedNotice === 'telemetry'
-              ? isFil
-                ? `NA-DOWNLOAD NA (${intervalLabel})`
-                : `ESP32 CSV DOWNLOADED (${intervalLabel})`
-              : `EXPORT ESP32 EXCEL · ${intervalLabel} (${telemetryRowCount})`}
-          </span>
-        </button>
-
+        {/* Single Clean Row: Export CSV + Serial Monitor Toggle */}
         <div className="grid grid-cols-2 gap-2">
           <button
             type="button"
-            onClick={handleExportEvents}
-            className={`py-2.5 px-3 rounded-xl border text-xs font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 cursor-pointer transition-colors shadow-md min-h-[44px] ${
+            onClick={handleExportTelemetry}
+            className={`py-2.5 px-3 rounded-xl border text-xs font-black uppercase tracking-wider flex items-center justify-center gap-1.5 cursor-pointer transition-colors shadow-md min-h-[44px] ${
               isDark
-                ? 'bg-[#13171B] hover:bg-[#1E242B] border-[#1E242B] text-zinc-300 hover:text-white'
-                : 'bg-white hover:bg-zinc-50 border-zinc-200 text-zinc-700 hover:text-zinc-900'
+                ? 'bg-[#00E676]/15 hover:bg-[#00E676]/25 border-[#00E676]/60 text-[#00E676]'
+                : 'bg-emerald-600 hover:bg-emerald-700 border-emerald-700 text-white'
             }`}
-            aria-label="Export Event Logs CSV"
+            aria-label="Export ESP32 Readings CSV"
           >
-            <IconDownload size={15} className={isDark ? 'text-zinc-400' : 'text-zinc-600'} />
+            <IconDownload size={15} className={isDark ? 'text-[#00E676]' : 'text-white'} />
             <span className="truncate">
-              {exportedNotice === 'events'
+              {exportedNotice === 'telemetry'
                 ? isFil
-                  ? 'NA-DOWNLOAD NA'
-                  : 'EVENTS SAVED'
-                : 'EVENT LOGS CSV'}
+                  ? 'NA-SAVE NA ANG CSV'
+                  : 'CSV DOWNLOADED'
+                : `EXPORT CSV · ${intervalLabel} (${telemetryRowCount})`}
             </span>
           </button>
 
@@ -401,7 +381,7 @@ export function LogsTab({
             <span className="truncate">
               {showConsole
                 ? isFil ? 'ITAGO ANG SERIAL' : 'HIDE SERIAL'
-                : isFil ? 'BUKSAN ANG SERIAL' : 'USB SERIAL'}
+                : isFil ? 'SERIAL MONITOR' : 'SERIAL MONITOR'}
             </span>
           </button>
         </div>
@@ -464,8 +444,8 @@ export function LogsTab({
             {hardwareState.rawLogs.length === 0 ? (
               <div className={`py-3 text-center text-xs ${isDark ? 'text-zinc-500' : 'text-zinc-400'}`}>
                 {isFil
-                  ? 'Aktibo ang Physics Simulation. Ikabit ang USB Serial para sa live hardware bytes.'
-                  : 'Internal Physics Engine active. Connect USB Serial to view raw bytes.'}
+                  ? 'Walang nakakabit na ESP32. Ikabit sa USB Serial o Bluetooth BLE para makita ang live serial output.'
+                  : 'No ESP32 connected. Connect via USB Serial or Bluetooth BLE to view live serial lines.'}
               </div>
             ) : (
               hardwareState.rawLogs.slice(-25).map((log) => (

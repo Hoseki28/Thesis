@@ -63,43 +63,15 @@ export function formatPhtDateAndTime(date: Date): { dateStr: string; timeStr: st
  */
 export function getInitialSystemLogs(): SystemLogEntry[] {
   const now = Date.now()
-  const offsetTime = (mins: number) => new Date(now - mins * 60 * 1000)
 
   return [
     {
-      id: 'init-4',
-      timestamp: formatLogTimestamp(offsetTime(5)),
-      timestampMs: now - 5 * 60 * 1000,
-      level: 'warning',
-      message: 'State Machine: HOLD/OFF (GPIO14: OPEN) · Standby awaiting battery voltage connection',
-      messageFil: 'State Machine: HOLD/OFF (GPIO14: BUKAS) · Naka-standby habang naghihintay ng baterya',
-      source: 'esp32',
-    },
-    {
-      id: 'init-3',
-      timestamp: formatLogTimestamp(offsetTime(15)),
-      timestampMs: now - 15 * 60 * 1000,
-      level: 'info',
-      message: 'ACS712 Current Sensor (GPIO35) zero-drift calibrated · Multimeter trim gains armed',
-      messageFil: 'ACS712 Current Sensor (GPIO35) zero-drift na-calibrate · Naka-arm ang trim gains',
-      source: 'esp32',
-    },
-    {
-      id: 'init-2',
-      timestamp: formatLogTimestamp(offsetTime(30)),
-      timestampMs: now - 30 * 60 * 1000,
-      level: 'info',
-      message: 'Environmental telemetry online: DHT22 GPIO23 (Amb: 31.2°C, 65% RH), MAX6675 SPI (Hot Face: 0°C)',
-      messageFil: 'Online ang telemetriya ng paligid: DHT22 GPIO23 (31.2°C, 65% RH), MAX6675 SPI (0°C)',
-      source: 'system',
-    },
-    {
       id: 'init-1',
-      timestamp: formatLogTimestamp(offsetTime(60)),
-      timestampMs: now - 60 * 60 * 1000,
+      timestamp: formatLogTimestamp(new Date(now)),
+      timestampMs: now,
       level: 'info',
-      message: 'B-TEG Core Node #01 Wawa Dam initialized · Nordic UART BLE & Serial telemetry online',
-      messageFil: 'B-TEG Core Node #01 Wawa Dam nag-umpisa · Aktibo ang Nordic UART BLE at Serial telemetry',
+      message: 'TEG Monitoring ready. Connect ESP32 via Bluetooth BLE ("TEG_Charger") or USB Serial (115200 baud).',
+      messageFil: 'Handa na ang TEG Monitoring. Ikabit ang ESP32 sa Bluetooth BLE ("TEG_Charger") o USB Serial (115200 baud).',
       source: 'system',
     },
   ]

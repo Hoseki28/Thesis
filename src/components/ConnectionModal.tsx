@@ -4,10 +4,8 @@ import { HardwareState, Lang } from '../types/telemetry'
 import {
   IconUsb,
   IconBluetooth,
-  IconWifi,
   IconCheckCircle,
   IconAlertTriangle,
-  IconRotateCcw,
 } from './Icons'
 
 interface ConnectionModalProps {
@@ -19,7 +17,7 @@ interface ConnectionModalProps {
   theme: 'dark' | 'light'
 }
 
-type TransportTab = 'wired' | 'bluetooth' | 'wifi'
+type TransportTab = 'bluetooth' | 'wired'
 
 export function ConnectionModal({
   isOpen,
@@ -34,9 +32,7 @@ export function ConnectionModal({
   const isConnected = hardwareState.status === 'connected'
   const isConnecting = hardwareState.status === 'connecting'
 
-  const [activeTab, setActiveTab] = useState<TransportTab>('wired')
-  const [baudRate, setBaudRate] = useState<number>(hardwareState.baudRate || 115200)
-  const [wifiUrl, setWifiUrl] = useState<string>('ws://192.168.4.1/ws')
+  const [activeTab, setActiveTab] = useState<TransportTab>('bluetooth')
   const [showDisconnectConfirm, setShowDisconnectConfirm] = useState<boolean>(false)
 
   if (!isOpen) return null
@@ -45,21 +41,14 @@ export function ConnectionModal({
   const isBluetoothSupported = bridge.isWebBluetoothSupported()
 
   const handleConnectWired = async () => {
-    bridge.setBaudRate(baudRate)
-    await bridge.connectSerial(baudRate)
+    bridge.setBaudRate(115200)
+    const ok = await bridge.connectSerial(115200)
+    if (ok) onClose()
   }
 
   const handleConnectBluetooth = async () => {
-    await bridge.connectBluetooth()
-  }
-
-  const handleConnectBluetoothSerial = async () => {
-    bridge.setBaudRate(baudRate)
-    await bridge.connectBluetoothSerial(baudRate)
-  }
-
-  const handleConnectWifi = () => {
-    bridge.connectWebSocket(wifiUrl.trim())
+    const ok = await bridge.connectBluetooth()
+    if (ok) onClose()
   }
 
   const handleConfirmDisconnect = () => {
@@ -83,24 +72,24 @@ export function ConnectionModal({
         }`}
       >
         {/* Modal Header */}
-        <div className={`px-5 py-4 border-b flex items-center justify-between ${
+        <div className={`px-5 py-3.5 border-b flex items-center justify-between ${
           isDark ? 'border-[#222932] bg-[#0E1216]' : 'border-zinc-200 bg-zinc-50'
         }`}>
           <div>
             <h2 id="connection-modal-title" className="text-sm font-black uppercase tracking-wider">
-              {isFil ? 'KONEKSYON NG ESP32' : 'ESP32 CONNECTION HUB'}
+              {isFil ? 'KONEKSYON NG ESP32' : 'ESP32 CONNECTION'}
             </h2>
             <p className={`text-[11px] mt-0.5 ${isDark ? 'text-zinc-400' : 'text-zinc-600'}`}>
               {isFil
-                ? 'Pumili sa Wired USB, Bluetooth BLE, o Wi-Fi'
-                : 'Select Wired USB, Bluetooth BLE, or Wi-Fi'}
+                ? 'Bluetooth BLE ("TEG_Charger") o Wired USB (115200 baud)'
+                : 'Bluetooth BLE ("TEG_Charger") or Wired USB (115200 baud)'}
             </p>
           </div>
 
           <button
             type="button"
             onClick={onClose}
-            className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold transition-colors cursor-pointer min-h-[44px] min-w-[44px] ${
+            className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold transition-colors cursor-pointer min-h-[40px] min-w-[40px] ${
               isDark ? 'bg-[#1E242B] text-zinc-400 hover:text-white' : 'bg-zinc-200 text-zinc-600 hover:text-zinc-900'
             }`}
             aria-label={isFil ? 'Isara ang modal' : 'Close modal'}
@@ -110,11 +99,11 @@ export function ConnectionModal({
         </div>
 
         {/* Modal Body */}
-        <div className="p-5 flex flex-col gap-4 overflow-y-auto max-h-[75vh]">
+        <div className="p-4 flex flex-col gap-3.5">
           {/* ── 1. LIVE CONFIRMATION CARD (When Connected) ──────────────── */}
-          {isConnected && (
+          {isConnected ? (
             <div
-              className={`p-4 rounded-xl border flex flex-col gap-3 shadow-md ${
+              className={`p-3.5 rounded-xl border flex flex-col gap-3 shadow-md ${
                 isDark
                   ? 'bg-emerald-950/25 border-emerald-500/40 text-emerald-300'
                   : 'bg-emerald-50 border-emerald-300 text-emerald-900'
@@ -122,13 +111,13 @@ export function ConnectionModal({
             >
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <IconCheckCircle size={20} className="text-emerald-500 flex-shrink-0" />
+                  <IconCheckCircle size={18} className="text-emerald-500 flex-shrink-0" />
                   <span className="text-xs font-black uppercase tracking-wider">
-                    {isFil ? 'KUMPIRMADO: NAKAKABIT ANG ESP32' : 'CONFIRMED: ESP32 CONNECTED'}
+                    {isFil ? 'NAKAKABIT ANG ESP32' : 'ESP32 CONNECTED'}
                   </span>
                 </div>
                 <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 font-bold uppercase">
-                  {hardwareState.transport.toUpperCase()}
+                  {hardwareState.transport === 'bluetooth' ? 'BLE UART' : 'USB SERIAL'}
                 </span>
               </div>
 
@@ -137,7 +126,7 @@ export function ConnectionModal({
               }`}>
                 <div>
                   <span className={`block text-[9px] uppercase ${isDark ? 'text-zinc-400' : 'text-zinc-500'}`}>
-                    {isFil ? 'Kagamitan' : 'Device'}
+                    {isFil ? 'Device' : 'Device'}
                   </span>
                   <span className="font-bold truncate block">
                     {hardwareState.deviceName || hardwareState.portInfo}
@@ -145,104 +134,53 @@ export function ConnectionModal({
                 </div>
                 <div>
                   <span className={`block text-[9px] uppercase ${isDark ? 'text-zinc-400' : 'text-zinc-500'}`}>
-                    {isFil ? 'Bilis ng Signal' : 'Latency'}
-                  </span>
-                  <span className="font-bold block tabular-nums">
-                    {hardwareState.latencyMs ? `${hardwareState.latencyMs} ms` : 'Live (10 Hz)'}
-                  </span>
-                </div>
-                <div>
-                  <span className={`block text-[9px] uppercase ${isDark ? 'text-zinc-400' : 'text-zinc-500'}`}>
-                    {isFil ? 'Napasok na Packets' : 'Packets In'}
+                    {isFil ? 'Packets' : 'Packets In'}
                   </span>
                   <span className="font-bold block tabular-nums">
                     {hardwareState.packetsReceived.toLocaleString()}
                   </span>
                 </div>
-                <div>
-                  <span className={`block text-[9px] uppercase ${isDark ? 'text-zinc-400' : 'text-zinc-500'}`}>
-                    {isFil ? 'Huling Datos' : 'Last Packet'}
-                  </span>
-                  <span className="font-bold block tabular-nums">
-                    {hardwareState.lastPacketTime
-                      ? `${Math.max(0, Math.round((Date.now() - hardwareState.lastPacketTime) / 100) / 10)}s nakalipas`
-                      : 'Aktibo'}
-                  </span>
-                </div>
               </div>
 
-              {/* Disconnect Action */}
               {!showDisconnectConfirm ? (
                 <button
                   type="button"
                   onClick={() => setShowDisconnectConfirm(true)}
-                  className="w-full py-2.5 px-3 rounded-lg border border-rose-500/40 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 text-xs font-bold uppercase tracking-wider transition-colors cursor-pointer min-h-[44px]"
+                  className="w-full py-2.5 px-3 rounded-lg border border-rose-500/40 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 text-xs font-bold uppercase tracking-wider transition-colors cursor-pointer min-h-[42px]"
                 >
-                  {isFil ? 'Putulin ang Koneksyon (Disconnect)' : 'Disconnect Hardware'}
+                  {isFil ? 'Putulin ang Koneksyon' : 'Disconnect ESP32'}
                 </button>
               ) : (
-                <div className={`p-3 rounded-lg border flex flex-col gap-2 ${
-                  isDark ? 'bg-rose-950/30 border-rose-500/40' : 'bg-rose-50 border-rose-300'
-                }`}>
-                  <div className="flex items-center gap-1.5 text-rose-400 text-xs font-bold">
-                    <IconAlertTriangle size={15} />
-                    <span>{isFil ? 'Kumpirmahin ang pagputol?' : 'Confirm Disconnect?'}</span>
-                  </div>
-                  <p className={`text-[10px] ${isDark ? 'text-zinc-300' : 'text-zinc-700'}`}>
-                    {isFil
-                      ? 'Babalik ang dashboard sa internal physics simulation mode.'
-                      : 'Dashboard will fall back to internal physics simulation mode.'}
-                  </p>
-                  <div className="grid grid-cols-2 gap-2 mt-1">
-                    <button
-                      type="button"
-                      onClick={() => setShowDisconnectConfirm(false)}
-                      className={`py-2 px-3 rounded text-[11px] font-bold border transition-colors cursor-pointer min-h-[44px] ${
-                        isDark ? 'bg-[#1E242B] border-zinc-700 text-zinc-300' : 'bg-white border-zinc-300 text-zinc-700'
-                      }`}
-                    >
-                      {isFil ? 'Huwag muna' : 'Cancel'}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleConfirmDisconnect}
-                      className="py-2 px-3 rounded bg-rose-600 hover:bg-rose-700 text-white text-[11px] font-bold uppercase transition-colors cursor-pointer min-h-[44px]"
-                    >
-                      {isFil ? 'Oo, Putulin' : 'Yes, Disconnect'}
-                    </button>
-                  </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowDisconnectConfirm(false)}
+                    className={`py-2 px-3 rounded-lg text-xs font-bold border transition-colors cursor-pointer min-h-[42px] ${
+                      isDark ? 'bg-[#1E242B] border-zinc-700 text-zinc-300' : 'bg-white border-zinc-300 text-zinc-700'
+                    }`}
+                  >
+                    {isFil ? 'Kanselahin' : 'Cancel'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleConfirmDisconnect}
+                    className="py-2 px-3 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold uppercase transition-colors cursor-pointer min-h-[42px]"
+                  >
+                    {isFil ? 'Putulin' : 'Disconnect'}
+                  </button>
                 </div>
               )}
             </div>
-          )}
-
-          {/* ── 2. TRANSPORT TABS SELECTOR ──────────────────────────────── */}
-          {!isConnected && (
+          ) : (
             <>
-              <div className={`grid grid-cols-3 gap-1.5 p-1 rounded-xl border ${
+              {/* ── 2. CLEAN 2-TAB SELECTOR: BLUETOOTH BLE vs WIRED USB ─── */}
+              <div className={`grid grid-cols-2 gap-1.5 p-1 rounded-xl border ${
                 isDark ? 'bg-[#0B0F12] border-[#222932]' : 'bg-zinc-100 border-zinc-200'
               }`}>
                 <button
                   type="button"
-                  onClick={() => setActiveTab('wired')}
-                  className={`py-2 px-2 rounded-lg text-xs font-bold flex flex-col items-center gap-1 transition-colors cursor-pointer min-h-[44px] ${
-                    activeTab === 'wired'
-                      ? isDark
-                        ? 'bg-[#1E242B] text-[#00E676] shadow-sm'
-                        : 'bg-white text-emerald-700 shadow-sm'
-                      : isDark
-                      ? 'text-zinc-400 hover:text-white'
-                      : 'text-zinc-600 hover:text-zinc-900'
-                  }`}
-                >
-                  <IconUsb size={16} />
-                  <span className="text-[10px] uppercase">{isFil ? 'Wired USB' : 'Wired USB'}</span>
-                </button>
-
-                <button
-                  type="button"
                   onClick={() => setActiveTab('bluetooth')}
-                  className={`py-2 px-2 rounded-lg text-xs font-bold flex flex-col items-center gap-1 transition-colors cursor-pointer min-h-[44px] ${
+                  className={`py-2 px-3 rounded-lg text-xs font-bold flex items-center justify-center gap-2 transition-colors cursor-pointer min-h-[42px] ${
                     activeTab === 'bluetooth'
                       ? isDark
                         ? 'bg-[#1E242B] text-sky-400 shadow-sm'
@@ -252,234 +190,111 @@ export function ConnectionModal({
                       : 'text-zinc-600 hover:text-zinc-900'
                   }`}
                 >
-                  <IconBluetooth size={16} />
-                  <span className="text-[10px] uppercase">Bluetooth</span>
+                  <IconBluetooth size={15} />
+                  <span className="text-[11px] uppercase">Bluetooth BLE</span>
                 </button>
 
                 <button
                   type="button"
-                  onClick={() => setActiveTab('wifi')}
-                  className={`py-2 px-2 rounded-lg text-xs font-bold flex flex-col items-center gap-1 transition-colors cursor-pointer min-h-[44px] ${
-                    activeTab === 'wifi'
+                  onClick={() => setActiveTab('wired')}
+                  className={`py-2 px-3 rounded-lg text-xs font-bold flex items-center justify-center gap-2 transition-colors cursor-pointer min-h-[42px] ${
+                    activeTab === 'wired'
                       ? isDark
-                        ? 'bg-[#1E242B] text-amber-400 shadow-sm'
-                        : 'bg-white text-amber-700 shadow-sm'
+                        ? 'bg-[#1E242B] text-[#00E676] shadow-sm'
+                        : 'bg-white text-emerald-700 shadow-sm'
                       : isDark
                       ? 'text-zinc-400 hover:text-white'
                       : 'text-zinc-600 hover:text-zinc-900'
                   }`}
                 >
-                  <IconWifi size={16} />
-                  <span className="text-[10px] uppercase">Wi-Fi</span>
+                  <IconUsb size={15} />
+                  <span className="text-[11px] uppercase">Wired USB</span>
                 </button>
               </div>
 
-              {/* ── TAB 1: WIRED USB ────────────────────────────────────── */}
+              {/* ── TAB 1: BLUETOOTH BLE ("TEG_Charger") ──────────────── */}
+              {activeTab === 'bluetooth' && (
+                <div className="flex flex-col gap-3">
+                  <div className={`p-3 rounded-xl border text-xs flex flex-col gap-1.5 ${
+                    isDark ? 'bg-[#0B0F12] border-[#222932]' : 'bg-zinc-50 border-zinc-200'
+                  }`}>
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-[11px] uppercase tracking-wider text-sky-400">
+                        BLE UART · TEG_Charger
+                      </span>
+                      <span className={`text-[10px] font-mono ${isDark ? 'text-zinc-500' : 'text-zinc-500'}`}>
+                        Nordic UART
+                      </span>
+                    </div>
+                    <p className={`text-[11px] leading-relaxed ${isDark ? 'text-zinc-300' : 'text-zinc-700'}`}>
+                      {isFil
+                        ? 'Buksan ang Bluetooth ng phone o laptop, pindutin ang button sa ibaba, at piliin ang "TEG_Charger" sa popup.'
+                        : 'Turn on Bluetooth on your phone or PC, click the button below, and select "TEG_Charger" from the popup.'}
+                    </p>
+                    {!isBluetoothSupported && (
+                      <span className="text-amber-400 text-[10.5px] font-semibold">
+                        {isFil
+                          ? 'Gumamit ng Chrome o Edge browser para sa Web Bluetooth.'
+                          : 'Use Chrome or Edge browser for Web Bluetooth support.'}
+                      </span>
+                    )}
+                  </div>
+
+                  <button
+                    type="button"
+                    disabled={!isBluetoothSupported || isConnecting}
+                    onClick={handleConnectBluetooth}
+                    className="w-full py-3 px-4 rounded-xl bg-sky-600 hover:bg-sky-500 disabled:opacity-50 text-white text-xs font-black uppercase tracking-wider flex items-center justify-center gap-2 cursor-pointer transition-colors shadow-lg min-h-[46px]"
+                  >
+                    <IconBluetooth size={16} />
+                    <span>
+                      {isConnecting
+                        ? (isFil ? 'KUMUKONEKTA...' : 'CONNECTING...')
+                        : (isFil ? 'IKABIT ANG BLUETOOTH (TEG_CHARGER)' : 'CONNECT BLUETOOTH (TEG_CHARGER)')}
+                    </span>
+                  </button>
+                </div>
+              )}
+
+              {/* ── TAB 2: WIRED USB (115200 BAUD) ────────────────────── */}
               {activeTab === 'wired' && (
                 <div className="flex flex-col gap-3">
                   <div className={`p-3 rounded-xl border text-xs flex flex-col gap-1.5 ${
                     isDark ? 'bg-[#0B0F12] border-[#222932]' : 'bg-zinc-50 border-zinc-200'
                   }`}>
-                    <span className="font-bold text-[11px] uppercase tracking-wider text-emerald-500">
-                      Web Serial API
-                    </span>
-                    <p className={`text-[11px] ${isDark ? 'text-zinc-300' : 'text-zinc-700'}`}>
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-[11px] uppercase tracking-wider text-emerald-500">
+                        USB Serial · 115200 Baud
+                      </span>
+                      <span className={`text-[10px] font-mono ${isDark ? 'text-zinc-500' : 'text-zinc-500'}`}>
+                        Web Serial
+                      </span>
+                    </div>
+                    <p className={`text-[11px] leading-relaxed ${isDark ? 'text-zinc-300' : 'text-zinc-700'}`}>
                       {isFil
-                        ? 'Direktang ikabit ang ESP32 sa pamamagitan ng USB Type-C o Micro-USB cable sa laptop o computer.'
-                        : 'Connect ESP32 directly via USB Type-C or Micro-USB cable to your laptop or PC.'}
+                        ? 'Isaksak ang ESP32 gamit ang USB data cable sa laptop o PC at piliin ang COM port.'
+                        : 'Plug the ESP32 via USB data cable into your laptop or PC and select the COM port.'}
                     </p>
                     {!isSerialSupported && (
-                      <span className="text-amber-500 text-[10px] font-bold">
-                        ⚠️ Web Serial is only supported in Chromium browsers (Chrome, Edge, Opera).
+                      <span className="text-amber-400 text-[10.5px] font-semibold">
+                        {isFil
+                          ? 'Sa desktop Chrome o Edge lang gumagana ang Wired USB. Gamitin ang Bluetooth BLE sa mobile.'
+                          : 'Wired USB requires desktop Chrome or Edge. Use Bluetooth BLE on mobile.'}
                       </span>
                     )}
-                  </div>
-
-                  {/* Baud Rate Picker */}
-                  <div className="flex flex-col gap-1.5">
-                    <label
-                      htmlFor="baud-rate-select"
-                      className={`text-[10px] font-bold uppercase tracking-wider ${isDark ? 'text-zinc-400' : 'text-zinc-600'}`}
-                    >
-                      Baud Rate (Speed)
-                    </label>
-                    <select
-                      id="baud-rate-select"
-                      value={baudRate}
-                      onChange={(e) => setBaudRate(Number(e.target.value))}
-                      className={`w-full p-2.5 rounded-lg border text-xs font-mono font-bold cursor-pointer min-h-[44px] ${
-                        isDark ? 'bg-[#0B0F12] border-[#222932] text-zinc-200' : 'bg-white border-zinc-300 text-zinc-900'
-                      }`}
-                    >
-                      <option value={9600}>9600 baud</option>
-                      <option value={19200}>19200 baud</option>
-                      <option value={38400}>38400 baud</option>
-                      <option value={57600}>57600 baud</option>
-                      <option value={115200}>115200 baud (Default ESP32)</option>
-                    </select>
                   </div>
 
                   <button
                     type="button"
                     disabled={!isSerialSupported || isConnecting}
                     onClick={handleConnectWired}
-                    className="w-full py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-xs font-black uppercase tracking-wider flex items-center justify-center gap-2 cursor-pointer transition-colors shadow-lg min-h-[44px]"
+                    className="w-full py-3 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-xs font-black uppercase tracking-wider flex items-center justify-center gap-2 cursor-pointer transition-colors shadow-lg min-h-[46px]"
                   >
                     <IconUsb size={16} />
                     <span>
                       {isConnecting
                         ? (isFil ? 'KUMUKONEKTA...' : 'CONNECTING...')
-                        : (isFil ? 'IKABIT ANG WIRED USB' : 'CONNECT VIA USB')}
-                    </span>
-                  </button>
-                </div>
-              )}
-
-              {/* ── TAB 2: BLUETOOTH (CLASSIC SPP + BLE) ────────────────── */}
-              {activeTab === 'bluetooth' && (
-                <div className="flex flex-col gap-3">
-                  {/* Bluetooth Instructions Card */}
-                  <div className={`p-3 rounded-xl border text-xs flex flex-col gap-2 ${
-                    isDark ? 'bg-[#0B0F12] border-[#222932]' : 'bg-zinc-50 border-zinc-200'
-                  }`}>
-                    <div className="flex items-center gap-1.5 text-sky-400 font-bold text-[11px] uppercase tracking-wider">
-                      <IconBluetooth size={14} />
-                      <span>ESP32 Bluetooth ("TEG_Charger")</span>
-                    </div>
-
-                    <p className={`text-[11px] leading-relaxed ${isDark ? 'text-zinc-300' : 'text-zinc-700'}`}>
-                      {isFil
-                        ? '1. I-pair muna ang "TEG_Charger" sa Bluetooth settings ng iyong device (PIN: 1234 o wala). 2. Pindutin ang button sa ibaba upang buksan ang live serial stream.'
-                        : '1. First pair "TEG_Charger" in your device Bluetooth settings (PIN: 1234 or none). 2. Click the button below to connect the live serial stream.'}
-                    </p>
-
-                    {!isSerialSupported && (
-                      <div className="p-2 rounded-lg bg-amber-500/10 border border-amber-500/25 text-amber-400 text-[10.5px] leading-relaxed">
-                        {isFil
-                          ? '💡 Paalala sa Mobile: Hindi sinusuportahan ng Android Chrome ang Web Serial para sa Classic Bluetooth. Sa Android phone, gamitin ang "Serial Bluetooth Terminal" app mula sa Play Store, o buksan ang dashboard sa PC/laptop gamit ang Chrome o Edge.'
-                          : '💡 Mobile Note: Android Chrome does not support Web Serial for Classic Bluetooth. On Android phones, use the "Serial Bluetooth Terminal" app from the Play Store, or open this dashboard on a PC/laptop using Chrome or Edge.'}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Primary Connection Button: Web Serial to Bluetooth COM port */}
-                  {isSerialSupported && (
-                    <button
-                      type="button"
-                      disabled={isConnecting}
-                      onClick={handleConnectBluetoothSerial}
-                      className="w-full py-3 px-4 rounded-xl bg-sky-600 hover:bg-sky-500 disabled:opacity-50 text-white text-xs font-black uppercase tracking-wider flex items-center justify-center gap-2 cursor-pointer transition-colors shadow-lg min-h-[44px]"
-                    >
-                      <IconBluetooth size={16} />
-                      <span>
-                        {isConnecting
-                          ? (isFil ? 'KUMUKONEKTA...' : 'CONNECTING BLUETOOTH...')
-                          : (isFil ? 'IKABIT ANG BLUETOOTH SERIAL (COM PORT)' : 'CONNECT BLUETOOTH SERIAL (COM PORT)')}
-                      </span>
-                    </button>
-                  )}
-
-                  {/* Secondary/Optional: Direct Web Bluetooth BLE */}
-                  {isBluetoothSupported && (
-                    <div className="flex flex-col gap-1.5 pt-1">
-                      <button
-                        type="button"
-                        disabled={isConnecting}
-                        onClick={handleConnectBluetooth}
-                        className={`w-full py-2.5 px-4 rounded-xl border text-[11px] font-black uppercase tracking-wider flex items-center justify-center gap-2 cursor-pointer transition-colors min-h-[42px] ${
-                          !isSerialSupported
-                            ? 'bg-sky-600 hover:bg-sky-500 border-sky-500 text-white shadow-lg'
-                            : isDark
-                            ? 'bg-[#181E24] hover:bg-[#1E262E] border-sky-500/40 text-sky-300'
-                            : 'bg-sky-50 hover:bg-sky-100 border-sky-300 text-sky-800'
-                        }`}
-                      >
-                        <IconBluetooth size={15} />
-                        <span>
-                          {isFil
-                            ? 'SCAN VIA DIRECT WEB BLUETOOTH (BLE)'
-                            : 'SCAN VIA DIRECT WEB BLUETOOTH (BLE)'}
-                        </span>
-                      </button>
-                      <span className={`text-[9.5px] text-center ${isDark ? 'text-zinc-500' : 'text-zinc-500'}`}>
-                        {isFil
-                          ? 'Kailangan na naka-ON ang Bluetooth sa iyong device at pinapayagan ng browser.'
-                          : 'Requires Bluetooth turned ON in device settings and enabled in browser.'}
-                      </span>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* ── TAB 3: WI-FI NETWORK ────────────────────────────────── */}
-              {activeTab === 'wifi' && (
-                <div className="flex flex-col gap-3">
-                  <div className={`p-3 rounded-xl border text-xs flex flex-col gap-1.5 ${
-                    isDark ? 'bg-[#0B0F12] border-[#222932]' : 'bg-zinc-50 border-zinc-200'
-                  }`}>
-                    <span className="font-bold text-[11px] uppercase tracking-wider text-amber-400">
-                      Wi-Fi WebSocket
-                    </span>
-                    <p className={`text-[11px] ${isDark ? 'text-zinc-300' : 'text-zinc-700'}`}>
-                      {isFil
-                        ? 'Kumonekta sa pamamagitan ng Wi-Fi SoftAP ng ESP32 (192.168.4.1) o local network IP.'
-                        : 'Connect via ESP32 SoftAP hotspot (192.168.4.1) or your local Wi-Fi router IP.'}
-                    </p>
-                  </div>
-
-                  {/* WebSocket URL Input */}
-                  <div className="flex flex-col gap-1.5">
-                    <label
-                      htmlFor="ws-url-input"
-                      className={`text-[10px] font-bold uppercase tracking-wider ${isDark ? 'text-zinc-400' : 'text-zinc-600'}`}
-                    >
-                      WebSocket URL
-                    </label>
-                    <input
-                      id="ws-url-input"
-                      type="text"
-                      value={wifiUrl}
-                      onChange={(e) => setWifiUrl(e.target.value)}
-                      placeholder="ws://192.168.4.1/ws"
-                      className={`w-full p-2.5 rounded-lg border text-xs font-mono font-bold min-h-[44px] ${
-                        isDark ? 'bg-[#0B0F12] border-[#222932] text-zinc-200' : 'bg-white border-zinc-300 text-zinc-900'
-                      }`}
-                    />
-                  </div>
-
-                  {/* Quick Presets */}
-                  <div className="flex items-center gap-1.5">
-                    <button
-                      type="button"
-                      onClick={() => setWifiUrl('ws://192.168.4.1/ws')}
-                      className={`px-2.5 py-1.5 rounded text-[10px] font-mono font-bold border transition-colors cursor-pointer min-h-[44px] ${
-                        isDark ? 'bg-[#1E242B] border-[#222932] text-zinc-300' : 'bg-zinc-100 border-zinc-300 text-zinc-700'
-                      }`}
-                    >
-                      ESP32 AP (192.168.4.1)
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setWifiUrl('ws://192.168.1.100/ws')}
-                      className={`px-2.5 py-1.5 rounded text-[10px] font-mono font-bold border transition-colors cursor-pointer min-h-[44px] ${
-                        isDark ? 'bg-[#1E242B] border-[#222932] text-zinc-300' : 'bg-zinc-100 border-zinc-300 text-zinc-700'
-                      }`}
-                    >
-                      LAN IP (192.168.1.x)
-                    </button>
-                  </div>
-
-                  <button
-                    type="button"
-                    disabled={isConnecting}
-                    onClick={handleConnectWifi}
-                    className="w-full py-3 px-4 rounded-xl bg-amber-600 hover:bg-amber-500 disabled:opacity-50 text-white text-xs font-black uppercase tracking-wider flex items-center justify-center gap-2 cursor-pointer transition-colors shadow-lg min-h-[44px]"
-                  >
-                    <IconWifi size={16} />
-                    <span>
-                      {isConnecting
-                        ? (isFil ? 'KUMUKONEKTA...' : 'CONNECTING...')
-                        : (isFil ? 'IKABIT ANG WI-FI' : 'CONNECT VIA WI-FI')}
+                        : (isFil ? 'IKABIT ANG USB SERIAL' : 'CONNECT USB SERIAL')}
                     </span>
                   </button>
                 </div>
@@ -489,8 +304,8 @@ export function ConnectionModal({
 
           {/* Last Error Message if any */}
           {hardwareState.lastError && (
-            <div className="p-3 rounded-lg bg-rose-500/10 border border-rose-500/30 text-rose-400 text-xs flex items-start gap-2">
-              <IconAlertTriangle size={16} className="flex-shrink-0 mt-0.5" />
+            <div className="p-2.5 rounded-lg bg-rose-500/10 border border-rose-500/30 text-rose-400 text-xs flex items-start gap-2">
+              <IconAlertTriangle size={15} className="flex-shrink-0 mt-0.5" />
               <span className="leading-tight">{hardwareState.lastError}</span>
             </div>
           )}
@@ -502,7 +317,7 @@ export function ConnectionModal({
         }`}>
           <div className="flex items-center gap-2">
             <span
-              className={`w-2.5 h-2.5 rounded-full ${
+              className={`w-2 h-2 rounded-full ${
                 isConnected
                   ? 'bg-emerald-400 animate-pulse'
                   : isConnecting
@@ -514,17 +329,17 @@ export function ConnectionModal({
               isConnected ? 'text-emerald-400' : isDark ? 'text-zinc-400' : 'text-zinc-600'
             }`}>
               {isConnected
-                ? (isFil ? 'ONLINE (LIVE HARDWARE)' : 'ONLINE (LIVE HARDWARE)')
+                ? (isFil ? 'NAKAKABIT SA ESP32' : 'ESP32 ONLINE')
                 : isConnecting
                 ? (isFil ? 'KUMUKONEKTA...' : 'CONNECTING...')
-                : (isFil ? 'STANDBY (SIMULATED)' : 'STANDBY (SIMULATED)')}
+                : (isFil ? 'HINDI NAKAKABIT' : 'DISCONNECTED')}
             </span>
           </div>
 
           <button
             type="button"
             onClick={onClose}
-            className={`px-3 py-1.5 rounded-lg border text-[11px] font-bold uppercase tracking-wider transition-colors cursor-pointer min-h-[44px] ${
+            className={`px-3 py-1.5 rounded-lg border text-[11px] font-bold uppercase tracking-wider transition-colors cursor-pointer min-h-[38px] ${
               isDark ? 'bg-[#1E242B] border-zinc-700 text-zinc-300 hover:text-white' : 'bg-white border-zinc-300 text-zinc-700 hover:text-zinc-900'
             }`}
           >
