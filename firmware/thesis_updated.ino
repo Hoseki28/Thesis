@@ -160,15 +160,17 @@ struct Thermocouple {
   float hist[5];     // last readings for the median filter
   uint8_t n, idx;
   uint8_t badCount;  // consecutive bad frames, fault is raised after TC_FAULT_HOLD
+  uint8_t goodCount; // consecutive good frames, fault is cleared after TC_CLEAR_HOLD
   bool fault;
   const char *why;
   uint32_t frame;    // last raw frame, shown by the v command
   uint8_t spikes;    // readings skipped by the spike filter in a row
 };
 const uint8_t TC_FAULT_HOLD = 3;          // 3 bad frames in a row (0.75 s) before showing a fault
+const uint8_t TC_CLEAR_HOLD = 3;          // 3 good frames in a row (0.75 s) before clearing a fault
 const float   TC_SPIKE_C = 25.0f;         // a single reading that jumps more than this vs the median is ignored
-Thermocouple tcHotS  = {"hot",  PIN_CS_HOT,  0, 0, 0, 0, {0}, 0, 0, 0, true, "not read yet", 0};
-Thermocouple tcColdS = {"cold", PIN_CS_COLD, 0, 0, 0, 0, {0}, 0, 0, 0, true, "not read yet", 0};
+Thermocouple tcHotS  = {"hot",  PIN_CS_HOT,  0, 0, 0, 0, {0}, 0, 0, 0, 0, true, "not read yet", 0, 0};
+Thermocouple tcColdS = {"cold", PIN_CS_COLD, 0, 0, 0, 0, {0}, 0, 0, 0, 0, true, "not read yet", 0, 0};
 
 bool lcdOK = false, relayOn = false, muted = false, detailed = false, jsonMode = false;
 float vBat = 0, vTeg = 0, iTeg = 0, pTeg = 0, whTotal = 0, tHot = -1, tCold = -1, tAmb = -1, hum = -1;
@@ -287,18 +289,20 @@ float readPinMv(uint8_t pin) {                 // calibrated millivolt reading, 
 // ---------------- MAX31855 driver ----------------
 uint32_t tcReadFrame(int cs) {
   // SCK idles low. D31 is on SO as soon as CS falls; each falling SCK edge shifts the next bit out.
+  // Conservative 5 us half-periods (~100 kHz) and 10 us post-CS release prevent glitches on long jumper wires.
   digitalWrite(PIN_SCK, LOW);
   digitalWrite(cs, LOW);
-  delayMicroseconds(2);                       // tCSS is 100 ns, 2 us leaves margin for long wires
+  delayMicroseconds(5);                       // tCSS is 100 ns, 5 us leaves margin for long wires
   uint32_t d = 0;
   for (int i = 0; i < 32; i++) {
     digitalWrite(PIN_SCK, HIGH);
-    delayMicroseconds(1);
+    delayMicroseconds(5);
     d = (d << 1) | (digitalRead(PIN_MISO) ? 1u : 0u);
     digitalWrite(PIN_SCK, LOW);
-    delayMicroseconds(1);
+    delayMicroseconds(5);
   }
   digitalWrite(cs, HIGH);                     // CS high starts the next conversion
+  delayMicroseconds(10);                      // allow shared SO line to release before reading the other chip
   return d;
 }
 
@@ -365,11 +369,13 @@ void tcUpdate(Thermocouple &t) {
   }
 
   if (bad) {
+    t.goodCount = 0;
     if (t.badCount < 255) t.badCount++;
     if (t.badCount >= TC_FAULT_HOLD) { t.fault = true; t.why = bad; t.n = 0; t.idx = 0; }
     return;                              // keep the last good value during a short glitch
   }
   t.badCount = 0;
+  if (t.goodCount < 255) t.goodCount++;
 
   int16_t tc14 = (int16_t)((f >> 16) & 0xFFFC) >> 2;   // sign-extend the 14-bit field
   int16_t cj12 = (int16_t)(f & 0xFFF0) >> 4;           // sign-extend the 12-bit field
@@ -386,8 +392,11 @@ void tcUpdate(Thermocouple &t) {
   t.idx = (t.idx + 1) % 5;
   if (t.n < 5) t.n++;
   t.tc = median5(t.hist, t.n) + t.offset;
-  t.fault = false;
-  t.why = "ok";
+  bool initialBoot = (t.fault && strcmp(t.why, "not read yet") == 0);
+  if (!t.fault || initialBoot || t.goodCount >= TC_CLEAR_HOLD) {
+    t.fault = false;
+    t.why = "ok";
+  }
 }
 
 // ---------------- sensor reading ----------------
