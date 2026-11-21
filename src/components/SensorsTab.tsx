@@ -12,14 +12,30 @@ interface SensorsTabProps {
   theme?: 'dark' | 'light'
 }
 
-export function SensorsTab({ telemetry, calibration, historyPoints = [], lang, theme = 'dark' }: SensorsTabProps) {
+export function SensorsTab({ telemetry, lang, theme = 'dark' }: SensorsTabProps) {
   const isFil = lang === 'fil'
   const isDark = theme === 'dark'
+  const isConnected =
+    telemetry.source === 'hardware' ||
+    telemetry.source === 'serial' ||
+    telemetry.source === 'bluetooth' ||
+    telemetry.source === 'esp32'
 
   // Voltage & current readings
   const batteryVoltage = telemetry.vBat ?? telemetry.batteryVoltage ?? 0.0
   const tegVoltage = telemetry.vTeg ?? telemetry.tegVoltage ?? 0.0
   const chargeCurrent = telemetry.iBat ?? telemetry.rawTegCurrent ?? 0.0
+  const battPct = isConnected ? Math.max(0, Math.min(100, Math.round(telemetry.batteryPct ?? 0))) : 0
+
+  // Charge Stage badge for Top Hero Card (IDLE / BULK / FLOAT / LOCKOUT)
+  const chargeStage = (() => {
+    if (!isConnected) return { label: 'IDLE', tone: 'neutral' as const }
+    if (telemetry.stateCode === 6 || telemetry.overcurrentLatched) return { label: 'OVERCURRENT', tone: 'danger' as const }
+    if (telemetry.stateCode === 5 || telemetry.batHot) return { label: 'TEMP LOCKOUT', tone: 'warn' as const }
+    if (telemetry.stateCode === 1 || telemetry.relayOn) return { label: 'BULK', tone: 'active' as const }
+    if (telemetry.stateCode === 2 || telemetry.stateCode === 3) return { label: 'FLOAT', tone: 'info' as const }
+    return { label: 'IDLE', tone: 'neutral' as const }
+  })()
 
   // Power values: In-Battery Power = Vbat × Icharge, TEG Harvest = Vteg × Icharge
   const pBatLive =
@@ -34,32 +50,9 @@ export function SensorsTab({ telemetry, calibration, historyPoints = [], lang, t
       : Math.round(tegVoltage * chargeCurrent * 10) / 10
   const tegWattage = pHarvNum.toFixed(1)
 
-  // SVG Chart rendering (0 to 40W load scale)
-  const width = 340
-  const height = 120
-  const yTicks = [40, 30, 20, 10, 0]
-
-  // Construct chart path using history points
-  const pointsToRender = historyPoints.length > 0
-    ? historyPoints.slice(-12)
-    : [
-        { val: 0 },
-        { val: 0 },
-        { val: 0 },
-        { val: 0 },
-      ]
-
-  const chartStepX = width / Math.max(1, pointsToRender.length - 1)
-  const pathD = pointsToRender
-    .map((pt, i) => {
-      const x = Math.round(i * chartStepX)
-      const rawVal = 'loadPower' in pt ? (pt as any).loadPower : pt.val
-      const val = Number.isFinite(rawVal) ? rawVal : 0
-      const clamped = Math.max(0, Math.min(40, val))
-      const y = Math.round(height - (clamped / 40) * (height - 20) - 10)
-      return `${i === 0 ? 'M' : 'L'} ${x} ${y}`
-    })
-    .join(' ')
+  const dhtOk = telemetry.esp32?.dhtOk !== false
+  const ambTemp = telemetry.tAmb ?? telemetry.ambientTemp ?? 0
+  const thermalGuardTripped = isConnected && (!dhtOk || telemetry.batHot || telemetry.stateCode === 5 || ambTemp >= 40 || ambTemp < 0)
 
   return (
     <div className="flex flex-col gap-3 font-sans">
@@ -73,108 +66,76 @@ export function SensorsTab({ telemetry, calibration, historyPoints = [], lang, t
         </p>
       </div>
 
-      {/* ── 1. BATTERY VOLTAGE CARD ─────────────────────────────────── */}
+      {/* ── 1. TOP HERO CARD: BATTERY VOLTAGE + SoC % & CHARGE STAGE ── */}
       <section
         className={`rounded-2xl p-4 border flex flex-col gap-2 shadow-lg transition-colors ${
           isDark ? 'bg-[#13171B] border-[#1E242B]' : 'bg-white border-zinc-200'
         }`}
         aria-labelledby="battery-voltage-heading"
       >
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-2">
           <span id="battery-voltage-heading" className={`text-[10px] font-bold uppercase tracking-wider ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-500'}`}>
             {isFil ? 'BOLTAHE NG BATERYA' : 'BATTERY VOLTAGE'}
           </span>
-          {/* Gauge Icon */}
-          <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="#00E676" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M12 2a10 10 0 0 0-10 10c0 4.42 2.87 8.17 6.84 9.5.45.08.66-.2.66-.44v-1.7" />
-            <path d="M12 6v6l4 2" />
-          </svg>
+          <div className="flex items-center gap-1.5">
+            {/* SoC % Badge */}
+            <span
+              className={`px-2 py-0.5 rounded-md border text-[10px] font-mono font-bold tabular-nums ${
+                isConnected
+                  ? isDark
+                    ? 'bg-[#0B0F12] border-[#1E242B] text-zinc-200'
+                    : 'bg-zinc-100 border-zinc-200 text-zinc-800'
+                  : isDark
+                  ? 'bg-[#0B0F12] border-[#1E242B] text-zinc-500'
+                  : 'bg-zinc-100 border-zinc-200 text-zinc-400'
+              }`}
+            >
+              {isConnected ? `${battPct}% SoC` : '--% SoC'}
+            </span>
+
+            {/* Charge Stage Badge (IDLE / BULK / FLOAT / LOCKOUT) */}
+            <span
+              className={`px-2 py-0.5 rounded-md border text-[10px] font-mono font-black uppercase tracking-wider ${
+                chargeStage.tone === 'active'
+                  ? isDark
+                    ? 'bg-[#00E676]/15 border-[#00E676]/40 text-[#00E676]'
+                    : 'bg-emerald-50 border-emerald-300 text-emerald-700'
+                  : chargeStage.tone === 'info'
+                  ? isDark
+                    ? 'bg-sky-500/15 border-sky-500/40 text-sky-400'
+                    : 'bg-sky-50 border-sky-300 text-sky-700'
+                  : chargeStage.tone === 'warn'
+                  ? isDark
+                    ? 'bg-amber-500/15 border-amber-500/40 text-amber-400'
+                    : 'bg-amber-50 border-amber-300 text-amber-700'
+                  : chargeStage.tone === 'danger'
+                  ? isDark
+                    ? 'bg-rose-500/15 border-rose-500/40 text-rose-400'
+                    : 'bg-rose-50 border-rose-300 text-rose-700'
+                  : isDark
+                  ? 'bg-zinc-800/80 border-zinc-700 text-zinc-400'
+                  : 'bg-zinc-100 border-zinc-300 text-zinc-600'
+              }`}
+            >
+              {chargeStage.label}
+            </span>
+          </div>
         </div>
 
-        <div className="flex items-baseline mt-1">
-          <span className={`text-3xl font-black font-mono tabular-nums tracking-tight ${isDark ? 'text-white' : 'text-zinc-900'}`}>
-            {batteryVoltage.toFixed(2)}
+        <div className="flex items-end justify-between mt-1">
+          <div className="flex items-baseline">
+            <span className={`text-3xl font-black font-mono tabular-nums tracking-tight ${isDark ? 'text-white' : 'text-zinc-900'}`}>
+              {batteryVoltage.toFixed(2)}
+            </span>
+            <span className={`text-xs font-bold ml-2 ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-500'}`}>V DC</span>
+          </div>
+          <span className={`text-[10px] font-mono ${isDark ? 'text-zinc-400' : 'text-zinc-500'}`}>
+            TNE12-15 · 12V 15Ah
           </span>
-          <span className={`text-xs font-bold ml-2 ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-500'}`}>V DC</span>
         </div>
       </section>
 
-      {/* ── 2. POWER TREND (5M) CHART CARD ──────────────────────────── */}
-      <section
-        className={`rounded-2xl p-4 border flex flex-col gap-2.5 shadow-lg transition-colors ${
-          isDark ? 'bg-[#13171B] border-[#1E242B]' : 'bg-white border-zinc-200'
-        }`}
-        aria-labelledby="power-trend-heading"
-      >
-        <div className="flex items-center justify-between">
-          <span id="power-trend-heading" className={`text-[10px] font-bold uppercase tracking-wider ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-500'}`}>
-            {isFil ? 'DALOY NG KURYENTE (5M)' : 'POWER TREND (5M)'}
-          </span>
-        </div>
-
-        {/* Chart Viewport */}
-        <div className="relative w-full pt-1">
-          <svg viewBox={`0 0 ${width + 36} ${height + 24}`} className="w-full h-auto overflow-visible">
-            {/* Y-Axis labels & Grid lines */}
-            {yTicks.map((tick) => {
-              const y = Math.round(height - (tick / 40) * (height - 20) - 10)
-              return (
-                <g key={tick}>
-                  <text
-                    x="24"
-                    y={y + 3}
-                    textAnchor="end"
-                    fill={isDark ? '#6B7280' : '#9CA3AF'}
-                    fontSize="9"
-                    fontFamily="monospace"
-                  >
-                    {tick}
-                  </text>
-                  <line
-                    x1="32"
-                    y1={y}
-                    x2={width + 32}
-                    y2={y}
-                    stroke={isDark ? '#1E242B' : '#E5E7EB'}
-                    strokeDasharray="3 3"
-                  />
-                </g>
-              )
-            })}
-
-            {/* Signal Path in Emerald Green */}
-            <g transform="translate(32, 0)">
-              <path
-                d={pathD}
-                fill="none"
-                stroke="#00E676"
-                strokeWidth="2.5"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </g>
-
-            {/* X-Axis Timestamps */}
-            <g transform={`translate(32, ${height + 14})`}>
-              {['10:00', '10:05', '10:10', '10:15', '10:20'].map((timeStr, idx) => (
-                <text
-                  key={timeStr}
-                  x={Math.round((idx / 4) * width)}
-                  y="0"
-                  textAnchor="middle"
-                  fill={isDark ? '#6B7280' : '#9CA3AF'}
-                  fontSize="8.5"
-                  fontFamily="monospace"
-                >
-                  {timeStr}
-                </text>
-              ))}
-            </g>
-          </svg>
-        </div>
-      </section>
-
-      {/* ── 3. LOAD & TEG GEN METRIC TILES ──────────────────────────── */}
+      {/* ── 2. MIDDLE 2-COLUMN ROW: IN-BATTERY POWER & TEG HARVEST ─── */}
       <div className="grid grid-cols-2 gap-3">
         {/* IN-BATTERY POWER (Vbat × Icharge) */}
         <div className={`rounded-2xl p-4 border flex flex-col justify-between min-h-[105px] shadow-lg transition-colors ${
@@ -298,27 +259,33 @@ export function SensorsTab({ telemetry, calibration, historyPoints = [], lang, t
             </div>
           </div>
 
-          {/* Row 3: TS1 Thermal Switch */}
+          {/* Row 3: DHT22 Thermal Guard (GPIO23, 0-40°C Charge Window) */}
           <div className={`p-2.5 rounded-xl border flex items-center justify-between transition-colors ${
             isDark ? 'bg-[#0B0F12] border-[#1E242B]' : 'bg-[#F9FAFB] border-zinc-200'
           }`}>
             <div className="flex items-center gap-2">
-              <span className={`w-2 h-2 rounded-full ${telemetry.ts1Tripped ? 'bg-rose-500' : 'bg-[#00E676]'}`} />
+              <span className={`w-2 h-2 rounded-full ${!isConnected ? 'bg-zinc-600' : thermalGuardTripped ? 'bg-rose-500' : 'bg-[#00E676]'}`} />
               <div>
                 <span className={`text-[11px] font-bold block ${isDark ? 'text-white' : 'text-zinc-900'}`}>
-                  CH3: GPIO4 TS1 150°C Thermal Switch
+                  CH3: GPIO23 DHT22 Thermal Guard (0–40°C)
                 </span>
-                <span className={`text-[8.5px] font-mono block ${telemetry.ts1Tripped ? 'text-rose-400 font-bold' : isDark ? 'text-zinc-500' : 'text-zinc-400'}`}>
-                  {telemetry.ts1Tripped ? 'TRIPPED (CLOSED TO GND)' : 'NOMINAL (INTERNAL PULLUP)'}
+                <span className={`text-[8.5px] font-mono block ${thermalGuardTripped ? 'text-rose-400 font-bold' : isDark ? 'text-zinc-500' : 'text-zinc-400'}`}>
+                  {!isConnected
+                    ? 'STANDBY · WAITING FOR ESP32'
+                    : !dhtOk
+                    ? 'DHT22 MISSING · CHARGE LOCKOUT'
+                    : thermalGuardTripped
+                    ? 'OUTSIDE 0–40°C · CHARGE LOCKOUT'
+                    : 'NOMINAL · BATTERY AREA SAFE'}
                 </span>
               </div>
             </div>
             <div className="text-right">
-              <span className={`text-xs font-mono font-black block tabular-nums ${telemetry.ts1Tripped ? 'text-rose-400' : isDark ? 'text-white' : 'text-zinc-900'}`}>
-                {telemetry.ts1Tripped ? 'ALARM' : 'NORMAL'}
+              <span className={`text-xs font-mono font-black block tabular-nums ${thermalGuardTripped ? 'text-rose-400' : isDark ? 'text-white' : 'text-zinc-900'}`}>
+                {!isConnected ? '--' : !dhtOk ? 'ERR' : `${ambTemp.toFixed(1)} °C`}
               </span>
-              <span className={`text-[8.5px] font-mono font-bold uppercase ${telemetry.ts1Tripped ? 'text-rose-400' : 'text-[#00E676]'}`}>
-                {telemetry.ts1Tripped ? 'TRIPPED' : 'OPEN'}
+              <span className={`text-[8.5px] font-mono font-bold uppercase ${!isConnected ? 'text-zinc-500' : thermalGuardTripped ? 'text-rose-400' : 'text-[#00E676]'}`}>
+                {!isConnected ? 'STANDBY' : thermalGuardTripped ? 'LOCKOUT' : 'NORMAL'}
               </span>
             </div>
           </div>
