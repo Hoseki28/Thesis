@@ -23,16 +23,19 @@ export function CalibrationStudio({
   currentTelemetry,
   lang,
   theme = 'dark',
+  onSaveCalibration,
   bridge,
 }: CalibrationStudioProps) {
   const isFil = lang === 'fil'
   const isDark = theme === 'dark'
   const [savedNotice, setSavedNotice] = useState<string | null>(null)
 
-  // Multimeter manual input values for ESP32 B / G / I calibration
+  // Multimeter & Reference Thermometer input values for ESP32 B / G / I / TH / TC calibration
   const [multiBatV, setMultiBatV] = useState<string>('10.24')
   const [multiTegV, setMultiTegV] = useState<string>('13.10')
   const [multiCurA, setMultiCurA] = useState<string>('0.50')
+  const [refHotC, setRefHotC] = useState<string>('28.0')
+  const [refColdC, setRefColdC] = useState<string>('28.0')
 
   const notify = (msg: string) => {
     setSavedNotice(msg)
@@ -78,6 +81,49 @@ export function CalibrationStudio({
     }
   }
 
+  const handleSendRefHotTc = async () => {
+    const val = parseFloat(refHotC)
+    if (!Number.isFinite(val) || val < -20 || val > 1000) return
+    if (bridge) {
+      await bridge.sendCalibrateHotTc(val)
+    }
+    const rawHot = currentTelemetry.tHot ?? currentTelemetry.rawStoveTemp ?? 0
+    if (rawHot > 0) {
+      const newOffset = Math.round((val - rawHot) * 10) / 10
+      onSaveCalibration({ ...config, stoveTempOffset: newOffset })
+    }
+    notify(
+      isFil
+        ? `Ipinadala ang TH${val.toFixed(1)} (Hot Thermocouple GPIO5) sa ESP32!`
+        : `Sent TH${val.toFixed(1)} (Hot Thermocouple GPIO5) reference to ESP32!`
+    )
+  }
+
+  const handleSendRefColdTc = async () => {
+    const val = parseFloat(refColdC)
+    if (!Number.isFinite(val) || val < -20 || val > 1000) return
+    if (bridge) {
+      await bridge.sendCalibrateColdTc(val)
+    }
+    notify(
+      isFil
+        ? `Ipinadala ang TC${val.toFixed(1)} (Cold Thermocouple GPIO17) sa ESP32!`
+        : `Sent TC${val.toFixed(1)} (Cold Thermocouple GPIO17) reference to ESP32!`
+    )
+  }
+
+  const handleClearTcOffsets = async () => {
+    if (bridge) {
+      await bridge.sendClearTcOffsets()
+    }
+    onSaveCalibration({ ...config, stoveTempOffset: 0 })
+    notify(
+      isFil
+        ? 'Ipinadala ang TX (clear thermocouple offsets) sa ESP32!'
+        : 'Sent TX (clear thermocouple offsets) command to ESP32!'
+    )
+  }
+
   const handleTareCurrent = async () => {
     if (bridge) {
       await bridge.sendZeroCurrent()
@@ -121,6 +167,8 @@ export function CalibrationStudio({
   const acsZeroVal = currentTelemetry.acsZero ?? 2.5
   const acsVoltsVal = currentTelemetry.acsVolts ?? 2.5
   const acsOkVal = currentTelemetry.inaOk !== false && acsZeroVal >= 2.30 && acsZeroVal <= 2.70
+  const hotTempVal = currentTelemetry.tHot ?? currentTelemetry.stoveTemp ?? 0.0
+  const coldTempVal = currentTelemetry.tCold ?? currentTelemetry.coldFaceTemp ?? 0.0
 
   const inputClass = `flex-1 rounded-lg px-2.5 py-1.5 text-xs font-mono tabular-nums border focus:outline-none focus:ring-1 focus:ring-emerald-500 ${
     isDark
@@ -141,13 +189,13 @@ export function CalibrationStudio({
         </div>
       )}
 
-      {/* ── 1. LIVE ESP32 NVS TRIMS & ADC VALUES ──────────────────────── */}
+      {/* ── 1. LIVE ESP32 NVS TRIMS & SENSOR VALUES ───────────────────── */}
       <div className={cardClass}>
         <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-1.5">
             <BatteryCharging className="w-3.5 h-3.5 text-[#00E676]" strokeWidth={1.75} />
             <h3 className={`text-[11px] font-bold uppercase tracking-wider ${isDark ? 'text-zinc-200' : 'text-zinc-800'}`}>
-              {isFil ? 'Live ESP32 ADC at NVS Trims' : 'Live ESP32 ADC & NVS Trims'}
+              {isFil ? 'Live ESP32 ADC at Thermocouples' : 'Live ESP32 ADC & Thermocouples'}
             </h3>
           </div>
           <span className={`text-[9.5px] font-mono ${isDark ? 'text-zinc-500' : 'text-zinc-500'}`}>
@@ -197,15 +245,39 @@ export function CalibrationStudio({
               Now {acsVoltsVal.toFixed(2)}V · {acsOkVal ? 'OK' : 'Fault'}
             </span>
           </div>
+
+          <div className={`p-2 rounded-lg border ${isDark ? 'bg-[#13171B] border-[#1E242B]' : 'bg-white border-zinc-200'}`}>
+            <span className={`text-[9px] uppercase font-bold block ${isDark ? 'text-zinc-400' : 'text-zinc-500'}`}>
+              Hot TC (CS GPIO5)
+            </span>
+            <span className={`font-bold text-xs tabular-nums ${currentTelemetry.hotFault ? 'text-rose-400' : isDark ? 'text-white' : 'text-zinc-900'}`}>
+              {currentTelemetry.hotFault ? 'FAULT' : `${hotTempVal.toFixed(1)} °C`}
+            </span>
+            <span className={`text-[9.5px] block truncate ${currentTelemetry.hotFault ? 'text-rose-400' : 'text-emerald-400'}`}>
+              {currentTelemetry.hotFault ? (currentTelemetry.hotWhy || 'Check probe') : 'MAX31855 Hot'}
+            </span>
+          </div>
+
+          <div className={`p-2 rounded-lg border ${isDark ? 'bg-[#13171B] border-[#1E242B]' : 'bg-white border-zinc-200'}`}>
+            <span className={`text-[9px] uppercase font-bold block ${isDark ? 'text-zinc-400' : 'text-zinc-500'}`}>
+              Cold TC (CS GPIO17)
+            </span>
+            <span className={`font-bold text-xs tabular-nums ${currentTelemetry.coldFault ? 'text-rose-400' : isDark ? 'text-white' : 'text-zinc-900'}`}>
+              {currentTelemetry.coldFault ? 'FAULT' : `${coldTempVal.toFixed(1)} °C`}
+            </span>
+            <span className={`text-[9.5px] block truncate ${currentTelemetry.coldFault ? 'text-rose-400' : 'text-emerald-400'}`}>
+              {currentTelemetry.coldFault ? (currentTelemetry.coldWhy || 'Check probe') : 'MAX31855 Cold'}
+            </span>
+          </div>
         </div>
       </div>
 
-      {/* ── 2. MULTIMETER CALIBRATION COMMANDS (B, G, I, k, v, X) ─────── */}
+      {/* ── 2. MULTIMETER & THERMOCOUPLE CALIBRATION (B, G, I, TH, TC) ── */}
       <div className={`${cardClass} flex flex-col gap-2.5`}>
         <div className="flex items-center gap-1.5">
           <Sliders className="w-3.5 h-3.5 text-emerald-400" strokeWidth={1.75} />
           <h3 className={`text-[11px] font-bold uppercase tracking-wider ${isDark ? 'text-zinc-200' : 'text-zinc-800'}`}>
-            {isFil ? 'Multimeter Calibration (B / G / I)' : 'Multimeter Calibration (B / G / I)'}
+            {isFil ? 'Multimeter at Thermocouple (B / G / I / TH / TC)' : 'Multimeter & Thermocouple (B / G / I / TH / TC)'}
           </h3>
         </div>
 
@@ -275,24 +347,68 @@ export function CalibrationStudio({
           </button>
         </div>
 
-        {/* Quick Hardware Commands: k, v, X */}
-        <div className={`grid grid-cols-3 gap-1.5 pt-2 border-t ${isDark ? 'border-[#1E242B]' : 'border-zinc-200'}`}>
+        {/* Hot Thermocouple Reference °C (TH) */}
+        <div className="flex items-center gap-2">
+          <span className={`text-[10.5px] font-mono w-24 flex-shrink-0 ${isDark ? 'text-zinc-400' : 'text-zinc-600'}`}>
+            Hot TC (°C):
+          </span>
+          <input
+            type="number"
+            step="0.1"
+            value={refHotC}
+            onChange={(e) => setRefHotC(e.target.value)}
+            className={inputClass}
+            aria-label="Reference Hot Thermocouple Celsius"
+          />
+          <button
+            type="button"
+            onClick={handleSendRefHotTc}
+            className="h-8 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-mono font-bold cursor-pointer transition-colors flex-shrink-0"
+          >
+            TH{refHotC}
+          </button>
+        </div>
+
+        {/* Cold Thermocouple Reference °C (TC) */}
+        <div className="flex items-center gap-2">
+          <span className={`text-[10.5px] font-mono w-24 flex-shrink-0 ${isDark ? 'text-zinc-400' : 'text-zinc-600'}`}>
+            Cold TC (°C):
+          </span>
+          <input
+            type="number"
+            step="0.1"
+            value={refColdC}
+            onChange={(e) => setRefColdC(e.target.value)}
+            className={inputClass}
+            aria-label="Reference Cold Thermocouple Celsius"
+          />
+          <button
+            type="button"
+            onClick={handleSendRefColdTc}
+            className="h-8 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-mono font-bold cursor-pointer transition-colors flex-shrink-0"
+          >
+            TC{refColdC}
+          </button>
+        </div>
+
+        {/* Quick Hardware Commands: k, v, TX, X */}
+        <div className={`grid grid-cols-4 gap-1.5 pt-2 border-t ${isDark ? 'border-[#1E242B]' : 'border-zinc-200'}`}>
           <button
             type="button"
             onClick={handleTareCurrent}
-            className={`h-8 px-2 rounded-lg border text-[10px] font-mono font-bold cursor-pointer transition-colors ${
+            className={`h-8 px-1.5 rounded-lg border text-[9.5px] font-mono font-bold cursor-pointer transition-colors ${
               isDark
                 ? 'bg-[#13171B] hover:bg-[#1E242B] border-[#1E242B] text-zinc-200'
                 : 'bg-white hover:bg-zinc-100 border-zinc-300 text-zinc-800'
             }`}
             title="Zero ACS712 while relay is OPEN"
           >
-            Zero I (k)
+            Zero (k)
           </button>
           <button
             type="button"
             onClick={handleSendPinCheck}
-            className={`h-8 px-2 rounded-lg border text-[10px] font-mono font-bold cursor-pointer transition-colors ${
+            className={`h-8 px-1.5 rounded-lg border text-[9.5px] font-mono font-bold cursor-pointer transition-colors ${
               isDark
                 ? 'bg-[#13171B] hover:bg-[#1E242B] border-[#1E242B] text-zinc-200'
                 : 'bg-white hover:bg-zinc-100 border-zinc-300 text-zinc-800'
@@ -303,8 +419,20 @@ export function CalibrationStudio({
           </button>
           <button
             type="button"
+            onClick={handleClearTcOffsets}
+            className={`h-8 px-1.5 rounded-lg border text-[9.5px] font-mono font-bold cursor-pointer transition-colors ${
+              isDark
+                ? 'bg-[#13171B] hover:bg-[#1E242B] border-[#1E242B] text-amber-400'
+                : 'bg-white hover:bg-zinc-100 border-zinc-300 text-amber-700'
+            }`}
+            title="Clear Hot and Cold thermocouple offsets (TX)"
+          >
+            Clear TC
+          </button>
+          <button
+            type="button"
             onClick={handleResetEsp32Flash}
-            className={`h-8 px-2 rounded-lg border text-[10px] font-mono font-bold cursor-pointer transition-colors ${
+            className={`h-8 px-1.5 rounded-lg border text-[9.5px] font-mono font-bold cursor-pointer transition-colors ${
               isDark
                 ? 'bg-[#13171B] hover:bg-[#1E242B] border-[#1E242B] text-rose-400'
                 : 'bg-white hover:bg-zinc-100 border-zinc-300 text-rose-600'
