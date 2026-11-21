@@ -83,6 +83,8 @@ export function LogsTab({
   const intervalLabel =
     exportIntervalSec === 900
       ? '15 MIN'
+      : exportIntervalSec === 600
+      ? '10 MIN'
       : exportIntervalSec === 300
       ? '5 MIN'
       : exportIntervalSec === 60
@@ -319,6 +321,7 @@ export function LogsTab({
           <div className="flex items-center gap-1">
             {[
               { sec: 900, label: '15m' },
+              { sec: 600, label: '10m' },
               { sec: 300, label: '5m' },
               { sec: 60, label: '1m' },
               { sec: 0, label: '1s' },
