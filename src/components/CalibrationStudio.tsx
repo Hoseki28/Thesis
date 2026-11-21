@@ -112,13 +112,13 @@ export function CalibrationStudio({
 
   const handleSendMultimeterCurrent = async () => {
     const val = parseFloat(multiCurA)
-    if (!Number.isFinite(val) || val < 0.03 || val > 10) return
+    if (!Number.isFinite(val) || val < 0.05 || val > 5.0) return
     if (bridge) {
       await bridge.sendCalibrateCurrent(val)
       setSavedNotice(
         isFil
-          ? `Ipinadala ang I${val.toFixed(2)} sa ESP32!`
-          : `Dispatched I${val.toFixed(2)} current calibration to ESP32!`
+          ? `Ipinadala ang I${val.toFixed(2)} sa ESP32 (0.05–5.00A habang naka-charging)!`
+          : `Dispatched I${val.toFixed(2)} current calibration to ESP32 (0.05–5.00A while charging)!`
       )
       setTimeout(() => setSavedNotice(null), 3500)
     }

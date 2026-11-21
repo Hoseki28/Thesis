@@ -340,7 +340,7 @@ export function OverviewTab({
                   ? isDark
                     ? 'bg-amber-500/15 border border-amber-500/30 text-amber-400'
                     : 'bg-amber-50 border border-amber-300 text-amber-700'
-                  : ambientTempC > 25
+                  : Math.abs(ambientTempC - 25) >= 0.5
                   ? isDark
                     ? 'bg-[#00E676]/15 border border-[#00E676]/30 text-[#00E676]'
                     : 'bg-emerald-50 border border-emerald-300 text-emerald-700'
@@ -354,7 +354,7 @@ export function OverviewTab({
                 ? (isFil ? 'STANDBY' : 'STANDBY')
                 : telemetry.esp32?.dhtOk === false
                 ? (isFil ? 'WALANG TEMP' : 'NO TEMP')
-                : ambientTempC > 25
+                : Math.abs(ambientTempC - 25) >= 0.5
                 ? (isFil ? 'AKTIBO' : 'ACTIVE')
                 : (isFil ? 'NORMAL' : 'NOMINAL')}
             </span>

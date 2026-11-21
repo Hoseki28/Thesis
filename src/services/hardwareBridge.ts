@@ -51,7 +51,7 @@ function mapStateNameToCode(name: string): number {
   if (clean.startsWith('FULL-HOLD')) return 2
   if (clean.startsWith('WAITING')) return 3
   if (clean.startsWith('FORCED OFF')) return 4
-  if (clean.startsWith('BATTERY HOT')) return 5
+  if (clean.startsWith('TEMP LOCKOUT') || clean.startsWith('BATTERY HOT')) return 5
   if (clean.startsWith('OVERCURRENT')) return 6
   return 0
 }
@@ -69,9 +69,9 @@ function defaultStateReason(stateCode: number): string {
     case 4:
       return 'manually disabled (send a)'
     case 5:
-      return 'ambient temperature >= 40 C (TNE12-15 max charge temp)'
+      return 'temperature sensor missing or battery area outside 0-40 C charge range'
     case 6:
-      return 'current exceeded 2.25 A / 0.15C (send r)'
+      return 'current at or above 2.25 A (send r)'
     default:
       return ''
   }
@@ -866,7 +866,9 @@ export class HardwareBridge {
     this.esp32Cache.overcurrentLatched =
       this.esp32Cache.stateCode === 6 || lower.includes('overcurrent')
     this.esp32Cache.batHot =
-      this.esp32Cache.stateCode === 5 || lower.includes('battery too hot')
+      this.esp32Cache.stateCode === 5 ||
+      lower.includes('battery too hot') ||
+      lower.includes('temperature outside charge range')
     this.esp32Cache.dhtOk = !lower.includes('dht22 not reading')
     this.esp32Cache.inaOk =
       !lower.includes('current sensor not ok') &&
@@ -881,18 +883,13 @@ export class HardwareBridge {
   }
 
   private updateTempCompLimits() {
-    if (this.esp32Cache.dhtOk && this.esp32Cache.tAmb > 25.0) {
-      const dropCycle = (this.esp32Cache.tAmb - 25.0) * 0.024
-      const dropFloat = (this.esp32Cache.tAmb - 25.0) * 0.018
-      this.esp32Cache.vOpenNow = Math.round((14.6 - dropCycle) * 100) / 100
-      this.esp32Cache.vCloseNow = Math.round((13.7 - dropFloat) * 100) / 100
-      this.esp32Cache.vHardNow = Math.round((14.8 - dropCycle) * 100) / 100
-    } else if (!this.esp32Cache.dhtOk) {
-      this.esp32Cache.vOpenNow = 14.4
-      this.esp32Cache.vCloseNow = 13.7
-      this.esp32Cache.vHardNow = 14.8
+    if (this.esp32Cache.dhtOk) {
+      const tempDelta = this.esp32Cache.tAmb - 25.0
+      this.esp32Cache.vOpenNow = Math.round((14.6 - tempDelta * 0.024) * 100) / 100
+      this.esp32Cache.vCloseNow = Math.round((13.7 - tempDelta * 0.018) * 100) / 100
+      this.esp32Cache.vHardNow = Math.round((14.8 - tempDelta * 0.024) * 100) / 100
     } else {
-      this.esp32Cache.vOpenNow = 14.6
+      this.esp32Cache.vOpenNow = 14.2
       this.esp32Cache.vCloseNow = 13.7
       this.esp32Cache.vHardNow = 14.8
     }
@@ -946,7 +943,7 @@ export class HardwareBridge {
           this.emitFromEsp32Cache(source)
         }
 
-        const calSaved = msg.match(/^(Battery|TEG|Current) calibration saved:\s*factor\s*([-\d.]+)/i)
+        const calSaved = msg.match(/^(Battery|TEG|Current) calibration saved:.*factor\s*x?([-\d.]+)/i)
         if (calSaved) {
           const kind = calSaved[1].toLowerCase()
           const factor = parseFloat(calSaved[2])
@@ -1369,6 +1366,13 @@ export class HardwareBridge {
       // 4. Parse JSON format (supports both thesis.ino JSON and generic telemetry JSON)
       if (line.startsWith('{') && line.endsWith('}')) {
         const json = JSON.parse(line)
+
+        // Handle structured JSON event packets from BLE/Serial firmware: {"type":"event","timestamp":"HH:MM:SS","message":"..."}
+        if (json.type === 'event' && typeof json.message === 'string') {
+          const ts = typeof json.timestamp === 'string' ? json.timestamp : this.esp32Cache.uptimeStr
+          this.parseIncomingPayload(`[${ts}] >>> ${json.message}`, source)
+          return
+        }
 
         if (json.type === 'telemetry' || json.vTeg !== undefined || json.vBat !== undefined || json.stateName !== undefined) {
           if (typeof json.timestamp === 'string') this.esp32Cache.uptimeStr = json.timestamp
