@@ -88,106 +88,106 @@ export function ServiceTab({
   const sensorDiagnostics: SensorHealthItem[] = (() => {
     if (!isHardwareConnected) {
       return [
-        { id: 'vbat', name: 'Battery Voltage Divider', pin: 'GPIO32 · 47k/10k', detail: 'Waiting for ESP32 link', status: 'disconnected' },
-        { id: 'vteg', name: 'TEG Boost Divider', pin: 'GPIO33 · 150k/10k', detail: 'Waiting for ESP32 link', status: 'disconnected' },
-        { id: 'acs', name: 'ACS712-5A Current Sensor', pin: 'GPIO35 · 10k/15k', detail: 'Waiting for ESP32 link', status: 'disconnected' },
-        { id: 'hot_tc', name: 'MAX31855 Hot Thermocouple', pin: 'SPI · CS GPIO5', detail: 'Waiting for ESP32 link', status: 'disconnected' },
-        { id: 'cold_tc', name: 'MAX31855 Cold Thermocouple', pin: 'SPI · CS GPIO17', detail: 'Waiting for ESP32 link', status: 'disconnected' },
-        { id: 'dht22', name: 'DHT22 Ambient Sensor', pin: 'GPIO23 · Digital', detail: 'Waiting for ESP32 link', status: 'disconnected' },
-        { id: 'relay', name: 'Charging Relay (Active-LOW)', pin: 'GPIO14 · M2', detail: 'Waiting for ESP32 link', status: 'disconnected' },
-        { id: 'lcd', name: '16x2 I2C LCD & Status LEDs', pin: 'GPIO21/22 · 25-27', detail: 'Waiting for ESP32 link', status: 'disconnected' },
+        { id: 'vbat', name: 'Battery V', pin: 'GPIO32', detail: 'Standby', status: 'disconnected' },
+        { id: 'vteg', name: 'TEG Boost', pin: 'GPIO33', detail: 'Standby', status: 'disconnected' },
+        { id: 'acs', name: 'ACS712 5A', pin: 'GPIO35', detail: 'Standby', status: 'disconnected' },
+        { id: 'hot_tc', name: 'Hot TC', pin: 'CS GPIO5', detail: 'Standby', status: 'disconnected' },
+        { id: 'cold_tc', name: 'Cold TC', pin: 'CS GPIO17', detail: 'Standby', status: 'disconnected' },
+        { id: 'dht22', name: 'DHT22 Env', pin: 'GPIO23', detail: 'Standby', status: 'disconnected' },
+        { id: 'relay', name: 'Relay M2', pin: 'GPIO14', detail: 'Standby', status: 'disconnected' },
+        { id: 'lcd', name: 'LCD & LEDs', pin: 'I2C 21/22', detail: 'Standby', status: 'disconnected' },
       ]
     }
 
     // 1. Battery Voltage Divider (GPIO32)
     let batStatus: SensorHealthStatus = 'ok'
-    let batDetail = `${vBat.toFixed(2)} V · Nominal`
+    let batDetail = `${vBat.toFixed(2)} V`
     if (vBat < 6.0 || vBat > 16.5) {
       batStatus = 'disconnected'
-      batDetail = `${vBat.toFixed(2)} V · No battery (6–16.5V)`
+      batDetail = 'No batt'
     } else if (vBat < 11.8) {
       batStatus = 'warning'
-      batDetail = `${vBat.toFixed(2)} V · Low battery (<11.8V)`
+      batDetail = `${vBat.toFixed(2)}V Low`
     } else if (vBat >= vOpenNow) {
       batStatus = 'warning'
-      batDetail = `${vBat.toFixed(2)} V · At charge limit (${vOpenNow.toFixed(2)}V)`
+      batDetail = `${vBat.toFixed(2)}V Full`
     }
 
     // 2. TEG Boost Divider (GPIO33)
     let tegStatus: SensorHealthStatus = 'ok'
-    let tegDetail = `${vTeg.toFixed(2)} V · Active`
+    let tegDetail = `${vTeg.toFixed(2)} V`
     if (vTeg > 45.0) {
       tegStatus = 'fault'
-      tegDetail = `${vTeg.toFixed(2)} V · Overvoltage (>45V)`
+      tegDetail = `${vTeg.toFixed(1)}V >45V`
     } else if (vTeg < 1.0) {
       tegStatus = 'warning'
-      tegDetail = `${vTeg.toFixed(2)} V · No TEG (<1.0V)`
+      tegDetail = `${vTeg.toFixed(2)}V Low`
     }
 
     // 3. ACS712-5A Current Sensor (GPIO35)
     let acsStatus: SensorHealthStatus = 'ok'
-    let acsDetail = `${iBat.toFixed(2)} A · Zero ${acsZero.toFixed(2)}V`
+    let acsDetail = `${iBat.toFixed(2)} A`
     if (telemetry.overcurrentLatched || telemetry.stateCode === 6) {
       acsStatus = 'fault'
-      acsDetail = `${iBat.toFixed(2)} A · Overcurrent latched (>=2.25A)`
+      acsDetail = `>2.25A Trip`
     } else if (telemetry.inaOk === false) {
       acsStatus = 'fault'
-      acsDetail = `Zero ${acsZero.toFixed(2)}V · Check GPIO35 wiring`
+      acsDetail = `Zero ${acsZero.toFixed(2)}V`
     }
 
     // 4. MAX31855 Hot Thermocouple (CS GPIO5)
     let hotStatus: SensorHealthStatus = 'ok'
-    let hotDetail = `${tHot.toFixed(1)} °C · Normal`
+    let hotDetail = `${tHot.toFixed(1)} °C`
     if (telemetry.hotFault) {
       hotStatus = 'fault'
-      hotDetail = telemetry.hotWhy && telemetry.hotWhy !== 'ok' ? telemetry.hotWhy : 'Probe fault / disconnected'
+      hotDetail = telemetry.hotWhy && telemetry.hotWhy !== 'ok' ? telemetry.hotWhy : 'Probe fault'
     } else if (tHot > 230) {
       hotStatus = 'warning'
-      hotDetail = `${tHot.toFixed(1)} °C · Overheat (>230°C)`
+      hotDetail = `${tHot.toFixed(0)}°C High`
     }
 
     // 5. MAX31855 Cold Thermocouple (CS GPIO17)
     let coldStatus: SensorHealthStatus = 'ok'
-    let coldDetail = `${tCold.toFixed(1)} °C · Normal`
+    let coldDetail = `${tCold.toFixed(1)} °C`
     if (telemetry.coldFault) {
       coldStatus = 'fault'
-      coldDetail = telemetry.coldWhy && telemetry.coldWhy !== 'ok' ? telemetry.coldWhy : 'Probe fault / disconnected'
+      coldDetail = telemetry.coldWhy && telemetry.coldWhy !== 'ok' ? telemetry.coldWhy : 'Probe fault'
     } else if (tCold > 60) {
       coldStatus = 'warning'
-      coldDetail = `${tCold.toFixed(1)} °C · Heatsink hot (>60°C)`
+      coldDetail = `${tCold.toFixed(0)}°C High`
     }
 
     // 6. DHT22 Ambient Sensor (GPIO23)
     let dhtStatus: SensorHealthStatus = 'ok'
-    let dhtDetail = `${tAmb.toFixed(1)} °C · ${Math.round(hum)}% RH`
+    let dhtDetail = `${tAmb.toFixed(1)}°C · ${Math.round(hum)}%`
     if (!dhtOk) {
       dhtStatus = 'fault'
-      dhtDetail = 'Not reading · Check GPIO23 & 10k pull-up'
+      dhtDetail = 'No reading'
     } else if (telemetry.batHot || telemetry.stateCode === 5 || tAmb >= 40 || tAmb < 0) {
       dhtStatus = 'warning'
-      dhtDetail = `${tAmb.toFixed(1)} °C · Outside 0–40°C charge range`
+      dhtDetail = `${tAmb.toFixed(1)}°C Limit`
     }
 
     // 7. Charging Relay (GPIO14)
     let relayStatus: SensorHealthStatus = 'ok'
-    let relayDetail = relayOn ? 'CLOSED · Charging active' : `OPEN · ${telemetry.stateName || 'Standby'}`
+    let relayDetail = relayOn ? 'CLOSED' : 'OPEN'
     if (telemetry.overcurrentLatched || telemetry.stateCode === 6) {
       relayStatus = 'fault'
-      relayDetail = 'OPEN · Locked by overcurrent'
+      relayDetail = 'OVERCURRENT'
     } else if (telemetry.stateCode === 5 || telemetry.stateCode === 4) {
       relayStatus = 'warning'
-      relayDetail = `OPEN · ${telemetry.stateName || 'Hold'}`
+      relayDetail = telemetry.stateName || 'HOLD'
     }
 
     return [
-      { id: 'vbat', name: 'Battery Voltage Divider', pin: 'GPIO32 · 47k/10k', detail: batDetail, status: batStatus },
-      { id: 'vteg', name: 'TEG Boost Divider', pin: 'GPIO33 · 150k/10k', detail: tegDetail, status: tegStatus },
-      { id: 'acs', name: 'ACS712-5A Current Sensor', pin: 'GPIO35 · 10k/15k', detail: acsDetail, status: acsStatus },
-      { id: 'hot_tc', name: 'MAX31855 Hot Thermocouple', pin: 'SPI · CS GPIO5', detail: hotDetail, status: hotStatus },
-      { id: 'cold_tc', name: 'MAX31855 Cold Thermocouple', pin: 'SPI · CS GPIO17', detail: coldDetail, status: coldStatus },
-      { id: 'dht22', name: 'DHT22 Ambient Sensor', pin: 'GPIO23 · Digital', detail: dhtDetail, status: dhtStatus },
-      { id: 'relay', name: 'Charging Relay (Active-LOW)', pin: 'GPIO14 · M2', detail: relayDetail, status: relayStatus },
-      { id: 'lcd', name: '16x2 I2C LCD & Status LEDs', pin: 'GPIO21/22 · 25-27', detail: 'I2C 0x27/0x3F · Controller online', status: 'ok' },
+      { id: 'vbat', name: 'Battery V', pin: 'GPIO32', detail: batDetail, status: batStatus },
+      { id: 'vteg', name: 'TEG Boost', pin: 'GPIO33', detail: tegDetail, status: tegStatus },
+      { id: 'acs', name: 'ACS712 5A', pin: 'GPIO35', detail: acsDetail, status: acsStatus },
+      { id: 'hot_tc', name: 'Hot TC', pin: 'CS GPIO5', detail: hotDetail, status: hotStatus },
+      { id: 'cold_tc', name: 'Cold TC', pin: 'CS GPIO17', detail: coldDetail, status: coldStatus },
+      { id: 'dht22', name: 'DHT22 Env', pin: 'GPIO23', detail: dhtDetail, status: dhtStatus },
+      { id: 'relay', name: 'Relay M2', pin: 'GPIO14', detail: relayDetail, status: relayStatus },
+      { id: 'lcd', name: 'LCD & LEDs', pin: 'I2C 21/22', detail: 'Online', status: 'ok' },
     ]
   })()
 
@@ -218,9 +218,9 @@ export function ServiceTab({
 
   const badgeLabel = (status: SensorHealthStatus) => {
     if (status === 'ok') return 'OK'
-    if (status === 'warning') return 'WARNING'
+    if (status === 'warning') return 'WARN'
     if (status === 'fault') return 'FAULT'
-    return 'DISCONNECTED'
+    return 'OFF'
   }
 
   const transportLabel = !isHardwareConnected
@@ -230,165 +230,128 @@ export function ServiceTab({
     : 'USB SERIAL'
 
   return (
-    <div className="flex flex-col gap-3 font-sans">
-      {/* ── HEADER ──────────────────────────────────────────────────── */}
-      <div className="flex items-center justify-between pb-1">
-        <div>
-          <h2 className={`text-sm font-black uppercase tracking-wider ${isDark ? 'text-white' : 'text-zinc-900'}`}>
-            {isFil ? 'ESP32 HARDWARE AT SENSOR HEALTH' : 'ESP32 HARDWARE & SENSOR HEALTH'}
-          </h2>
-          <p className={`text-[11px] ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-500'}`}>
-            {isFil
-              ? 'Live na pagsusuri ng lahat ng nakakabit na sensor at module'
-              : 'Live diagnostics for all connected ESP32 sensors & modules'}
-          </p>
-        </div>
-        {isHardwareConnected && (
-          <button
-            type="button"
-            onClick={() => handleCommand(isFil ? 'Pin check' : 'Pin check (v)', () => bridge?.sendPinCheck())}
-            className={`px-2.5 py-1.5 rounded-lg border text-[10px] font-mono font-bold uppercase cursor-pointer transition-colors min-h-[36px] ${
-              isDark
-                ? 'bg-[#13171B] border-[#1E242B] text-[#00E676] hover:bg-[#1E242B]'
-                : 'bg-white border-zinc-200 text-emerald-700 hover:bg-zinc-50'
-            }`}
-            title="Send 'v' pin check command to ESP32"
-          >
-            PIN CHECK (v)
-          </button>
-        )}
-      </div>
-
-      {/* ── 1. ESP32 HARDWARE & SENSOR HEALTH CHECKLIST ──────────────── */}
+    <div className="flex flex-col gap-2.5 font-sans">
+      {/* ── 1. COMPACT 2×4 ESP32 HARDWARE & SENSOR HEALTH GRID ───────── */}
       <section
-        className={`rounded-2xl p-3.5 border flex flex-col gap-2 shadow-lg transition-colors ${
+        className={`rounded-2xl p-3 border flex flex-col gap-2 shadow-lg transition-colors ${
           isDark ? 'bg-[#13171B] border-[#1E242B]' : 'bg-white border-zinc-200'
         }`}
         aria-label="ESP32 Hardware and Sensor Health"
       >
-        {sensorDiagnostics.map((item) => (
-          <div
-            key={item.id}
-            className={`flex items-center justify-between gap-2.5 p-2.5 rounded-xl border transition-colors ${
-              item.status === 'fault'
-                ? isDark
-                  ? 'bg-rose-950/20 border-rose-500/30'
-                  : 'bg-rose-50/70 border-rose-200'
-                : item.status === 'warning'
-                ? isDark
-                  ? 'bg-amber-950/15 border-amber-500/25'
-                  : 'bg-amber-50/70 border-amber-200'
-                : isDark
-                ? 'bg-[#0B0F12] border-[#1E242B]'
-                : 'bg-zinc-50 border-zinc-200/80'
-            }`}
-          >
-            <div className="flex items-start gap-2.5 min-w-0">
-              <div className="mt-0.5 flex-shrink-0">
-                {item.status === 'ok' && <IconCheckCircle size={16} className="text-[#00E676]" />}
-                {item.status === 'warning' && <IconAlertTriangle size={16} className="text-amber-400" />}
-                {item.status === 'fault' && <IconXCircle size={16} className="text-rose-400" />}
-                {item.status === 'disconnected' && (
-                  <span className={`block w-3.5 h-3.5 mt-0.5 rounded-full border-2 ${isDark ? 'border-zinc-600' : 'border-zinc-400'}`} />
-                )}
-              </div>
-              <div className="min-w-0">
-                <div className="flex items-center gap-1.5 flex-wrap">
-                  <span className={`text-xs font-bold leading-tight ${isDark ? 'text-white' : 'text-zinc-900'}`}>
+        <div className="flex items-center justify-between gap-2">
+          <div className="min-w-0">
+            <h2 className={`text-xs font-black uppercase tracking-wider leading-tight ${isDark ? 'text-white' : 'text-zinc-900'}`}>
+              {isFil ? 'ESP32 SENSOR HEALTH' : 'ESP32 SENSOR HEALTH'}
+            </h2>
+            <span className={`text-[9.5px] font-mono block ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-500'}`}>
+              {!isHardwareConnected
+                ? '8 Modules · Offline'
+                : totalIssues === 0
+                ? '8/8 Modules · All OK'
+                : `${faultCount} Fault · ${warnCount} Warning`}
+            </span>
+          </div>
+
+          <div className="flex items-center gap-1.5 flex-shrink-0">
+            {/* Compact Comm Link Pill */}
+            <span
+              className={`inline-flex items-center gap-1 px-2 py-1 rounded-md border text-[9px] font-mono font-bold uppercase ${
+                isHardwareConnected
+                  ? isDark
+                    ? 'bg-emerald-500/15 border-emerald-500/35 text-[#00E676]'
+                    : 'bg-emerald-50 border-emerald-300 text-emerald-700'
+                  : isDark
+                  ? 'bg-[#0B0F12] border-[#1E242B] text-zinc-400'
+                  : 'bg-zinc-100 border-zinc-200 text-zinc-600'
+              }`}
+            >
+              {telemetry.source === 'bluetooth' ? (
+                <IconBluetooth size={11} className="text-sky-400" />
+              ) : (
+                <IconUsb size={11} className={isHardwareConnected ? 'text-[#00E676]' : 'text-zinc-500'} />
+              )}
+              <span>{transportLabel}</span>
+            </span>
+
+            {isHardwareConnected && (
+              <button
+                type="button"
+                onClick={() => handleCommand(isFil ? 'Pin check' : 'Pin check (v)', () => bridge?.sendPinCheck())}
+                className={`px-2 py-1 rounded-md border text-[9px] font-mono font-bold uppercase cursor-pointer transition-colors ${
+                  isDark
+                    ? 'bg-[#0B0F12] border-[#1E242B] text-[#00E676] hover:bg-[#1E242B]'
+                    : 'bg-zinc-50 border-zinc-200 text-emerald-700 hover:bg-zinc-100'
+                }`}
+                title="Send 'v' pin check command to ESP32"
+              >
+                PIN (v)
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* 2-Column × 4-Row Zero-Scroll Sensor Grid */}
+        <div className="grid grid-cols-2 gap-1.5">
+          {sensorDiagnostics.map((item) => (
+            <div
+              key={item.id}
+              className={`px-2.5 py-2 rounded-xl border flex flex-col gap-1 transition-colors ${
+                item.status === 'fault'
+                  ? isDark
+                    ? 'bg-rose-950/20 border-rose-500/35'
+                    : 'bg-rose-50/70 border-rose-200'
+                  : item.status === 'warning'
+                  ? isDark
+                    ? 'bg-amber-950/15 border-amber-500/30'
+                    : 'bg-amber-50/70 border-amber-200'
+                  : isDark
+                  ? 'bg-[#0B0F12] border-[#1E242B]'
+                  : 'bg-zinc-50 border-zinc-200/80'
+              }`}
+            >
+              <div className="flex items-center justify-between gap-1">
+                <div className="flex items-center gap-1.5 min-w-0">
+                  {item.status === 'ok' && <IconCheckCircle size={12} className="text-[#00E676] flex-shrink-0" />}
+                  {item.status === 'warning' && <IconAlertTriangle size={12} className="text-amber-400 flex-shrink-0" />}
+                  {item.status === 'fault' && <IconXCircle size={12} className="text-rose-400 flex-shrink-0" />}
+                  {item.status === 'disconnected' && (
+                    <span className={`block w-2.5 h-2.5 rounded-full border-[1.5px] flex-shrink-0 ${isDark ? 'border-zinc-600' : 'border-zinc-400'}`} />
+                  )}
+                  <span className={`text-[11px] font-bold truncate ${isDark ? 'text-white' : 'text-zinc-900'}`}>
                     {item.name}
                   </span>
-                  <span className={`text-[9px] font-mono px-1.5 py-0.5 rounded ${isDark ? 'bg-[#1E242B] text-zinc-400' : 'bg-zinc-200 text-zinc-600'}`}>
-                    {item.pin}
-                  </span>
                 </div>
-                <span className={`text-[10.5px] font-mono block mt-0.5 truncate ${
-                  item.status === 'fault'
-                    ? 'text-rose-400 font-semibold'
-                    : item.status === 'warning'
-                    ? 'text-amber-400'
-                    : isDark
-                    ? 'text-[#9CA3AF]'
-                    : 'text-zinc-600'
-                }`}>
+                <span
+                  className={`px-1.5 py-0.5 rounded border text-[8px] font-mono font-black uppercase leading-none flex-shrink-0 ${badgeStyle(item.status)}`}
+                >
+                  {badgeLabel(item.status)}
+                </span>
+              </div>
+
+              <div className="flex items-center justify-between gap-1 text-[9.5px] font-mono">
+                <span className={isDark ? 'text-zinc-500' : 'text-zinc-500'}>{item.pin}</span>
+                <span
+                  className={`truncate font-semibold ${
+                    item.status === 'fault'
+                      ? 'text-rose-400'
+                      : item.status === 'warning'
+                      ? 'text-amber-400'
+                      : isDark
+                      ? 'text-zinc-300'
+                      : 'text-zinc-700'
+                  }`}
+                >
                   {item.detail}
                 </span>
               </div>
             </div>
-
-            <span
-              className={`px-2 py-1 rounded-md border text-[9px] font-mono font-black uppercase tracking-wider flex-shrink-0 ${badgeStyle(item.status)}`}
-            >
-              {badgeLabel(item.status)}
-            </span>
-          </div>
-        ))}
+          ))}
+        </div>
       </section>
 
-      {/* ── 2. LIVE DIAGNOSTIC SUMMARY TILES (ACTIVE FAULTS & COMM LINK) ── */}
-      <div className="grid grid-cols-2 gap-3">
-        {/* ACTIVE FAULTS */}
-        <div className={`rounded-2xl p-3.5 border flex flex-col items-center justify-center text-center gap-1 shadow-lg min-h-[92px] transition-colors ${
-          isDark ? 'bg-[#13171B] border-[#1E242B]' : 'bg-white border-zinc-200'
-        }`}>
-          {!isHardwareConnected ? (
-            <IconShield size={18} className="text-zinc-500" />
-          ) : faultCount > 0 ? (
-            <IconXCircle size={18} className="text-rose-400" />
-          ) : warnCount > 0 ? (
-            <IconAlertTriangle size={18} className="text-amber-400" />
-          ) : (
-            <IconCheckCircle size={18} className="text-[#00E676]" />
-          )}
-          <span className={`text-[10px] font-bold uppercase tracking-wider mt-0.5 ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-500'}`}>
-            {isFil ? 'AKTIBONG FAULTS' : 'ACTIVE FAULTS'}
-          </span>
-          <span className={`text-sm sm:text-base font-black font-mono tabular-nums ${
-            !isHardwareConnected
-              ? isDark ? 'text-zinc-400' : 'text-zinc-600'
-              : faultCount > 0
-              ? 'text-rose-400'
-              : warnCount > 0
-              ? 'text-amber-400'
-              : 'text-[#00E676]'
-          }`}>
-            {!isHardwareConnected
-              ? 'STANDBY'
-              : totalIssues === 0
-              ? '0 · ALL OK'
-              : `${faultCount} FAULT · ${warnCount} WARN`}
-          </span>
-        </div>
-
-        {/* COMM LINK */}
-        <div className={`rounded-2xl p-3.5 border flex flex-col items-center justify-center text-center gap-1 shadow-lg min-h-[92px] transition-colors ${
-          isDark ? 'bg-[#13171B] border-[#1E242B]' : 'bg-white border-zinc-200'
-        }`}>
-          {telemetry.source === 'bluetooth' ? (
-            <IconBluetooth size={18} className="text-sky-400" />
-          ) : (
-            <IconUsb size={18} className={isHardwareConnected ? 'text-[#00E676]' : 'text-zinc-500'} />
-          )}
-          <span className={`text-[10px] font-bold uppercase tracking-wider mt-0.5 ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-500'}`}>
-            {isFil ? 'KONEKSYON (LINK)' : 'COMM LINK'}
-          </span>
-          <span className={`text-sm sm:text-base font-black font-mono tabular-nums ${
-            isHardwareConnected
-              ? isDark ? 'text-white' : 'text-zinc-900'
-              : isDark ? 'text-zinc-400' : 'text-zinc-600'
-          }`}>
-            {transportLabel}
-          </span>
-          {isHardwareConnected && telemetry.uptimeStr && (
-            <span className={`text-[9.5px] font-mono tabular-nums ${isDark ? 'text-zinc-400' : 'text-zinc-500'}`}>
-              Up {telemetry.uptimeStr}
-            </span>
-          )}
-        </div>
-      </div>
-
-      {/* ── 3. ESP32 HARDWARE SERVICE ACTIONS & COMMANDS ────────── */}
+      {/* ── 2. ESP32 HARDWARE SERVICE ACTIONS & COMMANDS ────────── */}
       <section
-        className={`rounded-2xl p-4 border flex flex-col gap-3 shadow-lg transition-colors ${
+        className={`rounded-2xl p-3 border flex flex-col gap-2.5 shadow-lg transition-colors ${
           isDark ? 'bg-[#13171B] border-[#1E242B]' : 'bg-white border-zinc-200'
         }`}
         aria-labelledby="hardware-actions-heading"
