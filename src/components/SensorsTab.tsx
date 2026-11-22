@@ -31,10 +31,8 @@ export function SensorsTab({ telemetry, lang, theme = 'dark' }: SensorsTabProps)
 
   const dhtOk = telemetry.esp32?.dhtOk !== false && telemetry.dhtOk !== false
   const ambTemp = telemetry.tAmb ?? telemetry.ambientTemp ?? 0.0
-  const ambHum = telemetry.hum ?? telemetry.humidity ?? 0.0
 
   const hotOver = isConnected && !telemetry.hotFault && tHotLive >= 230
-  const coldOver = isConnected && !telemetry.coldFault && tColdLive >= 60
   const thermalGuardTripped =
     isConnected &&
     (!dhtOk ||
@@ -65,7 +63,7 @@ export function SensorsTab({ telemetry, lang, theme = 'dark' }: SensorsTabProps)
         </p>
       </div>
 
-      {/* ── 1. THERMAL SAFETY & CUTOFF MONITOR (<230°C / <60°C / 0–40°C) ── */}
+      {/* ── 1. THERMAL SAFETY & CUTOFF MONITOR (<230°C / 0–40°C) ────── */}
       <section
         className={`rounded-2xl p-3.5 border flex flex-col gap-2.5 shadow-md transition-colors ${
           isDark ? 'bg-[#13171B] border-[#1E242B]' : 'bg-white border-zinc-200'
@@ -77,7 +75,7 @@ export function SensorsTab({ telemetry, lang, theme = 'dark' }: SensorsTabProps)
             <IconShieldCheck
               size={16}
               className={
-                thermalGuardTripped || hotOver || coldOver
+                thermalGuardTripped || hotOver
                   ? 'text-rose-400'
                   : isDark
                   ? 'text-[#00E676]'
@@ -104,7 +102,7 @@ export function SensorsTab({ telemetry, lang, theme = 'dark' }: SensorsTabProps)
                 ? isDark
                   ? 'bg-rose-500/15 border-rose-500/40 text-rose-400'
                   : 'bg-rose-50 border-rose-300 text-rose-700'
-                : hotOver || coldOver || telemetry.hotFault || telemetry.coldFault
+                : hotOver || telemetry.hotFault || telemetry.coldFault
                 ? isDark
                   ? 'bg-amber-500/15 border-amber-500/40 text-amber-400'
                   : 'bg-amber-50 border-amber-300 text-amber-700'
@@ -119,16 +117,14 @@ export function SensorsTab({ telemetry, lang, theme = 'dark' }: SensorsTabProps)
               ? 'TEMP LOCKOUT'
               : hotOver
               ? 'HOT >230°C'
-              : coldOver
-              ? 'SINK >60°C'
               : telemetry.hotFault || telemetry.coldFault
               ? 'PROBE FAULT'
               : 'ALL SAFE'}
           </span>
         </div>
 
-        {/* 3 Thermal Protection Zones */}
-        <div className="grid grid-cols-3 gap-2 text-center font-mono">
+        {/* 2 Thermal Protection Zones: Stove (<230°C) & Battery (0–40°C) */}
+        <div className="grid grid-cols-2 gap-2 text-center font-mono">
           {/* Zone 1: Stove Max <230°C */}
           <div
             className={`p-2 rounded-xl border ${
@@ -161,39 +157,7 @@ export function SensorsTab({ telemetry, lang, theme = 'dark' }: SensorsTabProps)
             </span>
           </div>
 
-          {/* Zone 2: Heatsink Max <60°C */}
-          <div
-            className={`p-2 rounded-xl border ${
-              coldOver
-                ? 'bg-rose-950/30 border-rose-500/50'
-                : isDark
-                ? 'bg-[#0B0F12] border-[#1E242B]'
-                : 'bg-zinc-50 border-zinc-200'
-            }`}
-          >
-            <span className={`text-[8.5px] block ${isDark ? 'text-zinc-400' : 'text-zinc-500'}`}>
-              SINK (&lt;60°C)
-            </span>
-            <span
-              className={`text-xs font-black block mt-0.5 ${
-                !isConnected
-                  ? isDark
-                    ? 'text-zinc-400'
-                    : 'text-zinc-500'
-                  : coldOver || telemetry.coldFault
-                  ? 'text-rose-400'
-                  : 'text-[#00E676]'
-              }`}
-            >
-              {!isConnected
-                ? '-- / 60°C'
-                : telemetry.coldFault
-                ? 'FAULT'
-                : `${tColdLive.toFixed(0)}° / 60°C`}
-            </span>
-          </div>
-
-          {/* Zone 3: Battery Charge Guard 0–40°C */}
+          {/* Zone 2: Battery Charge Guard 0–40°C */}
           <div
             className={`p-2 rounded-xl border ${
               thermalGuardTripped
@@ -350,10 +314,10 @@ export function SensorsTab({ telemetry, lang, theme = 'dark' }: SensorsTabProps)
               }`}
             >
               {!isConnected
-                ? 'MAX31855 · Max 60°C'
+                ? 'MAX31855 · Heatsink Cold Side'
                 : telemetry.coldFault
                 ? `Fault: ${telemetry.coldWhy || 'check probe'}`
-                : 'Heatsink Cold Side · Max 60°C'}
+                : 'MAX31855 · Heatsink Cold Side'}
             </span>
           </div>
 
@@ -386,118 +350,64 @@ export function SensorsTab({ telemetry, lang, theme = 'dark' }: SensorsTabProps)
         </div>
       </div>
 
-      {/* ── 3. DHT22 BATTERY AREA ENVIRONMENT (GPIO23) ──────────────── */}
-      <div className="grid grid-cols-2 gap-3">
-        {/* AMBIENT TEMPERATURE (0-40°C CHARGE GUARD) */}
-        <div
-          className={`rounded-2xl p-3.5 border flex flex-col justify-between min-h-[104px] shadow-md transition-colors ${
-            isDark ? 'bg-[#13171B] border-[#1E242B]' : 'bg-white border-zinc-200'
-          }`}
-        >
-          <div>
-            <span
-              className={`text-[10px] font-bold uppercase tracking-wider block ${
-                isDark ? 'text-white' : 'text-zinc-900'
-              }`}
-            >
-              {isFil ? 'BATTERY TEMP (GPIO23)' : 'BATTERY TEMP (GPIO23)'}
-            </span>
-            <span
-              className={`text-[9.5px] font-mono block mt-0.5 ${
-                thermalGuardTripped
-                  ? 'text-rose-400 font-bold'
-                  : isDark
-                  ? 'text-zinc-400'
-                  : 'text-zinc-500'
-              }`}
-            >
-              {!isConnected
-                ? 'DHT22 · 0–40°C Window'
-                : !dhtOk
-                ? 'DHT22 Error · Lockout'
-                : thermalGuardTripped
-                ? 'Outside 0–40°C · Lockout'
-                : 'DHT22 · Safe (0–40°C)'}
-            </span>
-          </div>
-
-          <div className="flex items-baseline mt-2">
-            <span
-              className={`text-2xl font-black font-mono tabular-nums ${
-                !isConnected
-                  ? isDark
-                    ? 'text-zinc-500'
-                    : 'text-zinc-400'
-                  : !dhtOk
-                  ? 'text-rose-400 text-xl'
-                  : isDark
-                  ? 'text-white'
-                  : 'text-zinc-900'
-              }`}
-            >
-              {!isConnected ? '--' : !dhtOk ? 'ERR' : ambTemp.toFixed(1)}
-            </span>
-            {(!isConnected || dhtOk) && (
-              <span
-                className={`text-xs font-semibold ml-1 ${
-                  isDark ? 'text-[#9CA3AF]' : 'text-zinc-500'
-                }`}
-              >
-                °C
-              </span>
-            )}
-          </div>
+      {/* ── 3. DHT22 BATTERY TEMPERATURE (GPIO23 · 0–40°C CHARGE GUARD) ─ */}
+      <div
+        className={`rounded-2xl p-3.5 border flex items-center justify-between shadow-md transition-colors ${
+          isDark ? 'bg-[#13171B] border-[#1E242B]' : 'bg-white border-zinc-200'
+        }`}
+      >
+        <div>
+          <span
+            className={`text-[10px] font-bold uppercase tracking-wider block ${
+              isDark ? 'text-white' : 'text-zinc-900'
+            }`}
+          >
+            {isFil ? 'BATTERY TEMP (GPIO23)' : 'BATTERY TEMP (GPIO23)'}
+          </span>
+          <span
+            className={`text-[9.5px] font-mono block mt-0.5 ${
+              thermalGuardTripped
+                ? 'text-rose-400 font-bold'
+                : isDark
+                ? 'text-zinc-400'
+                : 'text-zinc-500'
+            }`}
+          >
+            {!isConnected
+              ? 'DHT22 · 0–40°C Charge Window'
+              : !dhtOk
+              ? 'DHT22 Error · Charge Lockout'
+              : thermalGuardTripped
+              ? 'Outside 0–40°C · Charge Lockout'
+              : 'DHT22 · Safe Charge Window (0–40°C)'}
+          </span>
         </div>
 
-        {/* RELATIVE HUMIDITY (% RH) */}
-        <div
-          className={`rounded-2xl p-3.5 border flex flex-col justify-between min-h-[104px] shadow-md transition-colors ${
-            isDark ? 'bg-[#13171B] border-[#1E242B]' : 'bg-white border-zinc-200'
-          }`}
-        >
-          <div>
+        <div className="flex items-baseline">
+          <span
+            className={`text-2xl font-black font-mono tabular-nums ${
+              !isConnected
+                ? isDark
+                  ? 'text-zinc-500'
+                  : 'text-zinc-400'
+                : !dhtOk
+                ? 'text-rose-400 text-xl'
+                : isDark
+                ? 'text-white'
+                : 'text-zinc-900'
+            }`}
+          >
+            {!isConnected ? '--' : !dhtOk ? 'ERR' : ambTemp.toFixed(1)}
+          </span>
+          {(!isConnected || dhtOk) && (
             <span
-              className={`text-[10px] font-bold uppercase tracking-wider block ${
-                isDark ? 'text-white' : 'text-zinc-900'
+              className={`text-xs font-semibold ml-1 ${
+                isDark ? 'text-[#9CA3AF]' : 'text-zinc-500'
               }`}
             >
-              {isFil ? 'HALUMIGMIG (DHT22)' : 'HUMIDITY (DHT22)'}
+              °C
             </span>
-            <span
-              className={`text-[9.5px] font-mono block mt-0.5 ${
-                isDark ? 'text-zinc-400' : 'text-zinc-500'
-              }`}
-            >
-              {isFil ? 'Relatibong Halumigmig' : 'Relative Humidity · GPIO23'}
-            </span>
-          </div>
-
-          <div className="flex items-baseline mt-2">
-            <span
-              className={`text-2xl font-black font-mono tabular-nums ${
-                !isConnected
-                  ? isDark
-                    ? 'text-zinc-500'
-                    : 'text-zinc-400'
-                  : !dhtOk
-                  ? 'text-rose-400 text-xl'
-                  : isDark
-                  ? 'text-white'
-                  : 'text-zinc-900'
-              }`}
-            >
-              {!isConnected ? '--' : !dhtOk ? 'ERR' : ambHum.toFixed(0)}
-            </span>
-            {(!isConnected || dhtOk) && (
-              <span
-                className={`text-xs font-semibold ml-1 ${
-                  isDark ? 'text-[#9CA3AF]' : 'text-zinc-500'
-                }`}
-              >
-                % RH
-              </span>
-            )}
-          </div>
+          )}
         </div>
       </div>
 
