@@ -280,37 +280,51 @@ export function applyCalibration(
 
   // 4. Battery Voltage & SoC (%): Tianneng TNE12-15 (12V 15Ah AGM-GEL Deep Cycle) Datasheet Curve
   // - 10.80V (1.80V/cell @ 20hr rate) = 0% SoC (100% DOD)
-  // - 11.50V = 20% SoC (80% DOD safe cycle reserve)
-  // - 11.80V = 35% SoC (ESP32 low-battery warning threshold)
-  // - 12.10V = 50% SoC (50% DOD)
-  // - 12.50V = 75% SoC
-  // - 12.90V+ (resting/float) or vOpenNow (14.60V while charging) = 100% SoC
+  // - While CHARGING (Relay Closed / State 1):
+  //   * Stage 1 (1 Bar, 1-25%):  10.80V to < 12.20V (Initial Recovery)
+  //   * Stage 2 (2 Bars, 26-50%): 12.20V to < vCloseNow (13.70V Floating Voltage @ 25°C, -18mV/°C)
+  //   * Stage 3 (3 Bars, 51-75%): vCloseNow (13.70V) to < vOpenNow (14.60V Limited Cycle Voltage @ 25°C, -24mV/°C)
+  //   * Stage 4 (4 Bars, 100%):   >= vOpenNow (14.60V) or State 2/3 (WAIT FULL / FLOAT/REST)
   const safeRawBattV = Number.isFinite(raw.rawBatteryVoltage) ? raw.rawBatteryVoltage : 0
   const batteryVoltage = isLiveHardware
     ? Math.round(safeRawBattV * 100) / 100
     : Math.round((safeRawBattV * cal.batteryVoltageGain) * 100) / 100
   const vMin = Math.min(cal.batteryVMin, cal.batteryVMax - 1.0)
   const vMax = Math.max(cal.batteryVMax, vMin + 1.0)
-  const isActivelyCharging =
-    Boolean(esp32Data?.relayClosed ?? raw.relays.dcBus) &&
-    (Number.isFinite(raw.rawTegCurrent) ? raw.rawTegCurrent : 0) > 0.08
+  const vCloseStage = esp32Data?.vCloseNow ?? 13.7
+  const vOpenStage = esp32Data?.vOpenNow ?? vMax
+  const isChargingStage =
+    Boolean(esp32Data?.relayClosed ?? raw.relays.dcBus) || esp32Data?.stateCode === 1
+  const isFullHoldStage = esp32Data?.stateCode === 2 || esp32Data?.stateCode === 3
+
   let batteryPctRaw = 0
   if (batteryVoltage >= 6.0) {
-    if (isActivelyCharging) {
-      const chargeCeil = esp32Data?.vOpenNow ?? vMax
-      batteryPctRaw = ((batteryVoltage - vMin) / Math.max(1.0, chargeCeil - vMin)) * 100
+    if (isFullHoldStage && batteryVoltage >= vCloseStage - 0.15) {
+      batteryPctRaw = 100
+    } else if (isChargingStage) {
+      if (batteryVoltage < vMin) {
+        batteryPctRaw = 0
+      } else if (batteryVoltage < 12.2) {
+        // Stage 1 (1 Bar): 1% to 25% until 12.20V is reached
+        batteryPctRaw = 1 + ((batteryVoltage - vMin) / Math.max(0.1, 12.2 - vMin)) * 24
+      } else if (batteryVoltage < vCloseStage) {
+        // Stage 2 (2 Bars): 26% to 50% until Floating Voltage (13.70V @ 25°C) is reached
+        batteryPctRaw = 26 + ((batteryVoltage - 12.2) / Math.max(0.1, vCloseStage - 12.2)) * 24
+      } else if (batteryVoltage < vOpenStage) {
+        // Stage 3 (3 Bars): 51% to 75% until Limited Cycle Voltage (14.60V @ 25°C) is reached
+        batteryPctRaw = 51 + ((batteryVoltage - vCloseStage) / Math.max(0.1, vOpenStage - vCloseStage)) * 24
+      } else {
+        // Stage 4 (4 Bars): Reached full cycle charge limit (14.60V @ 25°C)
+        batteryPctRaw = 100
+      }
     } else if (batteryVoltage <= vMin) {
       batteryPctRaw = 0
-    } else if (batteryVoltage <= 11.5) {
-      batteryPctRaw = ((batteryVoltage - vMin) / Math.max(0.1, 11.5 - vMin)) * 20
-    } else if (batteryVoltage <= 11.8) {
-      batteryPctRaw = 20 + ((batteryVoltage - 11.5) / 0.3) * 15
-    } else if (batteryVoltage <= 12.1) {
-      batteryPctRaw = 35 + ((batteryVoltage - 11.8) / 0.3) * 15
-    } else if (batteryVoltage <= 12.5) {
-      batteryPctRaw = 50 + ((batteryVoltage - 12.1) / 0.4) * 25
-    } else if (batteryVoltage <= 12.9) {
-      batteryPctRaw = 75 + ((batteryVoltage - 12.5) / 0.4) * 25
+    } else if (batteryVoltage < 11.8) {
+      batteryPctRaw = 1 + ((batteryVoltage - vMin) / Math.max(0.1, 11.8 - vMin)) * 24
+    } else if (batteryVoltage < 12.3) {
+      batteryPctRaw = 26 + ((batteryVoltage - 11.8) / 0.5) * 24
+    } else if (batteryVoltage < 12.8) {
+      batteryPctRaw = 51 + ((batteryVoltage - 12.3) / 0.5) * 24
     } else {
       batteryPctRaw = 100
     }

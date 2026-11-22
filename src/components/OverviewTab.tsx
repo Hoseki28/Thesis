@@ -1,3 +1,4 @@
+import { useRef } from 'react'
 import { Lang, ScenarioPreset, TelemetryData } from '../types/telemetry'
 import {
   IconPowerCircle,
@@ -135,9 +136,62 @@ export function OverviewTab({
   const whHarvLive = isConnected ? (telemetry.whHarv ?? 0.0) : 0.0
   const isRelayClosed = isConnected ? Boolean(telemetry.relayOn ?? telemetry.relays.dcBus) : false
 
-  // 4-Bar Battery State-of-Charge Calculation
-  const battPct = isConnected ? Math.min(100, Math.max(0, Math.round(telemetry.batteryPct))) : 0
-  const activeBars = battPct > 75 ? 4 : battPct > 50 ? 3 : battPct > 25 ? 2 : battPct > 0 ? 1 : 0
+  // Tianneng TNE12-15 (12V 15Ah) Stage-Locked 4-Bar Battery Calculation with Hysteresis
+  // While charging, the bar level stays locked at its current stage and only advances
+  // once vBat reaches the required TNE12-15 stage threshold:
+  // - Stage 1 (1 Bar):  10.80V <= vBat < 12.20V
+  // - Stage 2 (2 Bars): 12.20V <= vBat < vCloseNow (13.70V Floating Voltage @ 25°C)
+  // - Stage 3 (3 Bars): vCloseNow (13.70V) <= vBat < vOpenNow (14.60V Cycle Cutoff @ 25°C)
+  // - Stage 4 (4 Bars): vBat >= vOpenNow (14.60V) or ESP32 State 2/3 (WAIT FULL / FLOAT/REST)
+  const heldBarsRef = useRef<number>(0)
+  const vCloseTarget = telemetry.vCloseNow ?? 13.7
+  const vOpenTarget = telemetry.vOpenNow ?? 14.6
+  const stateCode = telemetry.stateCode ?? telemetry.esp32?.stateCode ?? 0
+  const isChargingMode = isRelayClosed || stateCode === 1
+  const isFullHoldMode = stateCode === 2 || stateCode === 3
+
+  const activeBars = (() => {
+    if (!isConnected || vBatLive < 6.0) {
+      heldBarsRef.current = 0
+      return 0
+    }
+    if (isFullHoldMode && vBatLive >= vCloseTarget - 0.15) {
+      heldBarsRef.current = 4
+      return 4
+    }
+    if (isChargingMode) {
+      let targetBars = 0
+      if (vBatLive >= vOpenTarget) {
+        targetBars = 4
+      } else if (vBatLive >= vCloseTarget) {
+        targetBars = 3
+      } else if (vBatLive >= 12.2) {
+        targetBars = 2
+      } else if (vBatLive >= 10.8) {
+        targetBars = 1
+      } else {
+        targetBars = 0
+      }
+
+      // Hysteresis: while charging, hold the current bar stage unless voltage drops >0.15V below threshold
+      const prev = heldBarsRef.current
+      if (targetBars < prev) {
+        const dropMargin = 0.15
+        if (prev === 4 && vBatLive >= vOpenTarget - dropMargin) return 4
+        if (prev === 3 && vBatLive >= vCloseTarget - dropMargin) return 3
+        if (prev === 2 && vBatLive >= 12.2 - dropMargin) return 2
+        if (prev === 1 && vBatLive >= 10.8 - dropMargin) return 1
+      }
+      heldBarsRef.current = targetBars
+      return targetBars
+    }
+
+    // Resting / open-circuit battery stages (relay open)
+    const battPct = Math.min(100, Math.max(0, Math.round(telemetry.batteryPct)))
+    const restBars = battPct > 75 ? 4 : battPct > 50 ? 3 : battPct > 25 ? 2 : battPct > 0 ? 1 : 0
+    heldBarsRef.current = restBars
+    return restBars
+  })()
 
   return (
     <div className="flex flex-col gap-3 font-sans">
