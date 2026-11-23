@@ -50,7 +50,9 @@ export interface Esp32HardwareStatus {
   inaOk?: boolean
   vTeg?: number
   vBat?: number
+  batPct?: number
   iBat?: number
+  iTeg?: number
   tHot?: number
   tCold?: number
   dT?: number
@@ -70,10 +72,12 @@ export interface TelemetryData {
   rawTegCurrent: number
   rawCoPpm?: number
 
-  // Direct ESP32 Hardware Truth fields (thesis.ino)
+  // Direct ESP32 Hardware Truth fields (thesis.ino / working_4.ino)
   vTeg?: number
   vBat?: number
+  batPct?: number
   iBat?: number
+  iTeg?: number
   pBat?: number
   pHarv?: number
   whTotal?: number

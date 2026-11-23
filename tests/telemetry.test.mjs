@@ -50,6 +50,40 @@ test('Power calculation separates In-Battery Power (Vbat*I) from TEG Harvest (Vt
   assert.ok(pTeg > pBat)
 })
 
+test('Tianneng TNE12-15 SoC curve distinguishes resting/idle (iTeg < 0.10A) vs actively charging (relayOn && iTeg >= 0.10A)', () => {
+  function computeSoc({ vBat, iTeg, relayOn, stateCode = 1, vCloseNow = 13.7, vOpenNow = 14.6 }) {
+    if (stateCode === 0 || vBat < 6.0 || vBat > 16.5) return 0
+    if ((stateCode === 2 || stateCode === 3) && vBat >= 12.6) return 100
+    const isActivelyCharging = Boolean(relayOn) && iTeg >= 0.10
+    if (isActivelyCharging) {
+      if (vBat <= 10.8) return 0
+      if (vBat < 12.2) return Math.round(1 + ((vBat - 10.8) / 1.4) * 24)
+      if (vBat < vCloseNow) return Math.round(26 + ((vBat - 12.2) / (vCloseNow - 12.2)) * 24)
+      if (vBat < vOpenNow) return Math.round(51 + ((vBat - vCloseNow) / (vOpenNow - vCloseNow)) * 24)
+      return 100
+    }
+    if (vBat <= 10.8) return 0
+    if (vBat <= 11.5) return Math.round(((vBat - 10.8) / 0.7) * 20)
+    if (vBat <= 11.8) return Math.round(20 + ((vBat - 11.5) / 0.3) * 15)
+    if (vBat <= 12.1) return Math.round(35 + ((vBat - 11.8) / 0.3) * 15)
+    if (vBat <= 12.5) return Math.round(50 + ((vBat - 12.1) / 0.4) * 25)
+    if (vBat <= 12.85) return Math.round(75 + ((vBat - 12.5) / 0.35) * 25)
+    return 100
+  }
+
+  // 12.63V - 12.68V at 0.00A (even with relayOn=true) is resting/near-idle -> ~84% to 88% (4 bars), not 30%
+  assert.equal(computeSoc({ vBat: 12.63, iTeg: 0.0, relayOn: true, stateCode: 1 }), 84)
+  assert.equal(computeSoc({ vBat: 12.68, iTeg: 0.0, relayOn: false, stateCode: 4 }), 88)
+
+  // Actively charging (relayOn && iTeg >= 0.10A) at 12.65V is in Stage 2 (26-50%, 2 bars)
+  const chargingMid = computeSoc({ vBat: 12.65, iTeg: 0.45, relayOn: true, stateCode: 1 })
+  assert.ok(chargingMid >= 26 && chargingMid <= 50)
+
+  // Disconnected / out of 6.0-16.5V window -> 0%
+  assert.equal(computeSoc({ vBat: 12.65, iTeg: 0.0, relayOn: false, stateCode: 0 }), 0)
+  assert.equal(computeSoc({ vBat: 5.5, iTeg: 0.0, relayOn: false, stateCode: 1 }), 0)
+})
+
 test('PWA icon binaries are real PNG files (not Git LFS pointers)', () => {
   for (const icon of ['public/icon-192.png', 'public/icon-512.png']) {
     const buf = fs.readFileSync(path.resolve(icon))

@@ -230,6 +230,101 @@ export function getOfflineTelemetry(cal: CalibrationConfig = loadCalibration()):
 }
 
 /**
+ * Frontend Smoothed Battery SoC Filter State (matches working_4.ino 0.92/0.08 EMA + 2%/sec rate limit)
+ * Prevents sudden jumps in batteryPct or battery icon bars during brief voltage dips or
+ * relay transitions (CHARGING <-> FULL-HOLD / WAITING or iTeg crossing 0.10 A).
+ */
+let filtFrontendSoc = 0
+let firstFrontendSoc = true
+let lastFrontendSocMs = 0
+
+export function resetFrontendSocFilter(): void {
+  filtFrontendSoc = 0
+  firstFrontendSoc = true
+  lastFrontendSocMs = 0
+}
+
+/**
+ * Pure Tianneng TNE12-15 (12V 15Ah VRLA / AGM-Gel) Target SoC (%) Calculator
+ * - Valid battery window: 6.0 V to 16.5 V (stateCode === 0 outside this window -> 0%)
+ * - Distinguishes actively charging (relayOn && iTeg >= 0.10 A) vs. resting/near-idle (!relayOn || iTeg < 0.10 A)
+ * - Resting 12.63 V - 12.68 V with 0.00 A evaluates on the resting VRLA/AGM curve (~84% - 88%)
+ */
+export function computeTne1215TargetSoc(params: {
+  vBat: number
+  iTeg: number
+  relayOn: boolean
+  stateCode?: number
+  vMin?: number
+  vCloseNow?: number
+  vOpenNow?: number
+}): number {
+  const {
+    vBat,
+    iTeg,
+    relayOn,
+    stateCode = 1,
+    vMin = 10.8,
+    vCloseNow = 13.7,
+    vOpenNow = 14.6,
+  } = params
+
+  // Valid battery detection window: 6.0 V to 16.5 V and state !== 0 (NO BATTERY)
+  if (stateCode === 0 || !Number.isFinite(vBat) || vBat < 6.0 || vBat > 16.5) {
+    return 0
+  }
+
+  // FULL-HOLD (state 2) or WAITING reconnect dwell (state 3) after full/taper charge cutoff
+  if ((stateCode === 2 || stateCode === 3) && vBat >= 12.6) {
+    return 100
+  }
+
+  const safeITeg = Number.isFinite(iTeg) ? iTeg : 0
+  const isActivelyCharging = Boolean(relayOn) && safeITeg >= 0.10
+
+  let rawPct = 0
+  if (isActivelyCharging) {
+    // Active Charging Curve (relayOn && iTeg >= 0.10 A):
+    // Terminal voltage is elevated by charge current toward vOpenNow (14.60 V @ 25°C, -24 mV/°C)
+    if (vBat <= vMin) {
+      rawPct = 0
+    } else if (vBat < 12.2) {
+      // Stage 1 (1 Bar): 10.80 V to < 12.20 V -> 1% to 25%
+      rawPct = 1 + ((vBat - vMin) / Math.max(0.1, 12.2 - vMin)) * 24
+    } else if (vBat < vCloseNow) {
+      // Stage 2 (2 Bars): 12.20 V to < vCloseNow (13.70 V @ 25°C) -> 26% to 50%
+      rawPct = 26 + ((vBat - 12.2) / Math.max(0.1, vCloseNow - 12.2)) * 24
+    } else if (vBat < vOpenNow) {
+      // Stage 3 (3 Bars): vCloseNow (13.70 V) to < vOpenNow (14.60 V @ 25°C) -> 51% to 75%
+      rawPct = 51 + ((vBat - vCloseNow) / Math.max(0.1, vOpenNow - vCloseNow)) * 24
+    } else {
+      // Stage 4 (4 Bars): Reached full cycle charge ceiling (>= vOpenNow) -> 100%
+      rawPct = 100
+    }
+  } else {
+    // Resting / Near-Idle VRLA / AGM-Gel Curve (!relayOn || iTeg < 0.10 A):
+    // Prevents under-reporting when vBat is 12.63 V - 12.68 V at 0.00 A (reads ~84% - 88%, 4 Bars)
+    if (vBat <= vMin) {
+      rawPct = 0
+    } else if (vBat <= 11.5) {
+      rawPct = ((vBat - vMin) / Math.max(0.1, 11.5 - vMin)) * 20
+    } else if (vBat <= 11.8) {
+      rawPct = 20 + ((vBat - 11.5) / 0.3) * 15
+    } else if (vBat <= 12.1) {
+      rawPct = 35 + ((vBat - 11.8) / 0.3) * 15
+    } else if (vBat <= 12.5) {
+      rawPct = 50 + ((vBat - 12.1) / 0.4) * 25
+    } else if (vBat <= 12.85) {
+      rawPct = 75 + ((vBat - 12.5) / 0.35) * 25
+    } else {
+      rawPct = 100
+    }
+  }
+
+  return Math.min(100, Math.max(0, rawPct))
+}
+
+/**
  * Apply calibration formulas and physical models to raw sensor inputs
  */
 export function applyCalibration(
@@ -238,6 +333,7 @@ export function applyCalibration(
 ): TelemetryData {
   const isOffline = raw.source === 'offline'
   if (isOffline) {
+    resetFrontendSocFilter()
     return getOfflineTelemetry(cal)
   }
 
@@ -246,6 +342,7 @@ export function applyCalibration(
 
   // If not live hardware and raw values are zero/missing, return offline zeros
   if (!isLiveHardware && (!raw.rawBatteryVoltage || raw.rawBatteryVoltage <= 0.1)) {
+    resetFrontendSocFilter()
     return getOfflineTelemetry(cal)
   }
 
@@ -278,13 +375,7 @@ export function applyCalibration(
     ? esp32Data.dT
     : Math.max(0, Math.round((stoveTemp - coldFaceTemp) * 10) / 10)
 
-  // 4. Battery Voltage & SoC (%): Tianneng TNE12-15 (12V 15Ah AGM-GEL Deep Cycle) Datasheet Curve
-  // - 10.80V (1.80V/cell @ 20hr rate) = 0% SoC (100% DOD)
-  // - While CHARGING (Relay Closed / State 1):
-  //   * Stage 1 (1 Bar, 1-25%):  10.80V to < 12.20V (Initial Recovery)
-  //   * Stage 2 (2 Bars, 26-50%): 12.20V to < vCloseNow (13.70V Floating Voltage @ 25°C, -18mV/°C)
-  //   * Stage 3 (3 Bars, 51-75%): vCloseNow (13.70V) to < vOpenNow (14.60V Limited Cycle Voltage @ 25°C, -24mV/°C)
-  //   * Stage 4 (4 Bars, 100%):   >= vOpenNow (14.60V) or State 2/3 (WAIT FULL / FLOAT/REST)
+  // 4. Battery Voltage & SoC (%): Tianneng TNE12-15 (12V 15Ah VRLA/AGM-Gel) synchronized with working_4.ino
   const safeRawBattV = Number.isFinite(raw.rawBatteryVoltage) ? raw.rawBatteryVoltage : 0
   const batteryVoltage = isLiveHardware
     ? Math.round(safeRawBattV * 100) / 100
@@ -293,43 +384,53 @@ export function applyCalibration(
   const vMax = Math.max(cal.batteryVMax, vMin + 1.0)
   const vCloseStage = esp32Data?.vCloseNow ?? 13.7
   const vOpenStage = esp32Data?.vOpenNow ?? vMax
-  const isChargingStage =
-    Boolean(esp32Data?.relayClosed ?? raw.relays.dcBus) || esp32Data?.stateCode === 1
-  const isFullHoldStage = esp32Data?.stateCode === 2 || esp32Data?.stateCode === 3
+  const stateCodeVal = esp32Data?.stateCode ?? (Boolean(esp32Data?.relayClosed ?? raw.relays.dcBus) ? 1 : 4)
+  const relayOnVal = Boolean(esp32Data?.relayClosed ?? raw.relays.dcBus)
+  const iTegVal =
+    isLiveHardware && esp32Data?.iTeg !== undefined
+      ? esp32Data.iTeg
+      : isLiveHardware && esp32Data?.iBat !== undefined
+      ? esp32Data.iBat
+      : Number.isFinite(raw.rawTegCurrent)
+      ? raw.rawTegCurrent
+      : 0
 
-  let batteryPctRaw = 0
-  if (batteryVoltage >= 6.0) {
-    if (isFullHoldStage && batteryVoltage >= vCloseStage - 0.15) {
-      batteryPctRaw = 100
-    } else if (isChargingStage) {
-      if (batteryVoltage < vMin) {
-        batteryPctRaw = 0
-      } else if (batteryVoltage < 12.2) {
-        // Stage 1 (1 Bar): 1% to 25% until 12.20V is reached
-        batteryPctRaw = 1 + ((batteryVoltage - vMin) / Math.max(0.1, 12.2 - vMin)) * 24
-      } else if (batteryVoltage < vCloseStage) {
-        // Stage 2 (2 Bars): 26% to 50% until Floating Voltage (13.70V @ 25°C) is reached
-        batteryPctRaw = 26 + ((batteryVoltage - 12.2) / Math.max(0.1, vCloseStage - 12.2)) * 24
-      } else if (batteryVoltage < vOpenStage) {
-        // Stage 3 (3 Bars): 51% to 75% until Limited Cycle Voltage (14.60V @ 25°C) is reached
-        batteryPctRaw = 51 + ((batteryVoltage - vCloseStage) / Math.max(0.1, vOpenStage - vCloseStage)) * 24
-      } else {
-        // Stage 4 (4 Bars): Reached full cycle charge limit (14.60V @ 25°C)
-        batteryPctRaw = 100
-      }
-    } else if (batteryVoltage <= vMin) {
-      batteryPctRaw = 0
-    } else if (batteryVoltage < 11.8) {
-      batteryPctRaw = 1 + ((batteryVoltage - vMin) / Math.max(0.1, 11.8 - vMin)) * 24
-    } else if (batteryVoltage < 12.3) {
-      batteryPctRaw = 26 + ((batteryVoltage - 11.8) / 0.5) * 24
-    } else if (batteryVoltage < 12.8) {
-      batteryPctRaw = 51 + ((batteryVoltage - 12.3) / 0.5) * 24
+  let batteryPct = 0
+  if (stateCodeVal === 0 || batteryVoltage < 6.0 || batteryVoltage > 16.5) {
+    resetFrontendSocFilter()
+    batteryPct = 0
+  } else {
+    const targetPct = computeTne1215TargetSoc({
+      vBat: batteryVoltage,
+      iTeg: iTegVal,
+      relayOn: relayOnVal,
+      stateCode: stateCodeVal,
+      vMin,
+      vCloseNow: vCloseStage,
+      vOpenNow: vOpenStage,
+    })
+
+    const nowMs = Date.now()
+    if (firstFrontendSoc) {
+      filtFrontendSoc = targetPct
+      firstFrontendSoc = false
+      lastFrontendSocMs = nowMs
     } else {
-      batteryPctRaw = 100
+      // 0.92 / 0.08 EMA smoothing + 2.0%/sec rate limiter matching working_4.ino getBatteryPercent()
+      const elapsedSec =
+        lastFrontendSocMs > 0
+          ? Math.max(0.25, Math.min(2.5, (nowMs - lastFrontendSocMs) / 1000))
+          : 1.0
+      lastFrontendSocMs = nowMs
+      const emaTarget = 0.92 * filtFrontendSoc + 0.08 * targetPct
+      const maxStep = 2.0 * elapsedSec
+      let delta = emaTarget - filtFrontendSoc
+      if (delta > maxStep) delta = maxStep
+      if (delta < -maxStep) delta = -maxStep
+      filtFrontendSoc = Math.min(100, Math.max(0, filtFrontendSoc + delta))
     }
+    batteryPct = Math.min(100, Math.max(0, Math.round(filtFrontendSoc)))
   }
-  const batteryPct = Math.min(100, Math.max(0, Math.round(batteryPctRaw)))
 
   // 5. TEG Current & Voltage & Power
   // When connected to ESP32, safeRawTegV (e.g. 13.10V) and safeRawTegI (e.g. 1.18A) are already trimmed in firmware
@@ -463,10 +564,12 @@ export function applyCalibration(
     rawTegCurrent: safeRawTegI,
     rawCoPpm: safeCoPpm,
 
-    // Direct ESP32 Hardware Truth fields
+    // Direct ESP32 Hardware Truth fields (thesis.ino / working_4.ino)
     vTeg: tegVoltage,
     vBat: batteryVoltage,
+    batPct: esp32Data?.batPct ?? batteryPct,
     iBat: isLiveHardware && esp32Data?.iBat !== undefined ? esp32Data.iBat : (raw.rawBatteryCurrent !== undefined ? raw.rawBatteryCurrent : tegCurrent),
+    iTeg: isLiveHardware && (esp32Data?.iTeg ?? esp32Data?.iBat) !== undefined ? (esp32Data?.iTeg ?? esp32Data?.iBat) : tegCurrent,
     pBat: isLiveHardware && esp32Data?.pBatW !== undefined ? esp32Data.pBatW : Math.round(batteryVoltage * tegCurrent * 10) / 10,
     pHarv: isLiveHardware && esp32Data?.pHarvW !== undefined ? esp32Data.pHarvW : tegPower,
     whTotal: esp32Data?.whTotal ?? 0,

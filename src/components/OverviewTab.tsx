@@ -136,44 +136,48 @@ export function OverviewTab({
   const whHarvLive = isConnected ? (telemetry.whHarv ?? 0.0) : 0.0
   const isRelayClosed = isConnected ? Boolean(telemetry.relayOn ?? telemetry.relays.dcBus) : false
 
-  // Tianneng TNE12-15 (12V 15Ah) Stage-Locked 4-Bar Battery Calculation with Hysteresis
-  // While charging, the bar level stays locked at its current stage and only advances
-  // once vBat reaches the required TNE12-15 stage threshold:
-  // - Stage 1 (1 Bar):  10.80V <= vBat < 12.20V
-  // - Stage 2 (2 Bars): 12.20V <= vBat < vCloseNow (13.70V Floating Voltage @ 25°C)
-  // - Stage 3 (3 Bars): vCloseNow (13.70V) <= vBat < vOpenNow (14.60V Cycle Cutoff @ 25°C)
-  // - Stage 4 (4 Bars): vBat >= vOpenNow (14.60V) or ESP32 State 2/3 (WAIT FULL / FLOAT/REST)
+  // Tianneng TNE12-15 (12V 15Ah VRLA/AGM-Gel) Synchronized 4-Bar Indicator with Hysteresis
+  // - Returns 0 bars when disconnected, stateCode === 0 (NO BATTERY), or vBat outside 6.0V-16.5V
+  // - Distinguishes actively charging (isRelayClosed && iTeg >= 0.10A) vs. resting/near-idle (!isRelayClosed || iTeg < 0.10A):
+  //   * Resting / Near-Idle (e.g. 12.63V-12.68V at 0.00A): uses smoothed TNE12-15 resting SoC (~84%-88% -> 4 Bars)
+  //   * Actively Charging (relayOn && iTeg >= 0.10A): stays locked at current charging stage bar (1, 2, or 3 bars)
+  //     and only advances to 4 bars once vBat >= vOpenNow (14.60V @ 25°C) or state transitions to FULL-HOLD (2) / WAITING (3)
   const heldBarsRef = useRef<number>(0)
   const vCloseTarget = telemetry.vCloseNow ?? 13.7
   const vOpenTarget = telemetry.vOpenNow ?? 14.6
   const stateCode = telemetry.stateCode ?? telemetry.esp32?.stateCode ?? 0
-  const isChargingMode = isRelayClosed || stateCode === 1
+  const iTegLive = isConnected ? (telemetry.iTeg ?? telemetry.iBat ?? telemetry.rawTegCurrent ?? 0.0) : 0.0
+  const isActivelyCharging = isRelayClosed && iTegLive >= 0.10
   const isFullHoldMode = stateCode === 2 || stateCode === 3
 
   const activeBars = (() => {
-    if (!isConnected || vBatLive < 6.0) {
+    if (!isConnected || stateCode === 0 || vBatLive < 6.0 || vBatLive > 16.5) {
       heldBarsRef.current = 0
       return 0
     }
-    if (isFullHoldMode && vBatLive >= vCloseTarget - 0.15) {
+    if (isFullHoldMode && vBatLive >= 12.6) {
       heldBarsRef.current = 4
       return 4
     }
-    if (isChargingMode) {
+
+    // Smoothed TNE12-15 SoC percentage (already EMA-filtered & 2%/sec rate-limited in calibrationStorage.ts)
+    const battPct = Math.min(100, Math.max(0, Math.round(telemetry.batteryPct)))
+
+    if (isActivelyCharging) {
       let targetBars = 0
-      if (vBatLive >= vOpenTarget) {
+      if (vBatLive >= vOpenTarget || battPct >= 99) {
         targetBars = 4
-      } else if (vBatLive >= vCloseTarget) {
+      } else if (vBatLive >= vCloseTarget || battPct > 50) {
         targetBars = 3
-      } else if (vBatLive >= 12.2) {
+      } else if (vBatLive >= 12.2 || battPct > 25) {
         targetBars = 2
-      } else if (vBatLive >= 10.8) {
+      } else if (vBatLive >= 10.8 || battPct > 0) {
         targetBars = 1
       } else {
         targetBars = 0
       }
 
-      // Hysteresis: while charging, hold the current bar stage unless voltage drops >0.15V below threshold
+      // Hysteresis: while actively charging, hold the current bar stage unless voltage drops >0.15V below stage threshold
       const prev = heldBarsRef.current
       if (targetBars < prev) {
         const dropMargin = 0.15
@@ -186,9 +190,15 @@ export function OverviewTab({
       return targetBars
     }
 
-    // Resting / open-circuit battery stages (relay open)
-    const battPct = Math.min(100, Math.max(0, Math.round(telemetry.batteryPct)))
-    const restBars = battPct > 75 ? 4 : battPct > 50 ? 3 : battPct > 25 ? 2 : battPct > 0 ? 1 : 0
+    // Resting / Near-Idle (!relayOn || iTeg < 0.10A) with ±3% hysteresis on bar boundaries
+    let restBars = battPct > 75 ? 4 : battPct > 50 ? 3 : battPct > 25 ? 2 : battPct > 0 ? 1 : 0
+    const prev = heldBarsRef.current
+    if (prev > 0 && restBars !== prev) {
+      if (prev === 4 && battPct >= 72) restBars = 4
+      else if (prev === 3 && battPct >= 47 && battPct <= 78) restBars = 3
+      else if (prev === 2 && battPct >= 22 && battPct <= 53) restBars = 2
+      else if (prev === 1 && battPct >= 1 && battPct <= 28) restBars = 1
+    }
     heldBarsRef.current = restBars
     return restBars
   })()

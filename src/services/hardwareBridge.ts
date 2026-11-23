@@ -99,11 +99,13 @@ export class HardwareBridge {
   private onStateChangeCallback?: (state: HardwareState) => void
   private onEventCallback?: HardwareEventCallback
 
-  // Cached state assembled from thesis.ino compact, detailed, and event serial lines
+  // Cached state assembled from thesis.ino / working_4.ino compact, detailed, JSON, and event serial lines
   private esp32Cache: Esp32HardwareStatus & {
     vTeg: number
     vBat: number
+    batPct?: number
     iBat: number
+    iTeg: number
     tHot: number
     tCold: number
     tAmb: number
@@ -118,7 +120,9 @@ export class HardwareBridge {
     uptimeStr: '00:00:00',
     vTeg: 0,
     vBat: 0,
+    batPct: undefined,
     iBat: 0,
+    iTeg: 0,
     pBatW: 0,
     pHarvW: 0,
     whTotal: 0,
@@ -793,7 +797,9 @@ export class HardwareBridge {
       inaOk: c.inaOk,
       vTeg: c.vTeg,
       vBat: c.vBat,
+      batPct: c.batPct,
       iBat: c.iBat,
+      iTeg: c.iTeg ?? c.iBat,
       tHot: c.tHot,
       tCold: c.tCold,
       dT: c.hotFault || c.coldFault ? 0 : Math.max(0, Math.round((c.tHot - c.tCold) * 10) / 10),
@@ -940,6 +946,24 @@ export class HardwareBridge {
           this.esp32Cache.whTotal = 0
           this.esp32Cache.whHarv = 0
           this.esp32Cache.vTegPeak = 0
+          this.emitFromEsp32Cache(source)
+        } else if (msg.includes('Relay OPEN (taper cutoff)')) {
+          this.esp32Cache.relayClosed = false
+          this.esp32Cache.stateCode = 2
+          this.esp32Cache.stateName = 'FULL-HOLD'
+          this.esp32Cache.stateReason = 'taper cutoff (>=13.80V & <0.10A for 5 min)'
+          this.emitFromEsp32Cache(source)
+        } else if (msg.includes('Relay OPEN (holding)')) {
+          this.esp32Cache.relayClosed = false
+          this.esp32Cache.stateCode = 2
+          this.esp32Cache.stateName = 'FULL-HOLD'
+          this.esp32Cache.stateReason = 'reached full voltage limit'
+          this.emitFromEsp32Cache(source)
+        } else if (msg.includes('Relay CLOSED (charging)')) {
+          this.esp32Cache.relayClosed = true
+          this.esp32Cache.stateCode = 1
+          this.esp32Cache.stateName = 'CHARGING'
+          this.esp32Cache.stateReason = 'normal charging'
           this.emitFromEsp32Cache(source)
         }
 
@@ -1390,8 +1414,17 @@ export class HardwareBridge {
           if (typeof json.forceMode === 'number') this.esp32Cache.forceMode = json.forceMode as 0 | 1 | 2
           if (Number.isFinite(Number(json.vTeg))) this.esp32Cache.vTeg = Number(json.vTeg)
           if (Number.isFinite(Number(json.vBat))) this.esp32Cache.vBat = Number(json.vBat)
-          if (Number.isFinite(Number(json.iBat))) this.esp32Cache.iBat = Number(json.iBat)
-          if (Number.isFinite(Number(json.iTeg))) this.esp32Cache.iBat = Number(json.iTeg)
+          if (json.batPct !== undefined && Number.isFinite(Number(json.batPct))) {
+            this.esp32Cache.batPct = Number(json.batPct)
+          }
+          if (Number.isFinite(Number(json.iBat))) {
+            this.esp32Cache.iBat = Number(json.iBat)
+            this.esp32Cache.iTeg = Number(json.iBat)
+          }
+          if (Number.isFinite(Number(json.iTeg))) {
+            this.esp32Cache.iBat = Number(json.iTeg)
+            this.esp32Cache.iTeg = Number(json.iTeg)
+          }
           if (Number.isFinite(Number(json.pBat))) this.esp32Cache.pBatW = Number(json.pBat)
           if (Number.isFinite(Number(json.pHarv))) this.esp32Cache.pHarvW = Number(json.pHarv)
           if (Number.isFinite(Number(json.pTeg))) this.esp32Cache.pHarvW = Number(json.pTeg)
@@ -1449,6 +1482,9 @@ export class HardwareBridge {
           if (Number.isFinite(Number(json.vOpen))) this.esp32Cache.vOpenNow = Number(json.vOpen)
           if (Number.isFinite(Number(json.vClose))) this.esp32Cache.vCloseNow = Number(json.vClose)
           if (Number.isFinite(Number(json.vHard))) this.esp32Cache.vHardNow = Number(json.vHard)
+          if (Number.isFinite(Number(json.vOpenNow))) this.esp32Cache.vOpenNow = Number(json.vOpenNow)
+          if (Number.isFinite(Number(json.vCloseNow))) this.esp32Cache.vCloseNow = Number(json.vCloseNow)
+          if (Number.isFinite(Number(json.vHardNow))) this.esp32Cache.vHardNow = Number(json.vHardNow)
           if (Number.isFinite(Number(json.batTrim))) this.esp32Cache.batTrim = Number(json.batTrim)
           if (Number.isFinite(Number(json.tegTrim))) this.esp32Cache.tegTrim = Number(json.tegTrim)
           if (Number.isFinite(Number(json.curTrim))) this.esp32Cache.curTrim = Number(json.curTrim)
