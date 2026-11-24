@@ -32,7 +32,7 @@ export function SensorsTab({ telemetry, lang, theme = 'dark' }: SensorsTabProps)
   const dhtOk = telemetry.esp32?.dhtOk !== false && telemetry.dhtOk !== false
   const ambTemp = telemetry.tAmb ?? telemetry.ambientTemp ?? 0.0
 
-  const hotOver = isConnected && !telemetry.hotFault && tHotLive >= 230
+  const hotOver = isConnected && !telemetry.hotFault && tHotLive >= 150
   const thermalGuardTripped =
     isConnected &&
     (!dhtOk ||
@@ -116,16 +116,16 @@ export function SensorsTab({ telemetry, lang, theme = 'dark' }: SensorsTabProps)
               : thermalGuardTripped
               ? 'TEMP LOCKOUT'
               : hotOver
-              ? 'HOT >230°C'
+              ? 'HOT >150°C'
               : telemetry.hotFault || telemetry.coldFault
               ? 'PROBE FAULT'
               : 'ALL SAFE'}
           </span>
         </div>
 
-        {/* 2 Thermal Protection Zones: Stove (<230°C) & Battery (0–40°C) */}
+        {/* 2 Thermal Protection Zones: Stove (<150°C) & Battery (0–40°C) */}
         <div className="grid grid-cols-2 gap-2 text-center font-mono">
-          {/* Zone 1: Stove Max <230°C */}
+          {/* Zone 1: Stove Max <150°C */}
           <div
             className={`p-2 rounded-xl border ${
               hotOver
@@ -136,7 +136,7 @@ export function SensorsTab({ telemetry, lang, theme = 'dark' }: SensorsTabProps)
             }`}
           >
             <span className={`text-[8.5px] block ${isDark ? 'text-zinc-400' : 'text-zinc-500'}`}>
-              STOVE (&lt;230°C)
+              STOVE (&lt;150°C)
             </span>
             <span
               className={`text-xs font-black block mt-0.5 ${
@@ -150,10 +150,10 @@ export function SensorsTab({ telemetry, lang, theme = 'dark' }: SensorsTabProps)
               }`}
             >
               {!isConnected
-                ? '-- / 230°C'
+                ? '-- / 150°C'
                 : telemetry.hotFault
                 ? 'FAULT'
-                : `${tHotLive.toFixed(0)}° / 230°C`}
+                : `${tHotLive.toFixed(0)}° / 150°C`}
             </span>
           </div>
 
@@ -243,10 +243,10 @@ export function SensorsTab({ telemetry, lang, theme = 'dark' }: SensorsTabProps)
               }`}
             >
               {!isConnected
-                ? 'MAX31855 · Max 230°C'
+                ? 'MAX31855 · Max 150°C'
                 : telemetry.hotFault
                 ? `Fault: ${telemetry.hotWhy || 'check probe'}`
-                : 'Stove Hot Face · Max 230°C'}
+                : 'Stove Hot Face · Max 150°C'}
             </span>
           </div>
 

@@ -141,7 +141,7 @@ export function ServiceTab({
     if (telemetry.hotFault) {
       hotStatus = 'fault'
       hotDetail = telemetry.hotWhy && telemetry.hotWhy !== 'ok' ? telemetry.hotWhy : 'Probe fault'
-    } else if (tHot > 230) {
+    } else if (tHot > 150) {
       hotStatus = 'warning'
       hotDetail = `${tHot.toFixed(0)}°C High`
     }
