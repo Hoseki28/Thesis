@@ -765,7 +765,7 @@ export class HardwareBridge {
 
     const snapshot: Esp32HardwareStatus = {
       stateCode: c.stateCode,
-      stateName: c.stateName,
+      stateName: (c.stateName || '').trim(),
       stateReason: c.stateReason,
       relayClosed: c.relayClosed,
       forceMode: c.forceMode,

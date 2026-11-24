@@ -384,25 +384,23 @@ export function applyCalibration(
   if (stateCodeVal === 0 || batteryVoltage < 6.0 || batteryVoltage > 16.5) {
     resetFrontendSocFilter()
     batteryPct = 0
+  } else if (esp32Data?.batPct !== undefined && Number.isFinite(esp32Data.batPct)) {
+    // Use ESP32's dual-curve & taper-aware batPct directly when provided in JSON telemetry
+    // (already smoothed with 0.90/0.10 EMA and 2.0%/sec rate limit in firmware)
+    const directPct = Math.min(100, Math.max(0, Math.round(esp32Data.batPct)))
+    filtFrontendSoc = directPct
+    firstFrontendSoc = false
+    lastFrontendSocMs = Date.now()
+    batteryPct = directPct
   } else {
-    const curveTargetPct = computeTne1215TargetSoc({
+    // Fallback for text-mode telemetry where batPct is not in the serial line:
+    // matches firmware's dual-curve TNE12-15 SoC with 0.90/0.10 EMA + 2.0%/sec rate limiter
+    const targetPct = computeTne1215TargetSoc({
       vBat: batteryVoltage,
       iTeg: iTegVal,
       relayOn: relayOnVal,
       stateCode: stateCodeVal,
     })
-
-    // Prefer ESP32's smoothed batPct if provided and not coming from the legacy linear 11.8V-14.6V under-reporting scale
-    const fwBatPct = esp32Data?.batPct
-    const legacyLinearPct = Math.min(100, Math.max(0, ((batteryVoltage - 11.8) / (14.6 - 11.8)) * 100))
-    const isFwLegacyLinear =
-      fwBatPct !== undefined &&
-      Math.abs(fwBatPct - legacyLinearPct) <= 4 &&
-      Math.abs(curveTargetPct - legacyLinearPct) > 12
-    const targetPct =
-      fwBatPct !== undefined && Number.isFinite(fwBatPct) && !isFwLegacyLinear
-        ? fwBatPct
-        : curveTargetPct
 
     const nowMs = Date.now()
     if (firstFrontendSoc) {
@@ -410,14 +408,12 @@ export function applyCalibration(
       firstFrontendSoc = false
       lastFrontendSocMs = nowMs
     } else {
-      // 0.92 / 0.08 EMA smoothing + 2.0%/sec rate limiter so single-second relay/state flips
-      // (CHARGING <-> FULL-HOLD / WAITING) never snap the battery percentage or icon bars
       const elapsedSec =
         lastFrontendSocMs > 0
           ? Math.max(0.25, Math.min(2.5, (nowMs - lastFrontendSocMs) / 1000))
           : 1.0
       lastFrontendSocMs = nowMs
-      const emaTarget = 0.92 * filtFrontendSoc + 0.08 * targetPct
+      const emaTarget = 0.90 * filtFrontendSoc + 0.10 * targetPct
       const maxStep = 2.0 * elapsedSec
       let delta = emaTarget - filtFrontendSoc
       if (delta > maxStep) delta = maxStep
@@ -583,7 +579,7 @@ export function applyCalibration(
     ts1Tripped: esp32Data?.ts1Tripped ?? safety.thermalFuseTripped,
     relayOn: esp32Data?.relayClosed ?? isBusOn,
     stateCode: esp32Data?.stateCode ?? (isBusOn ? 1 : 4),
-    stateName: esp32Data?.stateName ?? (isBusOn ? 'CHARGING' : 'FORCED OFF'),
+    stateName: (esp32Data?.stateName ?? (isBusOn ? 'CHARGING' : 'FORCED OFF')).trim(),
     stateReason: esp32Data?.stateReason ?? (isBusOn ? 'charging allowed, relay closed' : 'charging forced OFF'),
     forceMode: esp32Data?.forceMode ?? 0,
     alarmsText: esp32Data?.alarmsText ?? 'none',

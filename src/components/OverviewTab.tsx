@@ -137,27 +137,32 @@ export function OverviewTab({
   const isRelayClosed = isConnected ? Boolean(telemetry.relayOn ?? telemetry.relays.dcBus) : false
 
   // Tianneng TNE12-15 (12V 15Ah VRLA/AGM-Gel) Smooth & State-Aware 4-Bar Indicator
-  // - Never snaps to 0% or 100% on single-second relay/state flips (CHARGING <-> FULL-HOLD / WAITING)
-  // - Driven by the EMA-smoothed and 2%/sec rate-limited telemetry.batteryPct with ±3% bar-boundary hysteresis
+  // - Uses telemetry.batPct directly from ESP32 firmware when available (or fallback telemetry.batteryPct)
+  // - Trims stateName strings (e.g. "CHARGING   ", "FULL-HOLD  ") before matching/styling states
   const heldBarsRef = useRef<number>(0)
   const stateCode = telemetry.stateCode ?? telemetry.esp32?.stateCode ?? 0
   const iTegLive = isConnected ? (telemetry.iTeg ?? telemetry.iBat ?? telemetry.rawTegCurrent ?? 0.0) : 0.0
-  const isActivelyCharging = isRelayClosed && stateCode === 1 && iTegLive >= 0.08
+  const isActivelyCharging = isRelayClosed && (stateCode === 1 || espStateName === 'CHARGING') && iTegLive >= 0.08
+  const rawSocVal = telemetry.batPct ?? telemetry.batteryPct ?? 0
   const battPct =
-    !isConnected || stateCode === 0 || vBatLive < 6.0 || vBatLive > 16.5
+    !isConnected || stateCode === 0 || espStateName === 'NO BATTERY' || vBatLive < 6.0 || vBatLive > 16.5
       ? 0
-      : Math.min(100, Math.max(0, Math.round(telemetry.batteryPct)))
+      : Math.min(100, Math.max(0, Math.round(rawSocVal)))
 
   const batteryStageBadge = (() => {
     if (!isConnected) return { label: 'STANDBY', tone: 'neutral' as const }
-    if (stateCode === 0 || vBatLive < 6.0 || vBatLive > 16.5) return { label: 'NO BAT', tone: 'warn' as const }
-    if (stateCode === 6) return { label: 'OVER-I', tone: 'danger' as const }
-    if (stateCode === 5) return { label: 'TEMP LOCK', tone: 'warn' as const }
-    if (stateCode === 2) return { label: 'FULL-HOLD', tone: 'full' as const }
-    if (stateCode === 3) return { label: 'WAITING', tone: 'hold' as const }
+    if (stateCode === 0 || espStateName === 'NO BATTERY' || vBatLive < 6.0 || vBatLive > 16.5) {
+      return { label: 'NO BAT', tone: 'warn' as const }
+    }
+    if (stateCode === 6 || espStateName === 'OVERCURRENT') return { label: 'OVER-I', tone: 'danger' as const }
+    if (stateCode === 5 || espStateName === 'TEMP LOCKOUT') return { label: 'TEMP LOCK', tone: 'warn' as const }
+    if (stateCode === 2 || espStateName === 'FULL-HOLD') return { label: 'FULL-HOLD', tone: 'full' as const }
+    if (stateCode === 3 || espStateName === 'WAITING') return { label: 'WAITING', tone: 'hold' as const }
     if (isActivelyCharging) return { label: 'CHARGING', tone: 'charging' as const }
-    if (isRelayClosed && stateCode === 1) return { label: 'IDLE 0A', tone: 'hold' as const }
-    if (stateCode === 4) return { label: 'HOLD/OFF', tone: 'neutral' as const }
+    if (isRelayClosed && (stateCode === 1 || espStateName === 'CHARGING')) {
+      return { label: 'IDLE 0A', tone: 'hold' as const }
+    }
+    if (stateCode === 4 || espStateName === 'FORCED OFF') return { label: 'FORCED OFF', tone: 'neutral' as const }
     return { label: 'RESTING', tone: 'neutral' as const }
   })()
 
