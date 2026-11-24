@@ -426,11 +426,11 @@ export function OverviewTab({
                 {vBatLive.toFixed(2)}V
               </span>
               <span
-                className={`text-[9.5px] font-mono font-bold ${
-                  isDark ? 'text-[#00E676]' : 'text-emerald-700'
+                className={`text-[8.5px] font-mono px-1 rounded font-bold ${
+                  isDark ? 'bg-[#00E676]/15 text-[#00E676]' : 'bg-emerald-100 text-emerald-800'
                 }`}
               >
-                · {battPct}%
+                12V 15Ah
               </span>
             </div>
           </div>
@@ -441,7 +441,7 @@ export function OverviewTab({
             aria-valuenow={activeBars}
             aria-valuemin={0}
             aria-valuemax={4}
-            aria-label={`Battery level ${battPct}% (${activeBars} of 4 bars, ${batteryStageBadge.label})`}
+            aria-label={`Battery level ${activeBars} of 4 bars (${batteryStageBadge.label})`}
           >
             <Battery4BarIcon activeBars={activeBars} isDark={isDark} size={92} />
           </div>
