@@ -247,26 +247,22 @@ export function resetFrontendSocFilter(): void {
 /**
  * Pure Tianneng TNE12-15 (12V 15Ah VRLA / AGM-Gel) Target SoC (%) Calculator
  * - Valid battery window: 6.0 V to 16.5 V (stateCode === 0 outside this window -> 0%)
- * - Distinguishes actively charging (relayOn && iTeg >= 0.10 A) vs. resting/near-idle (!relayOn || iTeg < 0.10 A)
- * - Resting 12.63 V - 12.68 V with 0.00 A evaluates on the resting VRLA/AGM curve (~84% - 88%)
+ * - Resting / Idle (0.00 A / iTeg < 0.08 A or relay OPEN / WAITING / FULL-HOLD):
+ *     11.50 V = 0%, 11.80 V = 10%, 12.25 V = 50%, 12.75 V = 95%, 12.85 V-12.90 V+ = 100%
+ * - Active Charging (relay CLOSED / CHARGING with current flowing iTeg >= 0.08 A):
+ *     12.20 V = 0%, 13.20 V = 50%, 13.72 V = 95%, 13.85 V-14.60 V = 100%
  */
 export function computeTne1215TargetSoc(params: {
   vBat: number
   iTeg: number
   relayOn: boolean
   stateCode?: number
-  vMin?: number
-  vCloseNow?: number
-  vOpenNow?: number
 }): number {
   const {
     vBat,
     iTeg,
     relayOn,
     stateCode = 1,
-    vMin = 10.8,
-    vCloseNow = 13.7,
-    vOpenNow = 14.6,
   } = params
 
   // Valid battery detection window: 6.0 V to 16.5 V and state !== 0 (NO BATTERY)
@@ -274,48 +270,37 @@ export function computeTne1215TargetSoc(params: {
     return 0
   }
 
-  // FULL-HOLD (state 2) or WAITING reconnect dwell (state 3) after full/taper charge cutoff
-  if ((stateCode === 2 || stateCode === 3) && vBat >= 12.6) {
-    return 100
-  }
-
   const safeITeg = Number.isFinite(iTeg) ? iTeg : 0
-  const isActivelyCharging = Boolean(relayOn) && safeITeg >= 0.10
+  const isActivelyCharging = Boolean(relayOn) && stateCode === 1 && safeITeg >= 0.08
 
   let rawPct = 0
   if (isActivelyCharging) {
-    // Active Charging Curve (relayOn && iTeg >= 0.10 A):
-    // Terminal voltage is elevated by charge current toward vOpenNow (14.60 V @ 25°C, -24 mV/°C)
-    if (vBat <= vMin) {
+    // Active Charging Scale (relay CLOSED / CHARGING with current flowing):
+    // 12.20 V = 0%, 13.20 V = 50%, 13.72 V = 95%, 13.85 V-14.60 V = 100%
+    if (vBat <= 12.20) {
       rawPct = 0
-    } else if (vBat < 12.2) {
-      // Stage 1 (1 Bar): 10.80 V to < 12.20 V -> 1% to 25%
-      rawPct = 1 + ((vBat - vMin) / Math.max(0.1, 12.2 - vMin)) * 24
-    } else if (vBat < vCloseNow) {
-      // Stage 2 (2 Bars): 12.20 V to < vCloseNow (13.70 V @ 25°C) -> 26% to 50%
-      rawPct = 26 + ((vBat - 12.2) / Math.max(0.1, vCloseNow - 12.2)) * 24
-    } else if (vBat < vOpenNow) {
-      // Stage 3 (3 Bars): vCloseNow (13.70 V) to < vOpenNow (14.60 V @ 25°C) -> 51% to 75%
-      rawPct = 51 + ((vBat - vCloseNow) / Math.max(0.1, vOpenNow - vCloseNow)) * 24
+    } else if (vBat <= 13.20) {
+      rawPct = ((vBat - 12.20) / 1.00) * 50
+    } else if (vBat <= 13.72) {
+      rawPct = 50 + ((vBat - 13.20) / 0.52) * 45
+    } else if (vBat < 13.85) {
+      rawPct = 95 + ((vBat - 13.72) / 0.13) * 5
     } else {
-      // Stage 4 (4 Bars): Reached full cycle charge ceiling (>= vOpenNow) -> 100%
       rawPct = 100
     }
   } else {
-    // Resting / Near-Idle VRLA / AGM-Gel Curve (!relayOn || iTeg < 0.10 A):
-    // Prevents under-reporting when vBat is 12.63 V - 12.68 V at 0.00 A (reads ~84% - 88%, 4 Bars)
-    if (vBat <= vMin) {
+    // Resting / Idle Scale (0.00 A or relay OPEN / WAITING / FULL-HOLD):
+    // 11.50 V = 0%, 11.80 V = 10%, 12.25 V = 50%, 12.75 V = 95%, 12.85 V-12.90 V = 100%
+    if (vBat <= 11.50) {
       rawPct = 0
-    } else if (vBat <= 11.5) {
-      rawPct = ((vBat - vMin) / Math.max(0.1, 11.5 - vMin)) * 20
-    } else if (vBat <= 11.8) {
-      rawPct = 20 + ((vBat - 11.5) / 0.3) * 15
-    } else if (vBat <= 12.1) {
-      rawPct = 35 + ((vBat - 11.8) / 0.3) * 15
-    } else if (vBat <= 12.5) {
-      rawPct = 50 + ((vBat - 12.1) / 0.4) * 25
-    } else if (vBat <= 12.85) {
-      rawPct = 75 + ((vBat - 12.5) / 0.35) * 25
+    } else if (vBat <= 11.80) {
+      rawPct = ((vBat - 11.50) / 0.30) * 10
+    } else if (vBat <= 12.25) {
+      rawPct = 10 + ((vBat - 11.80) / 0.45) * 40
+    } else if (vBat <= 12.75) {
+      rawPct = 50 + ((vBat - 12.25) / 0.50) * 45
+    } else if (vBat < 12.85) {
+      rawPct = 95 + ((vBat - 12.75) / 0.10) * 5
     } else {
       rawPct = 100
     }
@@ -400,15 +385,24 @@ export function applyCalibration(
     resetFrontendSocFilter()
     batteryPct = 0
   } else {
-    const targetPct = computeTne1215TargetSoc({
+    const curveTargetPct = computeTne1215TargetSoc({
       vBat: batteryVoltage,
       iTeg: iTegVal,
       relayOn: relayOnVal,
       stateCode: stateCodeVal,
-      vMin,
-      vCloseNow: vCloseStage,
-      vOpenNow: vOpenStage,
     })
+
+    // Prefer ESP32's smoothed batPct if provided and not coming from the legacy linear 11.8V-14.6V under-reporting scale
+    const fwBatPct = esp32Data?.batPct
+    const legacyLinearPct = Math.min(100, Math.max(0, ((batteryVoltage - 11.8) / (14.6 - 11.8)) * 100))
+    const isFwLegacyLinear =
+      fwBatPct !== undefined &&
+      Math.abs(fwBatPct - legacyLinearPct) <= 4 &&
+      Math.abs(curveTargetPct - legacyLinearPct) > 12
+    const targetPct =
+      fwBatPct !== undefined && Number.isFinite(fwBatPct) && !isFwLegacyLinear
+        ? fwBatPct
+        : curveTargetPct
 
     const nowMs = Date.now()
     if (firstFrontendSoc) {
@@ -416,7 +410,8 @@ export function applyCalibration(
       firstFrontendSoc = false
       lastFrontendSocMs = nowMs
     } else {
-      // 0.92 / 0.08 EMA smoothing + 2.0%/sec rate limiter matching working_4.ino getBatteryPercent()
+      // 0.92 / 0.08 EMA smoothing + 2.0%/sec rate limiter so single-second relay/state flips
+      // (CHARGING <-> FULL-HOLD / WAITING) never snap the battery percentage or icon bars
       const elapsedSec =
         lastFrontendSocMs > 0
           ? Math.max(0.25, Math.min(2.5, (nowMs - lastFrontendSocMs) / 1000))

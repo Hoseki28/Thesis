@@ -50,38 +50,46 @@ test('Power calculation separates In-Battery Power (Vbat*I) from TEG Harvest (Vt
   assert.ok(pTeg > pBat)
 })
 
-test('Tianneng TNE12-15 SoC curve distinguishes resting/idle (iTeg < 0.10A) vs actively charging (relayOn && iTeg >= 0.10A)', () => {
-  function computeSoc({ vBat, iTeg, relayOn, stateCode = 1, vCloseNow = 13.7, vOpenNow = 14.6 }) {
+test('Tianneng TNE12-15 SoC curve distinguishes resting/idle (0.00A or FULL-HOLD/WAITING) vs active charging (relay CLOSED + current)', () => {
+  function computeSoc({ vBat, iTeg, relayOn, stateCode = 1 }) {
     if (stateCode === 0 || vBat < 6.0 || vBat > 16.5) return 0
-    if ((stateCode === 2 || stateCode === 3) && vBat >= 12.6) return 100
-    const isActivelyCharging = Boolean(relayOn) && iTeg >= 0.10
+    const isActivelyCharging = Boolean(relayOn) && stateCode === 1 && iTeg >= 0.08
+    let rawPct = 0
     if (isActivelyCharging) {
-      if (vBat <= 10.8) return 0
-      if (vBat < 12.2) return Math.round(1 + ((vBat - 10.8) / 1.4) * 24)
-      if (vBat < vCloseNow) return Math.round(26 + ((vBat - 12.2) / (vCloseNow - 12.2)) * 24)
-      if (vBat < vOpenNow) return Math.round(51 + ((vBat - vCloseNow) / (vOpenNow - vCloseNow)) * 24)
-      return 100
+      if (vBat <= 12.20) rawPct = 0
+      else if (vBat <= 13.20) rawPct = ((vBat - 12.20) / 1.00) * 50
+      else if (vBat <= 13.72) rawPct = 50 + ((vBat - 13.20) / 0.52) * 45
+      else if (vBat < 13.85) rawPct = 95 + ((vBat - 13.72) / 0.13) * 5
+      else rawPct = 100
+    } else {
+      if (vBat <= 11.50) rawPct = 0
+      else if (vBat <= 11.80) rawPct = ((vBat - 11.50) / 0.30) * 10
+      else if (vBat <= 12.25) rawPct = 10 + ((vBat - 11.80) / 0.45) * 40
+      else if (vBat <= 12.75) rawPct = 50 + ((vBat - 12.25) / 0.50) * 45
+      else if (vBat < 12.85) rawPct = 95 + ((vBat - 12.75) / 0.10) * 5
+      else rawPct = 100
     }
-    if (vBat <= 10.8) return 0
-    if (vBat <= 11.5) return Math.round(((vBat - 10.8) / 0.7) * 20)
-    if (vBat <= 11.8) return Math.round(20 + ((vBat - 11.5) / 0.3) * 15)
-    if (vBat <= 12.1) return Math.round(35 + ((vBat - 11.8) / 0.3) * 15)
-    if (vBat <= 12.5) return Math.round(50 + ((vBat - 12.1) / 0.4) * 25)
-    if (vBat <= 12.85) return Math.round(75 + ((vBat - 12.5) / 0.35) * 25)
-    return 100
+    return Math.round(rawPct)
   }
 
-  // 12.63V - 12.68V at 0.00A (even with relayOn=true) is resting/near-idle -> ~84% to 88% (4 bars), not 30%
-  assert.equal(computeSoc({ vBat: 12.63, iTeg: 0.0, relayOn: true, stateCode: 1 }), 84)
-  assert.equal(computeSoc({ vBat: 12.68, iTeg: 0.0, relayOn: false, stateCode: 4 }), 88)
+  // Resting / Idle checkpoints: 11.50V=0%, 11.80V=10%, 12.25V=50%, 12.75V=95%, 12.85V-12.90V=100%
+  assert.equal(computeSoc({ vBat: 11.50, iTeg: 0.0, relayOn: false, stateCode: 4 }), 0)
+  assert.equal(computeSoc({ vBat: 11.80, iTeg: 0.0, relayOn: false, stateCode: 4 }), 10)
+  assert.equal(computeSoc({ vBat: 12.25, iTeg: 0.0, relayOn: false, stateCode: 4 }), 50)
+  assert.equal(computeSoc({ vBat: 12.75, iTeg: 0.0, relayOn: true, stateCode: 1 }), 95)
+  assert.equal(computeSoc({ vBat: 12.85, iTeg: 0.0, relayOn: true, stateCode: 1 }), 100)
+  assert.equal(computeSoc({ vBat: 12.90, iTeg: 0.0, relayOn: false, stateCode: 2 }), 100)
 
-  // Actively charging (relayOn && iTeg >= 0.10A) at 12.65V is in Stage 2 (26-50%, 2 bars)
-  const chargingMid = computeSoc({ vBat: 12.65, iTeg: 0.45, relayOn: true, stateCode: 1 })
-  assert.ok(chargingMid >= 26 && chargingMid <= 50)
+  // Active Charging checkpoints: 12.20V=0%, 13.20V=50%, 13.72V=95%, 13.85V-14.60V=100%
+  assert.equal(computeSoc({ vBat: 12.20, iTeg: 0.50, relayOn: true, stateCode: 1 }), 0)
+  assert.equal(computeSoc({ vBat: 13.20, iTeg: 0.50, relayOn: true, stateCode: 1 }), 50)
+  assert.equal(computeSoc({ vBat: 13.72, iTeg: 0.50, relayOn: true, stateCode: 1 }), 95)
+  assert.equal(computeSoc({ vBat: 13.85, iTeg: 0.50, relayOn: true, stateCode: 1 }), 100)
+  assert.equal(computeSoc({ vBat: 14.60, iTeg: 0.50, relayOn: true, stateCode: 1 }), 100)
 
   // Disconnected / out of 6.0-16.5V window -> 0%
-  assert.equal(computeSoc({ vBat: 12.65, iTeg: 0.0, relayOn: false, stateCode: 0 }), 0)
-  assert.equal(computeSoc({ vBat: 5.5, iTeg: 0.0, relayOn: false, stateCode: 1 }), 0)
+  assert.equal(computeSoc({ vBat: 12.85, iTeg: 0.0, relayOn: false, stateCode: 0 }), 0)
+  assert.equal(computeSoc({ vBat: 5.50, iTeg: 0.0, relayOn: false, stateCode: 1 }), 0)
 })
 
 test('PWA icon binaries are real PNG files (not Git LFS pointers)', () => {

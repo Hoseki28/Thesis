@@ -136,71 +136,48 @@ export function OverviewTab({
   const whHarvLive = isConnected ? (telemetry.whHarv ?? 0.0) : 0.0
   const isRelayClosed = isConnected ? Boolean(telemetry.relayOn ?? telemetry.relays.dcBus) : false
 
-  // Tianneng TNE12-15 (12V 15Ah VRLA/AGM-Gel) Synchronized 4-Bar Indicator with Hysteresis
-  // - Returns 0 bars when disconnected, stateCode === 0 (NO BATTERY), or vBat outside 6.0V-16.5V
-  // - Distinguishes actively charging (isRelayClosed && iTeg >= 0.10A) vs. resting/near-idle (!isRelayClosed || iTeg < 0.10A):
-  //   * Resting / Near-Idle (e.g. 12.63V-12.68V at 0.00A): uses smoothed TNE12-15 resting SoC (~84%-88% -> 4 Bars)
-  //   * Actively Charging (relayOn && iTeg >= 0.10A): stays locked at current charging stage bar (1, 2, or 3 bars)
-  //     and only advances to 4 bars once vBat >= vOpenNow (14.60V @ 25°C) or state transitions to FULL-HOLD (2) / WAITING (3)
+  // Tianneng TNE12-15 (12V 15Ah VRLA/AGM-Gel) Smooth & State-Aware 4-Bar Indicator
+  // - Never snaps to 0% or 100% on single-second relay/state flips (CHARGING <-> FULL-HOLD / WAITING)
+  // - Driven by the EMA-smoothed and 2%/sec rate-limited telemetry.batteryPct with ±3% bar-boundary hysteresis
   const heldBarsRef = useRef<number>(0)
-  const vCloseTarget = telemetry.vCloseNow ?? 13.7
-  const vOpenTarget = telemetry.vOpenNow ?? 14.6
   const stateCode = telemetry.stateCode ?? telemetry.esp32?.stateCode ?? 0
   const iTegLive = isConnected ? (telemetry.iTeg ?? telemetry.iBat ?? telemetry.rawTegCurrent ?? 0.0) : 0.0
-  const isActivelyCharging = isRelayClosed && iTegLive >= 0.10
-  const isFullHoldMode = stateCode === 2 || stateCode === 3
+  const isActivelyCharging = isRelayClosed && stateCode === 1 && iTegLive >= 0.08
+  const battPct =
+    !isConnected || stateCode === 0 || vBatLive < 6.0 || vBatLive > 16.5
+      ? 0
+      : Math.min(100, Math.max(0, Math.round(telemetry.batteryPct)))
+
+  const batteryStageBadge = (() => {
+    if (!isConnected) return { label: 'STANDBY', tone: 'neutral' as const }
+    if (stateCode === 0 || vBatLive < 6.0 || vBatLive > 16.5) return { label: 'NO BAT', tone: 'warn' as const }
+    if (stateCode === 6) return { label: 'OVER-I', tone: 'danger' as const }
+    if (stateCode === 5) return { label: 'TEMP LOCK', tone: 'warn' as const }
+    if (stateCode === 2) return { label: 'FULL-HOLD', tone: 'full' as const }
+    if (stateCode === 3) return { label: 'WAITING', tone: 'hold' as const }
+    if (isActivelyCharging) return { label: 'CHARGING', tone: 'charging' as const }
+    if (isRelayClosed && stateCode === 1) return { label: 'IDLE 0A', tone: 'hold' as const }
+    if (stateCode === 4) return { label: 'HOLD/OFF', tone: 'neutral' as const }
+    return { label: 'RESTING', tone: 'neutral' as const }
+  })()
 
   const activeBars = (() => {
     if (!isConnected || stateCode === 0 || vBatLive < 6.0 || vBatLive > 16.5) {
       heldBarsRef.current = 0
       return 0
     }
-    if (isFullHoldMode && vBatLive >= 12.6) {
-      heldBarsRef.current = 4
-      return 4
-    }
 
-    // Smoothed TNE12-15 SoC percentage (already EMA-filtered & 2%/sec rate-limited in calibrationStorage.ts)
-    const battPct = Math.min(100, Math.max(0, Math.round(telemetry.batteryPct)))
-
-    if (isActivelyCharging) {
-      let targetBars = 0
-      if (vBatLive >= vOpenTarget || battPct >= 99) {
-        targetBars = 4
-      } else if (vBatLive >= vCloseTarget || battPct > 50) {
-        targetBars = 3
-      } else if (vBatLive >= 12.2 || battPct > 25) {
-        targetBars = 2
-      } else if (vBatLive >= 10.8 || battPct > 0) {
-        targetBars = 1
-      } else {
-        targetBars = 0
-      }
-
-      // Hysteresis: while actively charging, hold the current bar stage unless voltage drops >0.15V below stage threshold
-      const prev = heldBarsRef.current
-      if (targetBars < prev) {
-        const dropMargin = 0.15
-        if (prev === 4 && vBatLive >= vOpenTarget - dropMargin) return 4
-        if (prev === 3 && vBatLive >= vCloseTarget - dropMargin) return 3
-        if (prev === 2 && vBatLive >= 12.2 - dropMargin) return 2
-        if (prev === 1 && vBatLive >= 10.8 - dropMargin) return 1
-      }
-      heldBarsRef.current = targetBars
-      return targetBars
-    }
-
-    // Resting / Near-Idle (!relayOn || iTeg < 0.10A) with ±3% hysteresis on bar boundaries
-    let restBars = battPct > 75 ? 4 : battPct > 50 ? 3 : battPct > 25 ? 2 : battPct > 0 ? 1 : 0
+    // Map smoothed SoC % to 4 bars with ±3% hysteresis so bars never flicker on transitions
+    let bars = battPct >= 76 ? 4 : battPct >= 50 ? 3 : battPct >= 20 ? 2 : battPct > 0 ? 1 : 0
     const prev = heldBarsRef.current
-    if (prev > 0 && restBars !== prev) {
-      if (prev === 4 && battPct >= 72) restBars = 4
-      else if (prev === 3 && battPct >= 47 && battPct <= 78) restBars = 3
-      else if (prev === 2 && battPct >= 22 && battPct <= 53) restBars = 2
-      else if (prev === 1 && battPct >= 1 && battPct <= 28) restBars = 1
+    if (prev > 0 && bars !== prev) {
+      if (prev === 4 && battPct >= 73) bars = 4
+      else if (prev === 3 && battPct >= 47 && battPct <= 78) bars = 3
+      else if (prev === 2 && battPct >= 17 && battPct <= 52) bars = 2
+      else if (prev === 1 && battPct >= 1 && battPct <= 22) bars = 1
     }
-    heldBarsRef.current = restBars
-    return restBars
+    heldBarsRef.current = bars
+    return bars
   })()
 
   return (
@@ -401,13 +378,38 @@ export function OverviewTab({
           }`}
         >
           <div>
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between gap-1">
               <span
-                className={`text-[10px] font-bold uppercase tracking-wider ${
+                className={`text-[10px] font-bold uppercase tracking-wider truncate ${
                   isDark ? 'text-white' : 'text-zinc-950'
                 }`}
               >
                 {isFil ? 'BATERYA (GPIO32)' : 'BATTERY (GPIO32)'}
+              </span>
+              <span
+                className={`text-[8px] font-mono px-1.5 py-0.5 rounded font-black uppercase flex-shrink-0 ${
+                  batteryStageBadge.tone === 'charging' || batteryStageBadge.tone === 'full'
+                    ? isDark
+                      ? 'bg-[#00E676]/15 text-[#00E676]'
+                      : 'bg-emerald-100 text-emerald-800'
+                    : batteryStageBadge.tone === 'hold'
+                    ? isDark
+                      ? 'bg-sky-500/15 text-sky-400'
+                      : 'bg-sky-100 text-sky-800'
+                    : batteryStageBadge.tone === 'warn'
+                    ? isDark
+                      ? 'bg-amber-500/15 text-amber-400'
+                      : 'bg-amber-100 text-amber-800'
+                    : batteryStageBadge.tone === 'danger'
+                    ? isDark
+                      ? 'bg-rose-500/15 text-rose-400'
+                      : 'bg-rose-100 text-rose-800'
+                    : isDark
+                    ? 'bg-[#1E242B] text-zinc-400'
+                    : 'bg-zinc-100 text-zinc-600'
+                }`}
+              >
+                {batteryStageBadge.label}
               </span>
             </div>
             <div className="flex items-center gap-1.5 mt-0.5">
@@ -419,11 +421,11 @@ export function OverviewTab({
                 {vBatLive.toFixed(2)}V
               </span>
               <span
-                className={`text-[8.5px] font-mono px-1 rounded font-bold ${
-                  isDark ? 'bg-[#00E676]/15 text-[#00E676]' : 'bg-emerald-100 text-emerald-800'
+                className={`text-[9.5px] font-mono font-bold ${
+                  isDark ? 'text-[#00E676]' : 'text-emerald-700'
                 }`}
               >
-                12V 15Ah
+                · {battPct}%
               </span>
             </div>
           </div>
@@ -434,7 +436,7 @@ export function OverviewTab({
             aria-valuenow={activeBars}
             aria-valuemin={0}
             aria-valuemax={4}
-            aria-label={`Battery level ${activeBars} of 4 bars`}
+            aria-label={`Battery level ${battPct}% (${activeBars} of 4 bars, ${batteryStageBadge.label})`}
           >
             <Battery4BarIcon activeBars={activeBars} isDark={isDark} size={92} />
           </div>
