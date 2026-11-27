@@ -84,6 +84,23 @@ export function ServiceTab({
   const vOpenNow = telemetry.vOpenNow ?? 14.6
   const relayOn = Boolean(telemetry.relayOn ?? telemetry.relays?.dcBus)
   const dhtOk = telemetry.esp32?.dhtOk !== false
+  const stateCode = telemetry.stateCode ?? telemetry.esp32?.stateCode ?? 0
+  const battPct =
+    stateCode === 0 || vBat < 6.0 || vBat > 16.5
+      ? 0
+      : Math.min(100, Math.max(0, Math.round(telemetry.batPct ?? telemetry.batteryPct ?? 0)))
+  const battBars =
+    stateCode === 0 || vBat < 6.0 || vBat > 16.5
+      ? 0
+      : battPct >= 76
+      ? 4
+      : battPct >= 50
+      ? 3
+      : battPct >= 20
+      ? 2
+      : battPct > 0
+      ? 1
+      : 0
 
   const sensorDiagnostics: SensorHealthItem[] = (() => {
     if (!isHardwareConnected) {
@@ -105,21 +122,22 @@ export function ServiceTab({
     if (vBat < 6.0 || vBat > 16.5) {
       batStatus = 'disconnected'
       batDetail = 'No batt'
-    } else if (vBat < 11.8) {
+    } else if (battBars > 0 && battBars <= 2) {
       batStatus = 'warning'
       batDetail = `${vBat.toFixed(2)}V Low`
     } else if (vBat >= vOpenNow) {
-      batStatus = 'warning'
+      batStatus = 'ok'
       batDetail = `${vBat.toFixed(2)}V Full`
     }
 
     // 2. TEG Boost Divider (GPIO33)
+    // Only warn on low TEG (<1.0V) when battery is down to 2 bars or less
     let tegStatus: SensorHealthStatus = 'ok'
     let tegDetail = `${vTeg.toFixed(2)} V`
     if (vTeg > 45.0) {
       tegStatus = 'fault'
       tegDetail = `${vTeg.toFixed(1)}V >45V`
-    } else if (vTeg < 1.0) {
+    } else if (vTeg < 1.0 && battBars > 0 && battBars <= 2) {
       tegStatus = 'warning'
       tegDetail = `${vTeg.toFixed(2)}V Low`
     }

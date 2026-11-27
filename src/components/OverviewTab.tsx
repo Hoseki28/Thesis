@@ -468,7 +468,7 @@ export function OverviewTab({
             </div>
             <span
               className={`text-[9.5px] font-mono block mt-0.5 ${
-                isConnected && vTegLive < 1.0
+                isConnected && vTegLive < 1.0 && activeBars > 0 && activeBars <= 2
                   ? 'text-amber-400 font-bold'
                   : isDark
                   ? 'text-[#9CA3AF]'
@@ -476,7 +476,9 @@ export function OverviewTab({
               }`}
             >
               Peak: {(telemetry.vTegPeak ?? vTegLive).toFixed(1)}V ·{' '}
-              {isConnected && vTegLive < 1.0 ? 'Low <1.0V' : '150k/10k'}
+              {isConnected && vTegLive < 1.0 && activeBars > 0 && activeBars <= 2
+                ? 'Low <1.0V'
+                : '150k/10k'}
             </span>
           </div>
 
