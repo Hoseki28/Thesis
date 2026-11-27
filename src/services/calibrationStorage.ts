@@ -5,7 +5,7 @@ const STORAGE_KEY = 'padayon_calibration_v5'
 export const DEFAULT_CALIBRATION: CalibrationConfig = {
   stoveTempOffset: 0.0,
   stoveTempGain: 1.0,
-  stoveOverheatThreshold: 230,
+  stoveOverheatThreshold: 150,
   stoveLowHeatThreshold: 100,
 
   dhtTempOffset: 0.0,
@@ -32,7 +32,12 @@ export function loadCalibration(): CalibrationConfig {
     const raw = localStorage.getItem(STORAGE_KEY)
     if (raw) {
       const parsed = JSON.parse(raw)
-      return { ...DEFAULT_CALIBRATION, ...parsed }
+      const merged = { ...DEFAULT_CALIBRATION, ...parsed }
+      // Migrate legacy 230 C default threshold to current 150 C firmware alarm limit
+      if (merged.stoveOverheatThreshold === 230) {
+        merged.stoveOverheatThreshold = 150
+      }
+      return merged
     }
   } catch (err) {
     console.warn('Failed to load calibration from localStorage', err)
@@ -130,7 +135,7 @@ export function getOfflineTelemetry(cal: CalibrationConfig = loadCalibration()):
     relayOn: false,
     stateCode: 0,
     stateName: 'DISCONNECTED',
-    stateReason: 'ESP32 not connected - Connect via USB Serial to read sensors',
+    stateReason: 'ESP32 not connected - Connect via Bluetooth BLE ("TEG_Charger") or USB Serial',
     forceMode: 0,
     alarmsText: 'none',
     activeAlarms: [],
@@ -223,7 +228,7 @@ export function getOfflineTelemetry(cal: CalibrationConfig = loadCalibration()):
       acsZero: 2.5,
       alarmsText: 'none',
       activeAlarms: [],
-      note: 'ESP32 Disconnected · Connect USB Serial',
+      note: 'ESP32 Disconnected · Connect Bluetooth BLE or USB Serial',
     },
     relays: { dcBus: false, lights: false, fans: false, aux: false },
   }

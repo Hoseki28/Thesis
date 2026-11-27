@@ -211,7 +211,6 @@ export function OverviewTab({
 
   return (
     <div className="flex flex-col gap-3 font-sans">
-      {/* ── 1. CHARGER RELAY & STATE MACHINE HERO CARD ─────────────────── */}
       <section
         className={`rounded-2xl p-4 border flex flex-col gap-3 shadow-md transition-all ${
           isDark
@@ -329,7 +328,6 @@ export function OverviewTab({
         </div>
       </section>
 
-      {/* ── 2. HARVESTED ENERGY CARD ───────────────────────────────────── */}
       <section
         className={`rounded-2xl p-3.5 border flex flex-col gap-2.5 shadow-md transition-all ${
           isDark
@@ -396,7 +394,6 @@ export function OverviewTab({
         </div>
       </section>
 
-      {/* ── 3. 2×2 ELECTRICAL POWER GRID (BATTERY, TEG BOOST, CURRENT, POWER) ── */}
       <div className="grid grid-cols-2 gap-3">
         {/* TILE 1: BATTERY (GPIO32 · 12V 15Ah SLA) */}
         <div
@@ -498,7 +495,9 @@ export function OverviewTab({
             <span
               className={`text-[9.5px] font-mono block mt-0.5 ${
                 isConnected && vTegLive < 1.0 && activeBars > 0 && activeBars <= 2
-                  ? 'text-amber-400 font-bold'
+                  ? isDark
+                    ? 'text-amber-400 font-bold'
+                    : 'text-amber-700 font-bold'
                   : isDark
                   ? 'text-[#9CA3AF]'
                   : 'text-zinc-600'
@@ -550,7 +549,9 @@ export function OverviewTab({
                 size={16}
                 className={
                   telemetry.inaOk === false
-                    ? 'text-amber-400'
+                    ? isDark
+                      ? 'text-amber-400'
+                      : 'text-amber-700'
                     : isDark
                     ? 'text-[#00E676]'
                     : 'text-emerald-700'
@@ -560,7 +561,9 @@ export function OverviewTab({
             <span
               className={`text-[9.5px] font-mono block mt-0.5 truncate ${
                 telemetry.inaOk === false
-                  ? 'text-amber-400 font-bold'
+                  ? isDark
+                    ? 'text-amber-400 font-bold'
+                    : 'text-amber-700 font-bold'
                   : isDark
                   ? 'text-[#9CA3AF]'
                   : 'text-zinc-600'

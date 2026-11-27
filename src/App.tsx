@@ -185,9 +185,9 @@ export default function App() {
         return () => clearTimeout(timer)
       } else if (prevStatusRef.current === 'connected' && hardwareState.status === 'standby') {
         systemLogManager.addSystemLog(
-          'ESP32 disconnected. Telemetry reverted to simulation mode.',
+          'ESP32 disconnected. Telemetry reset to standby.',
           'warning',
-          'Naputol ang ESP32. Bumalik sa simulation mode ang telemetry.',
+          'Naputol ang koneksyon ng ESP32. Naka-standby na ang telemetry.',
           'esp32'
         )
       } else if (hardwareState.status === 'error') {
@@ -378,18 +378,11 @@ export default function App() {
 
     if (!prevLowBattRef.current && lowBattery) {
       systemLogManager.addSystemLog(
-        `Battery threshold alert: SOC dropped to ${telemetry.batteryPct}% (${telemetry.batteryVoltage.toFixed(2)}V). Automated secondary load shedding activated.`,
+        `Low battery alert: Battery dropped to ${telemetry.batteryPct}% (${telemetry.batteryVoltage.toFixed(2)}V)`,
         'error',
-        `Mababang lebel ng baterya: Bumababa sa ${telemetry.batteryPct}% (${telemetry.batteryVoltage.toFixed(2)}V). Awtomatikong pinatay ang secondary loads.`,
+        `Mababang baterya: Bumaba sa ${telemetry.batteryPct}% (${telemetry.batteryVoltage.toFixed(2)}V)`,
         'threshold'
       )
-      // Automated load shedding dispatch to hardware & simulation
-      if (hardwareState.status === 'connected' && bridgeRef.current) {
-        bridgeRef.current.sendRelayCommand('fans', false)
-        bridgeRef.current.sendRelayCommand('aux', false)
-      } else if (simRef.current) {
-        if (telemetry.relays.fans) simRef.current.toggleRelay('fans')
-      }
       setTelemetry((prev) => ({
         ...prev,
         relays: { ...prev.relays, fans: false, aux: false },
@@ -430,7 +423,6 @@ export default function App() {
       {/* Mobile-first centered container: max-w-md (430px) */}
       <div className={`flex flex-col min-h-screen w-full max-w-md border-x relative pb-24 transition-colors duration-200 ${theme === 'dark' ? 'bg-[#0B0F12] border-[#1E242B]' : 'bg-[#F9FAFB] border-zinc-200 shadow-sm'
         }`}>
-        {/* ── HEADER ────────────────────────────────────────────────── */}
         <Header
           lang={lang}
           onLanguageChange={setLang}
@@ -442,7 +434,6 @@ export default function App() {
           onOpenConnectionModal={() => setIsConnectionModalOpen(true)}
         />
 
-        {/* ── CONFIRMATION TOAST ────────────────────────────────────── */}
         {connectToast && (
           <div className="mx-3 mt-2.5 p-3 rounded-xl bg-emerald-600 text-white shadow-xl flex items-center justify-between gap-2 text-xs font-bold animate-fade-in border border-emerald-400/40">
             <div className="flex items-center gap-2 min-w-0">
@@ -460,18 +451,17 @@ export default function App() {
           </div>
         )}
 
-        {/* ── PWA INSTALL BANNER ────────────────────────────────────── */}
         {installPrompt && !isAppInstalled && (
           <div className={`mx-3 mt-2.5 p-3 rounded-xl border flex items-center justify-between gap-2 shadow-lg transition-colors ${theme === 'dark' ? 'bg-[#13171B] border-[#1E242B]' : 'bg-white border-zinc-200'
             }`}>
             <div className="flex items-center gap-2">
-              <IconDownload size={16} className="text-[#00E676] flex-shrink-0" />
+              <IconDownload size={16} className={`flex-shrink-0 ${theme === 'dark' ? 'text-[#00E676]' : 'text-emerald-700'}`} />
               <div>
                 <span className={`text-[11px] font-bold uppercase tracking-wider block ${theme === 'dark' ? 'text-white' : 'text-zinc-900'
                   }`}>
-                  {lang === 'fil' ? 'I-INSTALL ANG BIOMASS PWA' : 'INSTALL BIOMASS PWA'}
+                  {lang === 'fil' ? 'I-INSTALL ANG TEG MONITORING' : 'INSTALL TEG MONITORING'}
                 </span>
-                <span className={`text-[10px] block ${theme === 'dark' ? 'text-[#9CA3AF]' : 'text-zinc-500'
+                <span className={`text-[10px] block ${theme === 'dark' ? 'text-[#9CA3AF]' : 'text-zinc-600'
                   }`}>
                   {lang === 'fil' ? 'I-save sa cellphone para sa offline field telemetriya' : 'Add to home screen for offline field telemetry'}
                 </span>
@@ -480,14 +470,17 @@ export default function App() {
             <button
               type="button"
               onClick={handleInstallClick}
-              className="py-1.5 px-3 rounded-lg bg-[#00E676]/20 hover:bg-[#00E676]/30 border border-[#00E676] text-[#00E676] text-[10px] font-bold uppercase tracking-wider cursor-pointer transition-colors min-h-[44px]"
+              className={`py-1.5 px-3 rounded-lg border text-[10px] font-bold uppercase tracking-wider cursor-pointer transition-colors min-h-[44px] ${
+                theme === 'dark'
+                  ? 'bg-[#00E676]/20 hover:bg-[#00E676]/30 border-[#00E676] text-[#00E676]'
+                  : 'bg-emerald-600 hover:bg-emerald-700 border-emerald-700 text-white'
+              }`}
             >
               {lang === 'fil' ? 'I-INSTALL' : 'INSTALL'}
             </button>
           </div>
         )}
 
-        {/* ── MAIN CONTENT TABS ─────────────────────────────────────── */}
         <main className="flex-1 px-3 pt-3 flex flex-col gap-3">
           {/* TAB 1: OVERVIEW */}
           {currentTab === 'overview' && (
@@ -564,7 +557,6 @@ export default function App() {
           )}
         </main>
 
-        {/* ── CONNECTION MODAL ─────────────────────────────────────── */}
         {bridgeRef.current && (
           <ConnectionModal
             isOpen={isConnectionModalOpen}
@@ -576,7 +568,6 @@ export default function App() {
           />
         )}
 
-        {/* ── FIXED BOTTOM NAVIGATION ───────────────────────────────── */}
         <BottomNav
           currentTab={currentTab}
           onSelectTab={setCurrentTab}

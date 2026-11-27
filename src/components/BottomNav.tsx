@@ -44,27 +44,40 @@ export function BottomNav({ currentTab, onSelectTab, lang = 'en', theme = 'dark'
               onClick={() => onSelectTab(tab.id)}
               className={`flex flex-col items-center justify-center py-1 px-1 rounded-xl transition-all cursor-pointer relative min-h-[48px] ${
                 isActive
-                  ? 'text-[#00E676]'
+                  ? isDark
+                    ? 'text-[#00E676]'
+                    : 'text-emerald-700'
                   : isDark
                   ? 'text-[#9CA3AF] hover:text-white'
-                  : 'text-zinc-500 hover:text-zinc-900'
+                  : 'text-zinc-600 hover:text-zinc-900'
               }`}
               aria-current={isActive ? 'page' : undefined}
             >
-              {/* Alert Indicator Dot */}
               {tab.id === 'overview' && hasAlert && (
-                <span className="absolute top-1 right-3 w-1.5 h-1.5 rounded-full bg-rose-500 animate-ping" />
+                <span className="absolute top-1.5 right-3 w-2 h-2 rounded-full bg-rose-500" aria-hidden="true" />
               )}
 
               <Icon
                 size={19}
                 className={`transition-transform duration-150 ${
-                  isActive ? 'scale-110 text-[#00E676]' : isDark ? 'text-[#9CA3AF]' : 'text-zinc-500'
+                  isActive
+                    ? isDark
+                      ? 'scale-110 text-[#00E676]'
+                      : 'scale-110 text-emerald-700'
+                    : isDark
+                    ? 'text-[#9CA3AF]'
+                    : 'text-zinc-600'
                 }`}
               />
               <span
                 className={`text-[10px] font-bold mt-1 truncate max-w-full tracking-wide ${
-                  isActive ? 'text-[#00E676] font-extrabold' : isDark ? 'text-[#9CA3AF]' : 'text-zinc-500'
+                  isActive
+                    ? isDark
+                      ? 'text-[#00E676] font-extrabold'
+                      : 'text-emerald-700 font-extrabold'
+                    : isDark
+                    ? 'text-[#9CA3AF]'
+                    : 'text-zinc-600'
                 }`}
               >
                 {tab.label}

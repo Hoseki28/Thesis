@@ -221,9 +221,9 @@ export class TelemetryHistoryManager {
   }
 
   public getExportRowCount(intervalSeconds: number = 900): number {
-    const base = this.fullLog.length > 0 ? this.fullLog : this.points
+    const base: Array<{ timestamp?: number }> = this.fullLog.length > 0 ? this.fullLog : this.points
     if (base.length === 0) return 0
-    return this.filterByInterval(base, intervalSeconds).length
+    return this.filterByInterval<{ timestamp?: number }>(base, intervalSeconds).length
   }
 
   /**
@@ -238,7 +238,7 @@ export class TelemetryHistoryManager {
     fallbackCurrent?: TelemetryData,
     intervalSeconds: number = 900
   ): boolean {
-    const rawRecords = this.fullLog.length > 0
+    const rawRecords: Array<any> = this.fullLog.length > 0
       ? this.fullLog
       : this.points.length > 0
       ? this.points.map((pt) => ({

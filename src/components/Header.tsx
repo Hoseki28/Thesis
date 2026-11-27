@@ -51,11 +51,18 @@ export function Header({
     return () => clearInterval(timer)
   }, [])
 
+  useEffect(() => {
+    if (!showLinkModal) return
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setShowLinkModal(false)
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [showLinkModal])
+
   const httpsUrl = 'https://design-energy-dashboard-pwa.vercel.app'
-  const localUrl =
-    typeof window !== 'undefined' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1'
-      ? `${window.location.protocol}//${window.location.hostname}:${window.location.port || '5173'}/`
-      : 'http://192.168.100.16:5173/'
+  const originUrl = typeof window !== 'undefined' ? window.location.origin : httpsUrl
+  const showOriginCard = originUrl !== httpsUrl
 
   const handleCopy = async (url: string, key: string) => {
     try {
@@ -144,14 +151,20 @@ export function Header({
             <div>
               <div className="flex items-center gap-1.5">
                 <h1 className={`text-sm font-black tracking-tight leading-none ${isDark ? 'text-white' : 'text-zinc-900'}`}>
-                  B-TEG CORE
+                  TEG MONITORING
                 </h1>
-                <span className="text-[9px] font-mono font-medium px-1.5 py-0.5 rounded border leading-none bg-emerald-950/60 border-emerald-500/40 text-emerald-400">
+                <span
+                  className={`text-[9px] font-mono font-medium px-1.5 py-0.5 rounded border leading-none ${
+                    isDark
+                      ? 'bg-emerald-950/60 border-emerald-500/40 text-emerald-400'
+                      : 'bg-emerald-50 border-emerald-300 text-emerald-800'
+                  }`}
+                >
                   v2.0
                 </span>
               </div>
               <span className={`text-[10px] leading-tight block font-mono mt-0.5 ${isDark ? 'text-zinc-400' : 'text-zinc-600'}`}>
-                Node #01 • Wawa Dam
+                ESP32 BLE · USB Telemetry
               </span>
             </div>
           </div>
@@ -183,7 +196,7 @@ export function Header({
               title="Palitan ang Wika / Switch Language"
               aria-label="Toggle Language"
             >
-              <IconTranslate size={15} className="text-[#00E676]" />
+              <IconTranslate size={15} className={isDark ? 'text-[#00E676]' : 'text-emerald-700'} />
               <span className={`text-[10px] font-bold font-mono uppercase ${isDark ? 'text-white' : 'text-zinc-900'}`}>
                 {lang === 'en' ? 'EN' : 'FIL'}
               </span>
@@ -206,15 +219,18 @@ export function Header({
           </div>
         </div>
 
-        {/* ── SUB-BAR: LIVE CLOCK & ESP32 CONNECTION CONFIRMATION ─────── */}
+        {/* Sub-bar: Live Clock & ESP32 Connection Status */}
         <div className={`px-4 py-2 border-t flex items-center justify-between transition-colors ${
           isDark ? 'bg-[#0E1216] border-[#1E242B]' : 'bg-zinc-50 border-zinc-200'
         }`}>
           {/* Live Digital Clock (PHT) */}
           <div className="flex items-center gap-1.5">
-            <IconClock size={13} className="text-emerald-500 flex-shrink-0" />
+            <IconClock size={13} className={`${isDark ? 'text-emerald-400' : 'text-emerald-700'} flex-shrink-0`} />
             <span className={`text-xs font-mono font-bold tabular-nums ${isDark ? 'text-white' : 'text-zinc-900'}`}>
-              {timeFormatted} <span className="text-[10px] text-emerald-500 font-normal">PHT</span>
+              {timeFormatted}{' '}
+              <span className={`text-[10px] font-normal ${isDark ? 'text-emerald-400' : 'text-emerald-700'}`}>
+                PHT
+              </span>
             </span>
             <span className={`text-[10px] hidden xs:inline ${isDark ? 'text-zinc-400' : 'text-zinc-600'}`}>
               • {dateFormatted}
@@ -226,22 +242,40 @@ export function Header({
             <button
               type="button"
               onClick={onOpenConnectionModal}
-              className="flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-emerald-500/50 bg-emerald-950/40 hover:bg-emerald-950/60 text-emerald-300 text-[10px] font-mono font-bold uppercase transition-colors cursor-pointer min-h-[44px]"
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[10px] font-mono font-bold uppercase transition-colors cursor-pointer min-h-[44px] ${
+                isDark
+                  ? 'border-emerald-500/50 bg-emerald-950/40 hover:bg-emerald-950/60 text-emerald-300'
+                  : 'border-emerald-300 bg-emerald-50 hover:bg-emerald-100 text-emerald-800'
+              }`}
               title="ESP32 Nakakabit. Pindutin para pamahalaan."
             >
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse flex-shrink-0" />
-              {transport === 'serial' && <IconUsb size={13} className="text-emerald-400 flex-shrink-0" />}
-              {transport === 'bluetooth' && <IconBluetooth size={13} className="text-sky-400 flex-shrink-0" />}
-              {transport === 'websocket' && <IconWifi size={13} className="text-amber-400 flex-shrink-0" />}
+              <span
+                className={`w-2 h-2 rounded-full animate-pulse flex-shrink-0 ${
+                  isDark ? 'bg-emerald-400' : 'bg-emerald-600'
+                }`}
+              />
+              {transport === 'serial' && (
+                <IconUsb size={13} className={`${isDark ? 'text-emerald-400' : 'text-emerald-700'} flex-shrink-0`} />
+              )}
+              {transport === 'bluetooth' && (
+                <IconBluetooth size={13} className={`${isDark ? 'text-sky-400' : 'text-sky-700'} flex-shrink-0`} />
+              )}
+              {transport === 'websocket' && (
+                <IconWifi size={13} className={`${isDark ? 'text-amber-400' : 'text-amber-700'} flex-shrink-0`} />
+              )}
               <span className="font-bold">ESP32 LIVE ({transport.toUpperCase()})</span>
             </button>
           ) : isConnecting ? (
             <button
               type="button"
               onClick={onOpenConnectionModal}
-              className="flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-amber-500/50 bg-amber-950/40 text-amber-300 text-[10px] font-mono font-bold uppercase transition-colors cursor-pointer min-h-[44px]"
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[10px] font-mono font-bold uppercase transition-colors cursor-pointer min-h-[44px] ${
+                isDark
+                  ? 'border-amber-500/50 bg-amber-950/40 text-amber-300'
+                  : 'border-amber-300 bg-amber-50 text-amber-800'
+              }`}
             >
-              <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping flex-shrink-0" />
+              <span className={`w-2 h-2 rounded-full animate-ping flex-shrink-0 ${isDark ? 'bg-amber-400' : 'bg-amber-600'}`} />
               <span>{isFil ? 'KUMUKONEKTA...' : 'CONNECTING...'}</span>
             </button>
           ) : (
@@ -269,44 +303,58 @@ export function Header({
           role="dialog"
           aria-modal="true"
           aria-labelledby="modal-title"
+          onClick={() => setShowLinkModal(false)}
         >
-          <div className="bg-[#13171B] border border-[#1E242B] rounded-2xl w-full max-w-sm p-5 shadow-2xl flex flex-col gap-4">
-            <div className="flex items-center justify-between pb-3 border-b border-[#1E242B]">
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className={`rounded-2xl w-full max-w-sm p-5 border shadow-2xl flex flex-col gap-4 transition-colors ${
+              isDark ? 'bg-[#13171B] border-[#1E242B] text-zinc-100' : 'bg-white border-zinc-200 text-zinc-900'
+            }`}
+          >
+            <div className={`flex items-center justify-between pb-3 border-b ${isDark ? 'border-[#1E242B]' : 'border-zinc-200'}`}>
               <div className="flex items-center gap-2">
-                <IconPhone size={16} className="text-[#00E676]" />
-                <h3 id="modal-title" className="text-sm font-black text-white uppercase tracking-wider">
+                <IconPhone size={16} className={isDark ? 'text-[#00E676]' : 'text-emerald-700'} />
+                <h3 id="modal-title" className={`text-sm font-black uppercase tracking-wider ${isDark ? 'text-white' : 'text-zinc-900'}`}>
                   Mobile PWA Access
                 </h3>
               </div>
               <button
                 type="button"
                 onClick={() => setShowLinkModal(false)}
-                className="w-8 h-8 rounded-md bg-[#1E242B] text-zinc-400 hover:text-white flex items-center justify-center text-xs font-bold cursor-pointer min-h-[44px] min-w-[44px]"
+                className={`rounded-md flex items-center justify-center text-xs font-bold cursor-pointer min-h-[44px] min-w-[44px] transition-colors ${
+                  isDark ? 'bg-[#1E242B] text-zinc-300 hover:text-white' : 'bg-zinc-100 text-zinc-600 hover:text-zinc-900'
+                }`}
                 aria-label="Close modal"
               >
                 ✕
               </button>
             </div>
 
-            <p className="text-xs text-zinc-400">
+            <p className={`text-xs ${isDark ? 'text-zinc-300' : 'text-zinc-600'}`}>
               {isFil
                 ? 'Buksan ang dashboard na ito sa iyong cellphone browser para magamit bilang offline PWA app:'
                 : 'Access this telemetry dashboard directly on your smartphone browser or install as a PWA:'}
             </p>
 
             {/* Production 24/7 HTTPS URL */}
-            <div className="p-3 rounded-xl bg-[#0B0F12] border border-[#1E242B] flex flex-col gap-1.5">
-              <span className="text-[10px] font-bold text-[#00E676] uppercase tracking-wider">
+            <div className={`p-3 rounded-xl border flex flex-col gap-1.5 ${
+              isDark ? 'bg-[#0B0F12] border-[#1E242B]' : 'bg-zinc-50 border-zinc-200'
+            }`}>
+              <span className={`text-[10px] font-bold uppercase tracking-wider ${isDark ? 'text-[#00E676]' : 'text-emerald-700'}`}>
                 24/7 ONLINE LIVE URL (RECOMMENDED)
               </span>
-              <div className="flex items-center justify-between gap-2 bg-[#13171B] px-2.5 py-1.5 rounded-lg border border-[#1E242B]">
-                <span className="text-[11px] text-zinc-300 font-mono truncate select-all">
+              <div className={`flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg border ${
+                isDark ? 'bg-[#13171B] border-[#1E242B]' : 'bg-white border-zinc-200'
+              }`}>
+                <span className={`text-[11px] font-mono truncate select-all ${isDark ? 'text-zinc-300' : 'text-zinc-800'}`}>
                   {httpsUrl}
                 </span>
                 <button
                   type="button"
                   onClick={() => handleCopy(httpsUrl, 'https')}
-                  className="px-2.5 py-1.5 rounded bg-[#0B0F12] hover:bg-[#1E242B] text-[10px] text-[#00E676] font-bold flex items-center gap-1 cursor-pointer transition-colors min-h-[44px]"
+                  className={`px-2.5 py-1.5 rounded text-[10px] font-bold flex items-center gap-1 cursor-pointer transition-colors min-h-[44px] ${
+                    isDark ? 'bg-[#0B0F12] hover:bg-[#1E242B] text-[#00E676]' : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700'
+                  }`}
                 >
                   {copiedLink === 'https' ? <IconCheck size={12} /> : <IconCopy size={12} />}
                   <span>{copiedLink === 'https' ? 'COPIED' : 'COPY'}</span>
@@ -314,32 +362,42 @@ export function Header({
               </div>
             </div>
 
-            {/* Local Wi-Fi URL */}
-            <div className="p-3 rounded-xl bg-[#0B0F12] border border-[#1E242B] flex flex-col gap-1.5">
-              <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">
-                LOCAL WI-FI (OFFLINE FIELD BENCH)
-              </span>
-              <div className="flex items-center justify-between gap-2 bg-[#13171B] px-2.5 py-1.5 rounded-lg border border-[#1E242B]">
-                <span className="text-[11px] text-zinc-300 font-mono truncate select-all">
-                  {localUrl}
+            {/* Current Browser Origin (shown only when running outside production domain) */}
+            {showOriginCard && (
+              <div className={`p-3 rounded-xl border flex flex-col gap-1.5 ${
+                isDark ? 'bg-[#0B0F12] border-[#1E242B]' : 'bg-zinc-50 border-zinc-200'
+              }`}>
+                <span className={`text-[10px] font-bold uppercase tracking-wider ${isDark ? 'text-zinc-400' : 'text-zinc-600'}`}>
+                  CURRENT BROWSER ORIGIN
                 </span>
-                <button
-                  type="button"
-                  onClick={() => handleCopy(localUrl, 'local')}
-                  className="px-2.5 py-1.5 rounded bg-[#0B0F12] hover:bg-[#1E242B] text-[10px] text-zinc-300 font-bold flex items-center gap-1 cursor-pointer transition-colors min-h-[44px]"
-                >
-                  {copiedLink === 'local' ? <IconCheck size={12} /> : <IconCopy size={12} />}
-                  <span>{copiedLink === 'local' ? 'COPIED' : 'COPY'}</span>
-                </button>
+                <div className={`flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg border ${
+                  isDark ? 'bg-[#13171B] border-[#1E242B]' : 'bg-white border-zinc-200'
+                }`}>
+                  <span className={`text-[11px] font-mono truncate select-all ${isDark ? 'text-zinc-300' : 'text-zinc-800'}`}>
+                    {originUrl}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => handleCopy(originUrl, 'origin')}
+                    className={`px-2.5 py-1.5 rounded text-[10px] font-bold flex items-center gap-1 cursor-pointer transition-colors min-h-[44px] ${
+                      isDark ? 'bg-[#0B0F12] hover:bg-[#1E242B] text-zinc-300' : 'bg-zinc-100 hover:bg-zinc-200 text-zinc-700'
+                    }`}
+                  >
+                    {copiedLink === 'origin' ? <IconCheck size={12} /> : <IconCopy size={12} />}
+                    <span>{copiedLink === 'origin' ? 'COPIED' : 'COPY'}</span>
+                  </button>
+                </div>
               </div>
-            </div>
+            )}
 
             <button
               type="button"
               onClick={() => setShowLinkModal(false)}
-              className="w-full py-2.5 rounded-xl bg-[#1E242B] hover:bg-[#272A30] text-zinc-200 text-xs font-bold uppercase tracking-wider transition-colors cursor-pointer min-h-[44px]"
+              className={`w-full py-2.5 rounded-xl text-xs font-bold uppercase tracking-wider transition-colors cursor-pointer min-h-[44px] ${
+                isDark ? 'bg-[#1E242B] hover:bg-[#272A30] text-zinc-200' : 'bg-zinc-200 hover:bg-zinc-300 text-zinc-800'
+              }`}
             >
-              CLOSE
+              {isFil ? 'ISARA' : 'CLOSE'}
             </button>
           </div>
         </div>

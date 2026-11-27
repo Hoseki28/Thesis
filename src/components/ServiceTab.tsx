@@ -56,20 +56,36 @@ export function ServiceTab({
     telemetry.source === 'esp32'
 
   const [cmdFeedback, setCmdFeedback] = useState<string | null>(null)
+  const [cmdTone, setCmdTone] = useState<'ok' | 'warn'>('ok')
   const [showAdvancedCal, setShowAdvancedCal] = useState<boolean>(false)
 
-  const showFeedback = (msg: string) => {
+  const showFeedback = (msg: string, tone: 'ok' | 'warn' = 'ok') => {
     setCmdFeedback(msg)
+    setCmdTone(tone)
     setTimeout(() => setCmdFeedback(null), 3000)
   }
 
   const handleCommand = async (action: string, fn: () => Promise<boolean> | void) => {
-    if (!bridge) {
-      showFeedback(isFil ? 'Nasa simulation mode' : 'In simulation mode')
+    if (!bridge || !isHardwareConnected) {
+      showFeedback(
+        isFil
+          ? 'Ikabit muna ang ESP32 bago magpadala ng command.'
+          : 'Connect ESP32 first before sending hardware commands.',
+        'warn'
+      )
       return
     }
-    await fn()
-    showFeedback(`${action} ${isFil ? 'ipinadala' : 'sent'}`)
+    const res = await fn()
+    if (res === false) {
+      showFeedback(
+        isFil
+          ? `Hindi naipadala ang ${action}. Suriin ang koneksyon.`
+          : `Failed to send ${action}. Check ESP32 connection.`,
+        'warn'
+      )
+      return
+    }
+    showFeedback(`${action} ${isFil ? 'ipinadala' : 'sent'}`, 'ok')
   }
 
   // Live ESP32 Sensor & Peripheral Health Diagnostics (verified against ESP32 pin map)
@@ -145,7 +161,7 @@ export function ServiceTab({
     // 3. ACS712-5A Current Sensor (GPIO35)
     let acsStatus: SensorHealthStatus = 'ok'
     let acsDetail = `${iBat.toFixed(2)} A`
-    if (telemetry.overcurrentLatched || telemetry.stateCode === 6) {
+    if (Boolean(telemetry.esp32?.overcurrentLatched) || telemetry.stateCode === 6) {
       acsStatus = 'fault'
       acsDetail = `>2.25A Trip`
     } else if (telemetry.inaOk === false) {
@@ -181,7 +197,7 @@ export function ServiceTab({
     if (!dhtOk) {
       dhtStatus = 'fault'
       dhtDetail = 'No reading'
-    } else if (telemetry.batHot || telemetry.stateCode === 5 || tAmb >= 40 || tAmb < 0) {
+    } else if (Boolean(telemetry.esp32?.batHot) || telemetry.stateCode === 5 || tAmb >= 40 || tAmb < 0) {
       dhtStatus = 'warning'
       dhtDetail = `${tAmb.toFixed(1)}°C Limit`
     }
@@ -189,7 +205,7 @@ export function ServiceTab({
     // 7. Charging Relay (GPIO14)
     let relayStatus: SensorHealthStatus = 'ok'
     let relayDetail = relayOn ? 'CLOSED' : 'OPEN'
-    if (telemetry.overcurrentLatched || telemetry.stateCode === 6) {
+    if (Boolean(telemetry.esp32?.overcurrentLatched) || telemetry.stateCode === 6) {
       relayStatus = 'fault'
       relayDetail = 'OVERCURRENT'
     } else if (telemetry.stateCode === 5 || telemetry.stateCode === 4) {
@@ -249,7 +265,6 @@ export function ServiceTab({
 
   return (
     <div className="flex flex-col gap-2.5 font-sans">
-      {/* ── 1. COMPACT 2×4 ESP32 HARDWARE & SENSOR HEALTH GRID ───────── */}
       <section
         className={`rounded-2xl p-3 border flex flex-col gap-2 shadow-lg transition-colors ${
           isDark ? 'bg-[#13171B] border-[#1E242B]' : 'bg-white border-zinc-200'
@@ -259,9 +274,9 @@ export function ServiceTab({
         <div className="flex items-center justify-between gap-2">
           <div className="min-w-0">
             <h2 className={`text-xs font-black uppercase tracking-wider leading-tight ${isDark ? 'text-white' : 'text-zinc-900'}`}>
-              {isFil ? 'ESP32 SENSOR HEALTH' : 'ESP32 SENSOR HEALTH'}
+              ESP32 SENSOR HEALTH
             </h2>
-            <span className={`text-[9.5px] font-mono block ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-500'}`}>
+            <span className={`text-[9.5px] font-mono block ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-600'}`}>
               {!isHardwareConnected
                 ? '8 Modules · Offline'
                 : totalIssues === 0
@@ -284,9 +299,20 @@ export function ServiceTab({
               }`}
             >
               {telemetry.source === 'bluetooth' ? (
-                <IconBluetooth size={11} className="text-sky-400" />
+                <IconBluetooth size={11} className={isDark ? 'text-sky-400' : 'text-sky-700'} />
               ) : (
-                <IconUsb size={11} className={isHardwareConnected ? 'text-[#00E676]' : 'text-zinc-500'} />
+                <IconUsb
+                  size={11}
+                  className={
+                    isHardwareConnected
+                      ? isDark
+                        ? 'text-[#00E676]'
+                        : 'text-emerald-700'
+                      : isDark
+                      ? 'text-zinc-400'
+                      : 'text-zinc-600'
+                  }
+                />
               )}
               <span>{transportLabel}</span>
             </span>
@@ -295,7 +321,7 @@ export function ServiceTab({
               <button
                 type="button"
                 onClick={() => handleCommand(isFil ? 'Pin check' : 'Pin check (v)', () => bridge?.sendPinCheck())}
-                className={`px-2 py-1 rounded-md border text-[9px] font-mono font-bold uppercase cursor-pointer transition-colors ${
+                className={`px-2.5 py-1 rounded-md border text-[9px] font-mono font-bold uppercase cursor-pointer transition-colors min-h-[44px] min-w-[44px] ${
                   isDark
                     ? 'bg-[#0B0F12] border-[#1E242B] text-[#00E676] hover:bg-[#1E242B]'
                     : 'bg-zinc-50 border-zinc-200 text-emerald-700 hover:bg-zinc-100'
@@ -329,11 +355,26 @@ export function ServiceTab({
             >
               <div className="flex items-center justify-between gap-1">
                 <div className="flex items-center gap-1.5 min-w-0">
-                  {item.status === 'ok' && <IconCheckCircle size={12} className="text-[#00E676] flex-shrink-0" />}
-                  {item.status === 'warning' && <IconAlertTriangle size={12} className="text-amber-400 flex-shrink-0" />}
-                  {item.status === 'fault' && <IconXCircle size={12} className="text-rose-400 flex-shrink-0" />}
+                  {item.status === 'ok' && (
+                    <IconCheckCircle
+                      size={12}
+                      className={`${isDark ? 'text-[#00E676]' : 'text-emerald-700'} flex-shrink-0`}
+                    />
+                  )}
+                  {item.status === 'warning' && (
+                    <IconAlertTriangle
+                      size={12}
+                      className={`${isDark ? 'text-amber-400' : 'text-amber-700'} flex-shrink-0`}
+                    />
+                  )}
+                  {item.status === 'fault' && (
+                    <IconXCircle
+                      size={12}
+                      className={`${isDark ? 'text-rose-400' : 'text-rose-700'} flex-shrink-0`}
+                    />
+                  )}
                   {item.status === 'disconnected' && (
-                    <span className={`block w-2.5 h-2.5 rounded-full border-[1.5px] flex-shrink-0 ${isDark ? 'border-zinc-600' : 'border-zinc-400'}`} />
+                    <span className={`block w-2.5 h-2.5 rounded-full border-[1.5px] flex-shrink-0 ${isDark ? 'border-zinc-500' : 'border-zinc-500'}`} />
                   )}
                   <span className={`text-[11px] font-bold truncate ${isDark ? 'text-white' : 'text-zinc-900'}`}>
                     {item.name}
@@ -347,13 +388,17 @@ export function ServiceTab({
               </div>
 
               <div className="flex items-center justify-between gap-1 text-[9.5px] font-mono">
-                <span className={isDark ? 'text-zinc-500' : 'text-zinc-500'}>{item.pin}</span>
+                <span className={isDark ? 'text-zinc-400' : 'text-zinc-600'}>{item.pin}</span>
                 <span
                   className={`truncate font-semibold ${
                     item.status === 'fault'
-                      ? 'text-rose-400'
+                      ? isDark
+                        ? 'text-rose-400'
+                        : 'text-rose-700'
                       : item.status === 'warning'
-                      ? 'text-amber-400'
+                      ? isDark
+                        ? 'text-amber-400'
+                        : 'text-amber-700'
                       : isDark
                       ? 'text-zinc-300'
                       : 'text-zinc-700'
@@ -367,7 +412,6 @@ export function ServiceTab({
         </div>
       </section>
 
-      {/* ── 2. ESP32 HARDWARE SERVICE ACTIONS & COMMANDS ────────── */}
       <section
         className={`rounded-2xl p-3 border flex flex-col gap-2.5 shadow-lg transition-colors ${
           isDark ? 'bg-[#13171B] border-[#1E242B]' : 'bg-white border-zinc-200'
@@ -376,31 +420,45 @@ export function ServiceTab({
       >
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <IconZap size={16} className="text-[#00E676]" />
+            <IconZap size={16} className={isDark ? 'text-[#00E676]' : 'text-emerald-700'} />
             <h3 id="hardware-actions-heading" className={`text-xs font-bold uppercase tracking-wider ${isDark ? 'text-white' : 'text-zinc-900'}`}>
               {isFil ? 'KONTROL NG HARDWARE (SERIAL)' : 'ESP32 CHARGER COMMANDS'}
             </h3>
           </div>
           <span
-            className={`text-[10px] font-mono px-2 py-0.5 rounded font-bold uppercase ${
+            className={`text-[10px] font-mono px-2 py-0.5 rounded font-bold uppercase border ${
               isHardwareConnected
-                ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                : 'bg-zinc-500/20 text-zinc-400 border border-zinc-500/30'
+                ? isDark
+                  ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
+                  : 'bg-emerald-50 text-emerald-700 border-emerald-300'
+                : isDark
+                ? 'bg-zinc-500/20 text-zinc-400 border-zinc-500/30'
+                : 'bg-zinc-100 text-zinc-700 border-zinc-300'
             }`}
           >
-            {isHardwareConnected ? (isFil ? 'LIVE LINK' : 'LIVE LINK') : (isFil ? 'SIMULASYON' : 'SIMULATION')}
+            {isHardwareConnected ? 'LIVE LINK' : 'STANDBY'}
           </span>
         </div>
 
         {cmdFeedback && (
-          <div className="text-[11px] font-mono font-bold px-3 py-1.5 rounded-lg bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 animate-fade-in">
+          <div
+            className={`text-[11px] font-mono font-bold px-3 py-1.5 rounded-lg border animate-fade-in ${
+              cmdTone === 'warn'
+                ? isDark
+                  ? 'bg-amber-500/20 text-amber-300 border-amber-500/35'
+                  : 'bg-amber-50 text-amber-800 border-amber-300'
+                : isDark
+                ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
+                : 'bg-emerald-50 text-emerald-800 border-emerald-300'
+            }`}
+          >
             {cmdFeedback}
           </div>
         )}
 
         {/* Charge Mode Selector ('a', 'c', 'o') */}
         <div className="flex flex-col gap-1.5">
-          <span className={`text-[10px] font-bold uppercase tracking-wider ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-500'}`}>
+          <span className={`text-[10px] font-bold uppercase tracking-wider ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-600'}`}>
             {isFil ? 'MODO NG CHARGING' : 'CHARGING MODE OVERRIDE'}
           </span>
           <div className="grid grid-cols-3 gap-2">
@@ -418,7 +476,7 @@ export function ServiceTab({
               }`}
             >
               <span>{isFil ? 'Awtomatiko' : 'Auto Mode'}</span>
-              <span className="text-[9px] font-mono opacity-70">Cmd: 'a'</span>
+              <span className="text-[9px] font-mono opacity-80">Cmd: 'a'</span>
             </button>
 
             <button
@@ -426,14 +484,16 @@ export function ServiceTab({
               onClick={() => handleCommand(isFil ? 'Sapilitang ON' : 'Force charge ON', () => bridge?.sendForceChargingOn())}
               className={`py-2 px-2 rounded-xl border text-[11px] font-bold flex flex-col items-center justify-center gap-0.5 min-h-[44px] cursor-pointer transition-colors ${
                 telemetry.forceMode === 1
-                  ? 'bg-amber-500/20 border-amber-500 text-amber-400'
+                  ? isDark
+                    ? 'bg-amber-500/20 border-amber-500 text-amber-400'
+                    : 'bg-amber-50 border-amber-500 text-amber-700'
                   : isDark
                   ? 'bg-[#0B0F12] border-[#272A30] text-zinc-300 hover:border-zinc-500'
                   : 'bg-zinc-50 border-zinc-200 text-zinc-700 hover:border-zinc-400'
               }`}
             >
               <span>{isFil ? 'Sapilitang ON' : 'Force ON'}</span>
-              <span className="text-[9px] font-mono opacity-70">Cmd: 'c'</span>
+              <span className="text-[9px] font-mono opacity-80">Cmd: 'c'</span>
             </button>
 
             <button
@@ -441,40 +501,42 @@ export function ServiceTab({
               onClick={() => handleCommand(isFil ? 'Sapilitang OFF' : 'Force charge OFF', () => bridge?.sendForceChargingOff())}
               className={`py-2 px-2 rounded-xl border text-[11px] font-bold flex flex-col items-center justify-center gap-0.5 min-h-[44px] cursor-pointer transition-colors ${
                 telemetry.forceMode === 2
-                  ? 'bg-rose-500/20 border-rose-500 text-rose-400'
+                  ? isDark
+                    ? 'bg-rose-500/20 border-rose-500 text-rose-400'
+                    : 'bg-rose-50 border-rose-500 text-rose-700'
                   : isDark
                   ? 'bg-[#0B0F12] border-[#272A30] text-zinc-300 hover:border-zinc-500'
                   : 'bg-zinc-50 border-zinc-200 text-zinc-700 hover:border-zinc-400'
               }`}
             >
               <span>{isFil ? 'Sapilitang OFF' : 'Force OFF'}</span>
-              <span className="text-[9px] font-mono opacity-70">Cmd: 'o'</span>
+              <span className="text-[9px] font-mono opacity-80">Cmd: 'o'</span>
             </button>
           </div>
         </div>
 
         {/* Diagnostic and Reset Grid */}
         <div className="grid grid-cols-2 gap-2 pt-1">
-          {/* Clear Overcurrent Latch ('r') */}
           <button
             type="button"
             onClick={() => handleCommand(isFil ? 'I-clear ang overcurrent' : 'Clear overcurrent', () => bridge?.sendClearOvercurrent())}
             className={`py-2 px-2.5 rounded-xl border text-[11px] font-bold flex items-center justify-center gap-1.5 min-h-[44px] cursor-pointer transition-colors ${
               telemetry.stateCode === 6 || telemetry.activeAlarms?.includes('A_OVERI')
-                ? 'bg-rose-500/20 border-rose-500 text-rose-300 animate-pulse'
+                ? isDark
+                  ? 'bg-rose-500/20 border-rose-500 text-rose-300 animate-pulse'
+                  : 'bg-rose-50 border-rose-500 text-rose-700 animate-pulse'
                 : isDark
                 ? 'bg-[#0B0F12] border-[#272A30] text-zinc-300 hover:border-zinc-500'
                 : 'bg-zinc-50 border-zinc-200 text-zinc-700 hover:border-zinc-400'
             }`}
           >
-            <IconShield size={14} className="text-amber-400 flex-shrink-0" />
+            <IconShield size={14} className={`${isDark ? 'text-amber-400' : 'text-amber-700'} flex-shrink-0`} />
             <div className="flex flex-col text-left leading-tight">
-              <span>{isFil ? 'Clear Overcurrent' : 'Clear Overcurrent'}</span>
-              <span className="text-[9px] font-mono opacity-70">Cmd: 'r'</span>
+              <span>Clear Overcurrent</span>
+              <span className="text-[9px] font-mono opacity-80">Cmd: 'r'</span>
             </div>
           </button>
 
-          {/* Reset Energy Counters ('z') */}
           <button
             type="button"
             onClick={() => handleCommand(isFil ? 'I-reset ang Wh' : 'Reset energy Wh', () => bridge?.sendResetEnergy())}
@@ -484,14 +546,13 @@ export function ServiceTab({
                 : 'bg-zinc-50 border-zinc-200 text-zinc-700 hover:border-zinc-400'
             }`}
           >
-            <IconRotateCcw size={14} className="text-[#00E676] flex-shrink-0" />
+            <IconRotateCcw size={14} className={`${isDark ? 'text-[#00E676]' : 'text-emerald-700'} flex-shrink-0`} />
             <div className="flex flex-col text-left leading-tight">
               <span>{isFil ? 'I-reset ang Wh' : 'Reset Energy Wh'}</span>
-              <span className="text-[9px] font-mono opacity-70">Cmd: 'z'</span>
+              <span className="text-[9px] font-mono opacity-80">Cmd: 'z'</span>
             </div>
           </button>
 
-          {/* Test Lamps & Buzzer ('t') */}
           <button
             type="button"
             onClick={() => handleCommand(isFil ? 'Pagsusuri ng ilaw at buzzer' : 'LED and buzzer test', () => bridge?.sendTestLedsBuzzer())}
@@ -501,14 +562,13 @@ export function ServiceTab({
                 : 'bg-zinc-50 border-zinc-200 text-zinc-700 hover:border-zinc-400'
             }`}
           >
-            <IconActivity size={14} className="text-cyan-400 flex-shrink-0" />
+            <IconActivity size={14} className={`${isDark ? 'text-cyan-400' : 'text-cyan-700'} flex-shrink-0`} />
             <div className="flex flex-col text-left leading-tight">
               <span>{isFil ? 'Subukan ang Ilaw' : 'Test LEDs / Buzz'}</span>
-              <span className="text-[9px] font-mono opacity-70">Cmd: 't' (2s)</span>
+              <span className="text-[9px] font-mono opacity-80">Cmd: 't' (2s)</span>
             </div>
           </button>
 
-          {/* Mute/Unmute Buzzer ('m') */}
           <button
             type="button"
             onClick={() => handleCommand(isFil ? 'Mute/Unmute Buzzer' : 'Mute/Unmute buzzer', () => bridge?.sendMuteBuzzer())}
@@ -518,16 +578,15 @@ export function ServiceTab({
                 : 'bg-zinc-50 border-zinc-200 text-zinc-700 hover:border-zinc-400'
             }`}
           >
-            <IconVolume2 size={14} className="text-violet-400 flex-shrink-0" />
+            <IconVolume2 size={14} className={`${isDark ? 'text-violet-400' : 'text-violet-700'} flex-shrink-0`} />
             <div className="flex flex-col text-left leading-tight">
               <span>{isFil ? 'I-mute ang Buzzer' : 'Mute Buzzer'}</span>
-              <span className="text-[9px] font-mono opacity-70">Cmd: 'm'</span>
+              <span className="text-[9px] font-mono opacity-80">Cmd: 'm'</span>
             </div>
           </button>
         </div>
       </section>
 
-      {/* ── 4. EXPANDABLE ADVANCED SENSOR CALIBRATION DRAWER ──────────── */}
       <section className={`rounded-2xl p-4 border flex flex-col gap-2.5 shadow-lg mt-1 font-sans transition-colors ${
         isDark ? 'bg-zinc-900/60 border-zinc-800' : 'bg-white border-zinc-200'
       }`}>
@@ -538,7 +597,11 @@ export function ServiceTab({
           <button
             type="button"
             onClick={() => setShowAdvancedCal(!showAdvancedCal)}
-            className="text-xs text-emerald-400 hover:text-emerald-300 font-medium flex items-center gap-1.5 cursor-pointer transition-colors"
+            className={`text-xs font-medium flex items-center gap-1.5 cursor-pointer transition-colors min-h-[44px] px-3 rounded-lg ${
+              isDark
+                ? 'text-emerald-400 hover:text-emerald-300 hover:bg-zinc-800/60'
+                : 'text-emerald-700 hover:text-emerald-800 hover:bg-emerald-50'
+            }`}
           >
             <Sliders className="w-3.5 h-3.5" strokeWidth={1.75} />
             <span>{showAdvancedCal ? (isFil ? 'Itago ang Studio' : 'Hide Studio') : (isFil ? 'Buksan ang Studio' : 'Open Studio')}</span>

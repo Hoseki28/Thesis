@@ -1,7 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { HardwareBridge } from '../services/hardwareBridge'
 import { TelemetryHistoryManager } from '../services/telemetryHistory'
-import { systemLogManager } from '../services/systemLogService'
 import {
   HardwareState,
   Lang,
@@ -43,7 +42,6 @@ export function LogsTab({
   telemetry,
   onClearLogs,
   onExportCsv,
-  onExportEventLogs,
   lang,
   theme = 'dark',
 }: LogsTabProps) {
@@ -107,19 +105,8 @@ export function LogsTab({
     setTimeout(() => setExportedNotice(null), 3000)
   }
 
-  const handleExportEvents = () => {
-    if (onExportEventLogs) {
-      onExportEventLogs()
-    } else {
-      systemLogManager.exportCsv('bteg_event_logs')
-    }
-    setExportedNotice('events')
-    setTimeout(() => setExportedNotice(null), 3000)
-  }
-
   return (
     <div className="flex flex-col gap-3 font-sans">
-      {/* ── HEADER ──────────────────────────────────────────────────── */}
       <div className="flex items-center justify-between pb-1">
         <div>
           <div className="flex items-center gap-2">
@@ -134,21 +121,20 @@ export function LogsTab({
               {logs.length}/50
             </span>
           </div>
-          <p className={`text-[11px] font-mono mt-0.5 ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-500'}`}>
+          <p className={`text-[11px] font-mono mt-0.5 ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-600'}`}>
             PHT (UTC+8) • {isFil ? 'Aktibong talaan ng kaganapan' : 'Real-time telemetry buffer'}
           </p>
         </div>
-        <IconFileText size={18} className={isDark ? 'text-[#9CA3AF]' : 'text-zinc-400'} />
+        <IconFileText size={18} className={isDark ? 'text-[#9CA3AF]' : 'text-zinc-500'} />
       </div>
 
-      {/* ── FILTER PILLS ────────────────────────────────────────────── */}
       <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5">
         {(
           [
             { id: 'all', label: isFil ? 'LAHAT' : 'ALL', count: counts.all },
-            { id: 'info', label: 'INFO', count: counts.info, dot: 'bg-emerald-400' },
-            { id: 'warning', label: isFil ? 'BABALA' : 'WARN', count: counts.warning, dot: 'bg-amber-400' },
-            { id: 'error', label: 'ERROR', count: counts.error, dot: 'bg-rose-400' },
+            { id: 'info', label: 'INFO', count: counts.info, dot: 'bg-emerald-500' },
+            { id: 'warning', label: isFil ? 'BABALA' : 'WARN', count: counts.warning, dot: 'bg-amber-500' },
+            { id: 'error', label: 'ERROR', count: counts.error, dot: 'bg-rose-500' },
           ] as const
         ).map((item) => {
           const isActive = filter === item.id
@@ -157,27 +143,29 @@ export function LogsTab({
               key={item.id}
               type="button"
               onClick={() => setFilter(item.id)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer min-h-[36px] ${
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer min-h-[44px] ${
                 isActive
                   ? isDark
                     ? 'bg-[#10B981] text-zinc-950 shadow-md'
                     : 'bg-emerald-600 text-white shadow-md'
                   : isDark
                   ? 'bg-[#13171B] text-[#9CA3AF] hover:text-white border border-[#1E242B]'
-                  : 'bg-white text-zinc-600 hover:text-zinc-900 border border-zinc-200'
+                  : 'bg-white text-zinc-700 hover:text-zinc-900 border border-zinc-200'
               }`}
             >
               {'dot' in item && item.dot && (
-                <span className={`w-1.5 h-1.5 rounded-full ${isActive ? 'bg-zinc-950' : item.dot}`} />
+                <span className={`w-1.5 h-1.5 rounded-full ${isActive ? (isDark ? 'bg-zinc-950' : 'bg-white') : item.dot}`} />
               )}
               <span>{item.label}</span>
               <span
                 className={`text-[10px] font-mono px-1 rounded tabular-nums ${
                   isActive
-                    ? 'bg-black/20 text-current'
+                    ? isDark
+                      ? 'bg-black/20 text-current'
+                      : 'bg-white/20 text-white'
                     : isDark
-                    ? 'bg-zinc-800 text-zinc-400'
-                    : 'bg-zinc-100 text-zinc-500'
+                    ? 'bg-zinc-800 text-zinc-300'
+                    : 'bg-zinc-100 text-zinc-700'
                 }`}
               >
                 {item.count}
@@ -187,7 +175,7 @@ export function LogsTab({
         })}
       </div>
 
-      {/* ── LOG ENTRIES VIEWPORT (BUFFER CAPPED AT 50) ───────────────── */}
+      {/* Log entries viewport (buffer capped at 50) */}
       <div
         ref={listContainerRef}
         className="flex flex-col gap-2.5 max-h-[390px] overflow-y-auto pr-0.5 scroll-smooth"
@@ -195,7 +183,7 @@ export function LogsTab({
         {filteredLogs.length === 0 ? (
           <div
             className={`p-6 rounded-2xl border text-center flex flex-col items-center justify-center gap-2 ${
-              isDark ? 'bg-[#13171B] border-[#1E242B] text-[#9CA3AF]' : 'bg-white border-zinc-200 text-zinc-500'
+              isDark ? 'bg-[#13171B] border-[#1E242B] text-[#9CA3AF]' : 'bg-white border-zinc-200 text-zinc-600'
             }`}
           >
             <IconFileText size={24} className="opacity-40" />
@@ -217,16 +205,20 @@ export function LogsTab({
                       : 'bg-emerald-50/90 border-emerald-300 text-emerald-800'
                   }`}
                 >
-                  <IconCheckCircle size={18} className="text-[#10B981] flex-shrink-0 mt-0.5" />
+                  <IconCheckCircle size={18} className={`${isDark ? 'text-[#10B981]' : 'text-emerald-700'} flex-shrink-0 mt-0.5`} />
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between gap-2 mb-0.5">
-                      <span className="text-[9px] font-mono font-bold tracking-wider uppercase px-1.5 py-0.5 rounded bg-[#10B981]/20 text-[#10B981]">
+                      <span
+                        className={`text-[9px] font-mono font-bold tracking-wider uppercase px-1.5 py-0.5 rounded ${
+                          isDark ? 'bg-[#10B981]/20 text-[#10B981]' : 'bg-emerald-100 text-emerald-800'
+                        }`}
+                      >
                         INFO
                       </span>
                       <time
                         dateTime={new Date(log.timestampMs).toISOString()}
                         className={`text-[10px] font-mono tabular-nums select-none ${
-                          isDark ? 'text-[#9CA3AF]' : 'text-zinc-500'
+                          isDark ? 'text-[#9CA3AF]' : 'text-zinc-600'
                         }`}
                       >
                         {log.timestamp}
@@ -250,16 +242,20 @@ export function LogsTab({
                       : 'bg-amber-50/90 border-amber-300 text-amber-800'
                   }`}
                 >
-                  <IconAlertTriangle size={18} className="text-[#F59E0B] flex-shrink-0 mt-0.5" />
+                  <IconAlertTriangle size={18} className={`${isDark ? 'text-[#F59E0B]' : 'text-amber-700'} flex-shrink-0 mt-0.5`} />
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between gap-2 mb-0.5">
-                      <span className="text-[9px] font-mono font-bold tracking-wider uppercase px-1.5 py-0.5 rounded bg-[#F59E0B]/20 text-[#F59E0B]">
+                      <span
+                        className={`text-[9px] font-mono font-bold tracking-wider uppercase px-1.5 py-0.5 rounded ${
+                          isDark ? 'bg-[#F59E0B]/20 text-[#F59E0B]' : 'bg-amber-100 text-amber-800'
+                        }`}
+                      >
                         WARNING
                       </span>
                       <time
                         dateTime={new Date(log.timestampMs).toISOString()}
                         className={`text-[10px] font-mono tabular-nums select-none ${
-                          isDark ? 'text-[#9CA3AF]' : 'text-zinc-500'
+                          isDark ? 'text-[#9CA3AF]' : 'text-zinc-600'
                         }`}
                       >
                         {log.timestamp}
@@ -282,16 +278,20 @@ export function LogsTab({
                     : 'bg-rose-50/90 border-rose-300 text-rose-800'
                 }`}
               >
-                <IconXCircle size={18} className="text-[#EF4444] flex-shrink-0 mt-0.5" />
+                <IconXCircle size={18} className={`${isDark ? 'text-[#EF4444]' : 'text-rose-700'} flex-shrink-0 mt-0.5`} />
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center justify-between gap-2 mb-0.5">
-                    <span className="text-[9px] font-mono font-bold tracking-wider uppercase px-1.5 py-0.5 rounded bg-[#EF4444]/20 text-[#EF4444]">
+                    <span
+                      className={`text-[9px] font-mono font-bold tracking-wider uppercase px-1.5 py-0.5 rounded ${
+                        isDark ? 'bg-[#EF4444]/20 text-[#EF4444]' : 'bg-rose-100 text-rose-800'
+                      }`}
+                    >
                       ERROR
                     </span>
                     <time
                       dateTime={new Date(log.timestampMs).toISOString()}
                       className={`text-[10px] font-mono tabular-nums select-none ${
-                        isDark ? 'text-[#9CA3AF]' : 'text-zinc-500'
+                        isDark ? 'text-[#9CA3AF]' : 'text-zinc-600'
                       }`}
                     >
                       {log.timestamp}
@@ -307,9 +307,8 @@ export function LogsTab({
         )}
       </div>
 
-      {/* ── ACTION BUTTONS (SINGLE CSV EXPORT + SERIAL CONSOLE) ──────── */}
+      {/* Action buttons: CSV Export + Serial Monitor */}
       <div className="flex flex-col gap-2 pt-1 font-sans">
-        {/* CSV Sampling Interval Selector (Default: Every 15 Minutes) */}
         <div
           className={`p-2 rounded-xl border flex items-center justify-between gap-2 ${
             isDark ? 'bg-[#13171B] border-[#1E242B]' : 'bg-white border-zinc-200'
@@ -332,14 +331,14 @@ export function LogsTab({
                   key={opt.sec}
                   type="button"
                   onClick={() => setExportIntervalSec(opt.sec)}
-                  className={`px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold uppercase transition-colors cursor-pointer min-h-[32px] ${
+                  className={`px-2 py-1 rounded-lg text-[10px] font-mono font-bold uppercase transition-colors cursor-pointer min-h-[44px] min-w-[44px] ${
                     active
                       ? isDark
                         ? 'bg-[#00E676] text-zinc-950'
                         : 'bg-emerald-600 text-white'
                       : isDark
                       ? 'bg-[#0B0F12] text-zinc-400 hover:text-white border border-[#1E242B]'
-                      : 'bg-zinc-100 text-zinc-600 hover:text-zinc-900'
+                      : 'bg-zinc-100 text-zinc-700 hover:text-zinc-900'
                   }`}
                 >
                   {opt.label}
@@ -349,7 +348,6 @@ export function LogsTab({
           </div>
         </div>
 
-        {/* Single Clean Row: Export CSV + Serial Monitor Toggle */}
         <div className="grid grid-cols-2 gap-2">
           <button
             type="button"
@@ -384,7 +382,7 @@ export function LogsTab({
             <span className="truncate">
               {showConsole
                 ? isFil ? 'ITAGO ANG SERIAL' : 'HIDE SERIAL'
-                : isFil ? 'SERIAL MONITOR' : 'SERIAL MONITOR'}
+                : 'SERIAL MONITOR'}
             </span>
           </button>
         </div>
@@ -396,8 +394,8 @@ export function LogsTab({
           <button
             type="button"
             onClick={onClearLogs}
-            className={`text-[11px] font-mono flex items-center gap-1 transition-colors cursor-pointer py-1 px-2 rounded hover:underline ${
-              isDark ? 'text-zinc-500 hover:text-zinc-300' : 'text-zinc-400 hover:text-zinc-600'
+            className={`text-[11px] font-mono flex items-center gap-1 transition-colors cursor-pointer min-h-[44px] px-3 rounded hover:underline ${
+              isDark ? 'text-zinc-400 hover:text-zinc-200' : 'text-zinc-600 hover:text-zinc-900'
             }`}
           >
             <IconRotateCcw size={11} />
@@ -406,24 +404,37 @@ export function LogsTab({
         </div>
       )}
 
-      {/* ── EXPANDABLE HARDWARE SERIAL TERMINAL ────────────────────────── */}
       {showConsole && (
         <section
           className={`rounded-2xl p-3.5 border flex flex-col gap-2.5 shadow-lg font-sans transition-colors ${
             isDark ? 'bg-[#13171B] border-[#1E242B]' : 'bg-white border-zinc-200'
           }`}
         >
-          <div className="flex items-center justify-between text-xs text-[#9CA3AF]">
+          <div className={`flex items-center justify-between text-xs ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-600'}`}>
             <span className="font-mono text-[11px]">PORT: {hardwareState.portInfo}</span>
             <div className="flex items-center gap-2">
-              <span className={isConnected ? 'text-[#00E676] font-bold' : 'text-zinc-400'}>
-                {isConnected ? (isFil ? 'NAKABIT' : 'ONLINE') : isFil ? 'STANDBY' : 'STANDBY'}
+              <span
+                className={
+                  isConnected
+                    ? isDark
+                      ? 'text-[#00E676] font-bold'
+                      : 'text-emerald-700 font-bold'
+                    : isDark
+                    ? 'text-zinc-400'
+                    : 'text-zinc-600'
+                }
+              >
+                {isConnected ? (isFil ? 'NAKABIT' : 'ONLINE') : 'STANDBY'}
               </span>
               {isConnected ? (
                 <button
                   type="button"
-                  onClick={() => bridge.disconnectSerial()}
-                  className="px-2 py-0.5 rounded bg-rose-500/20 text-rose-400 border border-rose-500/30 text-[10px] font-bold uppercase hover:bg-rose-500/30 cursor-pointer min-h-[30px]"
+                  onClick={() => bridge.disconnectAll()}
+                  className={`px-3 py-1 rounded border text-[10px] font-bold uppercase cursor-pointer min-h-[44px] transition-colors ${
+                    isDark
+                      ? 'bg-rose-500/20 text-rose-400 border-rose-500/30 hover:bg-rose-500/30'
+                      : 'bg-rose-50 text-rose-700 border-rose-300 hover:bg-rose-100'
+                  }`}
                 >
                   {isFil ? 'PUTULIN' : 'DISCONNECT'}
                 </button>
@@ -431,7 +442,11 @@ export function LogsTab({
                 <button
                   type="button"
                   onClick={() => bridge.connectSerial()}
-                  className="px-2 py-0.5 rounded bg-[#00E676]/20 text-[#00E676] border border-[#00E676]/30 text-[10px] font-bold uppercase hover:bg-[#00E676]/30 cursor-pointer min-h-[30px]"
+                  className={`px-3 py-1 rounded border text-[10px] font-bold uppercase cursor-pointer min-h-[44px] transition-colors ${
+                    isDark
+                      ? 'bg-[#00E676]/20 text-[#00E676] border-[#00E676]/30 hover:bg-[#00E676]/30'
+                      : 'bg-emerald-50 text-emerald-700 border-emerald-300 hover:bg-emerald-100'
+                  }`}
                 >
                   {isFil ? 'IKABIT' : 'CONNECT'}
                 </button>
@@ -445,7 +460,7 @@ export function LogsTab({
             }`}
           >
             {hardwareState.rawLogs.length === 0 ? (
-              <div className={`py-3 text-center text-xs ${isDark ? 'text-zinc-500' : 'text-zinc-400'}`}>
+              <div className={`py-3 text-center text-xs ${isDark ? 'text-zinc-400' : 'text-zinc-600'}`}>
                 {isFil
                   ? 'Walang nakakabit na ESP32. Ikabit sa USB Serial o Bluetooth BLE para makita ang live serial output.'
                   : 'No ESP32 connected. Connect via USB Serial or Bluetooth BLE to view live serial lines.'}
@@ -453,7 +468,7 @@ export function LogsTab({
             ) : (
               hardwareState.rawLogs.slice(-25).map((log) => (
                 <div key={log.id} className="break-all leading-tight">
-                  <span className="text-[#9CA3AF] select-none mr-1.5">[{log.timestamp}]</span>
+                  <span className={`${isDark ? 'text-[#9CA3AF]' : 'text-zinc-600'} select-none mr-1.5`}>[{log.timestamp}]</span>
                   <span>{log.text}</span>
                 </div>
               ))
