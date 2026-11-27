@@ -119,3 +119,99 @@ test('PWA manifest and service worker exist and are valid', () => {
   assert.match(sw, /caches\.open/)
   assert.match(sw, /cache\.addAll/)
 })
+
+test('Charging indicator appears only while charging and hides when idle/open/disconnected', () => {
+  function computeIsActivelyCharging({
+    isConnected,
+    relayOn,
+    stateCode,
+    stateName,
+    vBat,
+    vTeg,
+    iTeg,
+  }) {
+    const cleanName = (stateName || '').trim()
+    const hasValidBattery =
+      isConnected && stateCode !== 0 && cleanName !== 'NO BATTERY' && vBat >= 6.0 && vBat <= 16.5
+    return (
+      hasValidBattery &&
+      Boolean(relayOn) &&
+      (stateCode === 1 || cleanName === 'CHARGING') &&
+      (iTeg > 0 || vTeg >= vBat - 0.15 || vBat >= 13.0)
+    )
+  }
+
+  // Active bulk charging (current flowing) -> show bolt
+  assert.equal(
+    computeIsActivelyCharging({
+      isConnected: true,
+      relayOn: true,
+      stateCode: 1,
+      stateName: 'CHARGING   ',
+      vBat: 12.6,
+      vTeg: 13.8,
+      iTeg: 0.45,
+    }),
+    true
+  )
+  // High-voltage absorption/taper stage (14.04V, relay closed, current below 0.08A deadband) -> show bolt
+  assert.equal(
+    computeIsActivelyCharging({
+      isConnected: true,
+      relayOn: true,
+      stateCode: 1,
+      stateName: 'CHARGING',
+      vBat: 14.04,
+      vTeg: 14.1,
+      iTeg: 0.0,
+    }),
+    true
+  )
+  // Forced ON with dead TEG & resting battery -> hide bolt
+  assert.equal(
+    computeIsActivelyCharging({
+      isConnected: true,
+      relayOn: true,
+      stateCode: 1,
+      stateName: 'CHARGING',
+      vBat: 12.5,
+      vTeg: 0.0,
+      iTeg: 0.0,
+    }),
+    false
+  )
+  // Relay open / non-charging / disconnected states -> hide bolt
+  for (const [stateCode, stateName] of [
+    [2, 'FULL-HOLD'],
+    [3, 'WAITING'],
+    [4, 'FORCED OFF'],
+    [5, 'TEMP LOCKOUT'],
+    [6, 'OVERCURRENT'],
+    [0, 'NO BATTERY'],
+  ]) {
+    assert.equal(
+      computeIsActivelyCharging({
+        isConnected: true,
+        relayOn: false,
+        stateCode,
+        stateName,
+        vBat: stateCode === 0 ? 0.0 : 12.85,
+        vTeg: 13.5,
+        iTeg: 0.0,
+      }),
+      false
+    )
+  }
+  assert.equal(
+    computeIsActivelyCharging({
+      isConnected: false,
+      relayOn: true,
+      stateCode: 1,
+      stateName: 'CHARGING',
+      vBat: 14.04,
+      vTeg: 14.2,
+      iTeg: 0.5,
+    }),
+    false
+  )
+})

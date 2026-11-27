@@ -799,7 +799,7 @@ export class HardwareBridge {
       vBat: c.vBat,
       batPct: c.batPct,
       iBat: c.iBat,
-      iTeg: c.iTeg ?? c.iBat,
+      iTeg: c.iTeg > 0 ? c.iTeg : c.iBat,
       tHot: c.tHot,
       tCold: c.tCold,
       dT: c.hotFault || c.coldFault ? 0 : Math.max(0, Math.round((c.tHot - c.tCold) * 10) / 10),
@@ -1066,7 +1066,10 @@ export class HardwareBridge {
             const m = seg.match(/I\s+([-\d.]+)\s*A/i)
             if (m) {
               const v = parseFloat(m[1])
-              if (Number.isFinite(v)) this.esp32Cache.iBat = v
+              if (Number.isFinite(v)) {
+                this.esp32Cache.iBat = v
+                this.esp32Cache.iTeg = v
+              }
             }
             const mAcs = seg.match(/ACS\s+([-\d.]+)\s*V,\s*zero\s+([-\d.]+)\s*V/i)
             if (mAcs) {
@@ -1223,7 +1226,10 @@ export class HardwareBridge {
         const m = line.match(/CURRENT\s*:\s*(?:TEG\s*)?([-\d.]+)\s*A/i)
         if (m) {
           const ib = parseFloat(m[1])
-          if (Number.isFinite(ib)) this.esp32Cache.iBat = ib
+          if (Number.isFinite(ib)) {
+            this.esp32Cache.iBat = ib
+            this.esp32Cache.iTeg = ib
+          }
         }
         if (line.toUpperCase().includes('NOT OK')) {
           this.esp32Cache.inaOk = false
@@ -1388,7 +1394,10 @@ export class HardwareBridge {
           this.esp32Cache.acsZero = zv
           this.esp32Cache.inaOk = zv >= 2.30 && zv <= 2.70
         }
-        if (Number.isFinite(cur)) this.esp32Cache.iBat = cur
+        if (Number.isFinite(cur)) {
+          this.esp32Cache.iBat = cur
+          this.esp32Cache.iTeg = cur
+        }
         this.emitFromEsp32Cache(source)
         return
       }

@@ -122,14 +122,14 @@ function Battery4BarIcon({
       {isCharging && (
         <g className="animate-pulse">
           <path
-            d="M13.3 1.7L9.2 7.5H12.0L10.7 12.3L14.8 6.5H12.0L13.3 1.7Z"
-            stroke={isDark ? '#13171B' : '#FFFFFF'}
-            strokeWidth="1.8"
+            d="M13.6 1.2L8.8 7.6H12.1L10.4 12.8L15.2 6.4H11.9L13.6 1.2Z"
+            stroke="#0B0F12"
+            strokeWidth="2.2"
             strokeLinejoin="round"
           />
           <path
-            d="M13.3 1.7L9.2 7.5H12.0L10.7 12.3L14.8 6.5H12.0L13.3 1.7Z"
-            fill={isDark ? '#FFFFFF' : '#059669'}
+            d="M13.6 1.2L8.8 7.6H12.1L10.4 12.8L15.2 6.4H11.9L13.6 1.2Z"
+            fill="#FACC15"
           />
         </g>
       )}
@@ -164,9 +164,26 @@ export function OverviewTab({
   // - Trims stateName strings (e.g. "CHARGING   ", "FULL-HOLD  ") before matching/styling states
   const heldBarsRef = useRef<number>(0)
   const stateCode = telemetry.stateCode ?? telemetry.esp32?.stateCode ?? 0
-  const iTegLive = isConnected ? (telemetry.iTeg ?? telemetry.iBat ?? telemetry.rawTegCurrent ?? 0.0) : 0.0
+  const hasValidBattery =
+    isConnected &&
+    stateCode !== 0 &&
+    espStateName !== 'NO BATTERY' &&
+    vBatLive >= 6.0 &&
+    vBatLive <= 16.5
+
+  const iTegLive = isConnected
+    ? Math.max(telemetry.iTeg ?? 0, telemetry.iBat ?? 0, telemetry.rawTegCurrent ?? 0)
+    : 0.0
+
+  // Charging indicator appears ONLY when ESP32 is connected, battery is valid,
+  // Relay GPIO14 is CLOSED in CHARGING state, and TEG/charger is actively driving the battery
+  // (current > 0, TEG >= Bat - 0.15V, or elevated charging voltage >= 13.0V such as 14.04V).
+  // Immediately disappears when disconnected or when relay opens (WAITING, FULL-HOLD, FORCED OFF, TEMP LOCK, OVERCURRENT).
   const isActivelyCharging =
-    isRelayClosed && (stateCode === 1 || espStateName === 'CHARGING') && iTegLive > 0
+    hasValidBattery &&
+    isRelayClosed &&
+    (stateCode === 1 || espStateName === 'CHARGING') &&
+    (iTegLive > 0 || vTegLive >= vBatLive - 0.15 || vBatLive >= 13.0)
   const rawSocVal = telemetry.batPct ?? telemetry.batteryPct ?? 0
   const battPct =
     !isConnected || stateCode === 0 || espStateName === 'NO BATTERY' || vBatLive < 6.0 || vBatLive > 16.5
@@ -413,7 +430,7 @@ export function OverviewTab({
                 {isFil ? 'BATERYA (GPIO32)' : 'BATTERY (GPIO32)'}
               </span>
               <span
-                className={`text-[8px] font-mono px-1.5 py-0.5 rounded font-black uppercase flex-shrink-0 ${
+                className={`text-[8px] font-mono px-1.5 py-0.5 rounded font-black uppercase flex-shrink-0 inline-flex items-center gap-0.5 ${
                   batteryStageBadge.tone === 'charging' || batteryStageBadge.tone === 'full'
                     ? isDark
                       ? 'bg-[#00E676]/15 text-[#00E676]'
@@ -435,6 +452,7 @@ export function OverviewTab({
                     : 'bg-zinc-100 text-zinc-600'
                 }`}
               >
+                {batteryStageBadge.tone === 'charging' && <IconZap size={9} className="flex-shrink-0" />}
                 {batteryStageBadge.label}
               </span>
             </div>

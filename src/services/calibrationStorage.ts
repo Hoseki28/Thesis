@@ -385,14 +385,15 @@ export function applyCalibration(
   const vOpenStage = esp32Data?.vOpenNow ?? vMax
   const stateCodeVal = esp32Data?.stateCode ?? (Boolean(esp32Data?.relayClosed ?? raw.relays.dcBus) ? 1 : 4)
   const relayOnVal = Boolean(esp32Data?.relayClosed ?? raw.relays.dcBus)
-  const iTegVal =
-    isLiveHardware && esp32Data?.iTeg !== undefined
-      ? esp32Data.iTeg
-      : isLiveHardware && esp32Data?.iBat !== undefined
-      ? esp32Data.iBat
-      : Number.isFinite(raw.rawTegCurrent)
-      ? raw.rawTegCurrent
-      : 0
+  const iTegVal = isLiveHardware
+    ? Math.max(
+        Number.isFinite(esp32Data?.iTeg) ? (esp32Data!.iTeg as number) : 0,
+        Number.isFinite(esp32Data?.iBat) ? (esp32Data!.iBat as number) : 0,
+        Number.isFinite(raw.rawTegCurrent) ? raw.rawTegCurrent : 0
+      )
+    : Number.isFinite(raw.rawTegCurrent)
+    ? raw.rawTegCurrent
+    : 0
 
   let batteryPct = 0
   if (stateCodeVal === 0 || batteryVoltage < 6.0 || batteryVoltage > 16.5) {
@@ -575,7 +576,7 @@ export function applyCalibration(
     vBat: batteryVoltage,
     batPct: esp32Data?.batPct ?? batteryPct,
     iBat: isLiveHardware && esp32Data?.iBat !== undefined ? esp32Data.iBat : (raw.rawBatteryCurrent !== undefined ? raw.rawBatteryCurrent : tegCurrent),
-    iTeg: isLiveHardware && (esp32Data?.iTeg ?? esp32Data?.iBat) !== undefined ? (esp32Data?.iTeg ?? esp32Data?.iBat) : tegCurrent,
+    iTeg: isLiveHardware ? iTegVal : tegCurrent,
     pBat: isLiveHardware && esp32Data?.pBatW !== undefined ? esp32Data.pBatW : Math.round(batteryVoltage * tegCurrent * 10) / 10,
     pHarv: isLiveHardware && esp32Data?.pHarvW !== undefined ? esp32Data.pHarvW : tegPower,
     whTotal: esp32Data?.whTotal ?? 0,
