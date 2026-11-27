@@ -122,7 +122,7 @@ export function ServiceTab({
     if (!isHardwareConnected) {
       return [
         { id: 'vbat', name: 'Battery V', pin: 'GPIO32', detail: 'Standby', status: 'disconnected' },
-        { id: 'vteg', name: 'TEG Boost', pin: 'GPIO33', detail: 'Standby', status: 'disconnected' },
+        { id: 'vteg', name: 'TEG Input', pin: 'GPIO33', detail: 'Standby', status: 'disconnected' },
         { id: 'acs', name: 'ACS712 5A', pin: 'GPIO35', detail: 'Standby', status: 'disconnected' },
         { id: 'hot_tc', name: 'Hot TC', pin: 'CS GPIO5', detail: 'Standby', status: 'disconnected' },
         { id: 'cold_tc', name: 'Cold TC', pin: 'CS GPIO17', detail: 'Standby', status: 'disconnected' },
@@ -146,7 +146,7 @@ export function ServiceTab({
       batDetail = `${vBat.toFixed(2)}V Full`
     }
 
-    // 2. TEG Boost Divider (GPIO33)
+    // 2. TEG Input Divider (GPIO33)
     // Only warn on low TEG (<1.0V) when battery is down to 2 bars or less
     let tegStatus: SensorHealthStatus = 'ok'
     let tegDetail = `${vTeg.toFixed(2)} V`
@@ -215,7 +215,7 @@ export function ServiceTab({
 
     return [
       { id: 'vbat', name: 'Battery V', pin: 'GPIO32', detail: batDetail, status: batStatus },
-      { id: 'vteg', name: 'TEG Boost', pin: 'GPIO33', detail: tegDetail, status: tegStatus },
+      { id: 'vteg', name: 'TEG Input', pin: 'GPIO33', detail: tegDetail, status: tegStatus },
       { id: 'acs', name: 'ACS712 5A', pin: 'GPIO35', detail: acsDetail, status: acsStatus },
       { id: 'hot_tc', name: 'Hot TC', pin: 'CS GPIO5', detail: hotDetail, status: hotStatus },
       { id: 'cold_tc', name: 'Cold TC', pin: 'CS GPIO17', detail: coldDetail, status: coldStatus },

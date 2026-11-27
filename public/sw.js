@@ -1,5 +1,5 @@
 // TEG Monitoring Service Worker
-const CACHE_NAME = 'teg-monitoring-pwa-v4.28'
+const CACHE_NAME = 'teg-monitoring-pwa-v4.29'
 const ASSETS_TO_CACHE = [
   '/',
   '/index.html',

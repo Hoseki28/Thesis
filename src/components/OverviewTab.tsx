@@ -491,7 +491,7 @@ export function OverviewTab({
           </div>
         </div>
 
-        {/* TILE 2: TEG BOOST VOLTAGE (GPIO33) */}
+        {/* TILE 2: TEG INPUT VOLTAGE (GPIO33) */}
         <div
           className={`rounded-2xl p-3.5 border flex flex-col justify-between min-h-[112px] shadow-md transition-all ${
             isDark
@@ -506,7 +506,7 @@ export function OverviewTab({
                   isDark ? 'text-white' : 'text-zinc-950'
                 }`}
               >
-                {isFil ? 'TEG BOOST (GPIO33)' : 'TEG BOOST (GPIO33)'}
+                TEG INPUT (GPIO33)
               </span>
               <IconFlame size={16} className={isDark ? 'text-[#00E676]' : 'text-emerald-700'} />
             </div>

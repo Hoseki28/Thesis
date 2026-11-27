@@ -294,7 +294,7 @@ export function CalibrationStudio({
 
           <div className={`p-2 rounded-lg border ${isDark ? 'bg-[#13171B] border-[#1E242B]' : 'bg-white border-zinc-200'}`}>
             <span className={`text-[9px] uppercase font-bold block ${isDark ? 'text-zinc-400' : 'text-zinc-600'}`}>
-              TEG Boost (GPIO33)
+              TEG Input (GPIO33)
             </span>
             <span className={`font-bold text-xs tabular-nums ${isDark ? 'text-white' : 'text-zinc-900'}`}>
               {rawTegVal.toFixed(2)} V
@@ -423,7 +423,7 @@ export function CalibrationStudio({
         {/* TEG Volts (G) */}
         <div className="flex items-center gap-1.5 min-w-0">
           <span className={`text-[10.5px] font-mono w-20 sm:w-24 flex-shrink-0 truncate ${isDark ? 'text-zinc-400' : 'text-zinc-600'}`}>
-            TEG Boost (V):
+            TEG Input (V):
           </span>
           <input
             type="number"
