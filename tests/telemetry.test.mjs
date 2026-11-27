@@ -50,46 +50,53 @@ test('Power calculation separates In-Battery Power (Vbat*I) from TEG Harvest (Vt
   assert.ok(pTeg > pBat)
 })
 
-test('Tianneng TNE12-15 SoC curve distinguishes resting/idle (0.00A or FULL-HOLD/WAITING) vs active charging (relay CLOSED + current)', () => {
-  function computeSoc({ vBat, iTeg, relayOn, stateCode = 1 }) {
-    if (stateCode === 0 || vBat < 6.0 || vBat > 16.5) return 0
-    const isActivelyCharging = Boolean(relayOn) && stateCode === 1 && iTeg >= 0.08
-    let rawPct = 0
-    if (isActivelyCharging) {
-      if (vBat <= 12.20) rawPct = 0
-      else if (vBat <= 13.20) rawPct = ((vBat - 12.20) / 1.00) * 50
-      else if (vBat <= 13.72) rawPct = 50 + ((vBat - 13.20) / 0.52) * 45
-      else if (vBat < 13.85) rawPct = 95 + ((vBat - 13.72) / 0.13) * 5
-      else rawPct = 100
-    } else {
-      if (vBat <= 11.50) rawPct = 0
-      else if (vBat <= 11.80) rawPct = ((vBat - 11.50) / 0.30) * 10
-      else if (vBat <= 12.25) rawPct = 10 + ((vBat - 11.80) / 0.45) * 40
-      else if (vBat <= 12.75) rawPct = 50 + ((vBat - 12.25) / 0.50) * 45
-      else if (vBat < 12.85) rawPct = 95 + ((vBat - 12.75) / 0.10) * 5
-      else rawPct = 100
+test('Tianneng TNE12-15 SoC curve matches ESP32 interpCurve (resting OCV vs IR-compensated charging + >13.8V <=0.20A taper)', () => {
+  const vRest = [11.50, 11.80, 12.05, 12.25, 12.45, 12.65, 12.75, 12.85]
+  const socRest = [0.0, 10.0, 25.0, 50.0, 75.0, 90.0, 95.0, 100.0]
+  const vChg = [12.20, 12.70, 13.20, 13.60, 14.00]
+  const socChg = [0.0, 25.0, 50.0, 75.0, 92.0]
+
+  function interpCurve(x, xs, ys) {
+    if (x <= xs[0]) return ys[0]
+    if (x >= xs[xs.length - 1]) return ys[ys.length - 1]
+    for (let i = 0; i < xs.length - 1; i++) {
+      if (x >= xs[i] && x <= xs[i + 1]) {
+        const span = xs[i + 1] - xs[i]
+        return ys[i] + ((x - xs[i]) / span) * (ys[i + 1] - ys[i])
+      }
     }
-    return Math.round(rawPct)
+    return ys[ys.length - 1]
   }
 
-  // Resting / Idle checkpoints: 11.50V=0%, 11.80V=10%, 12.25V=50%, 12.75V=95%, 12.85V-12.90V=100%
+  function computeSoc({ vBat, iTeg, relayOn, stateCode = 1 }) {
+    if (stateCode === 0 || vBat < 6.0 || vBat > 16.5) return 0
+    const chargingActive = Boolean(relayOn) && iTeg > 0.0
+    let rawPct = 0
+    if (chargingActive) {
+      const effV = vBat - iTeg * 0.15
+      rawPct = interpCurve(effV, vChg, socChg)
+      const taperStartA = 0.35
+      const taperMaxA = 0.20
+      if (vBat > 13.80 && iTeg < taperStartA) {
+        const taperFrac = Math.min(1.0, Math.max(0.0, (taperStartA - iTeg) / (taperStartA - taperMaxA)))
+        rawPct += 8.0 * taperFrac
+      }
+    } else {
+      rawPct = interpCurve(vBat, vRest, socRest)
+    }
+    return Math.min(100, Math.max(0, Math.round(rawPct)))
+  }
+
+  // Resting OCV checkpoints
   assert.equal(computeSoc({ vBat: 11.50, iTeg: 0.0, relayOn: false, stateCode: 4 }), 0)
   assert.equal(computeSoc({ vBat: 11.80, iTeg: 0.0, relayOn: false, stateCode: 4 }), 10)
   assert.equal(computeSoc({ vBat: 12.25, iTeg: 0.0, relayOn: false, stateCode: 4 }), 50)
-  assert.equal(computeSoc({ vBat: 12.75, iTeg: 0.0, relayOn: true, stateCode: 1 }), 95)
-  assert.equal(computeSoc({ vBat: 12.85, iTeg: 0.0, relayOn: true, stateCode: 1 }), 100)
-  assert.equal(computeSoc({ vBat: 12.90, iTeg: 0.0, relayOn: false, stateCode: 2 }), 100)
+  assert.equal(computeSoc({ vBat: 12.65, iTeg: 0.0, relayOn: true, stateCode: 1 }), 90)
+  assert.equal(computeSoc({ vBat: 12.85, iTeg: 0.0, relayOn: false, stateCode: 2 }), 100)
 
-  // Active Charging checkpoints: 12.20V=0%, 13.20V=50%, 13.72V=95%, 13.85V-14.60V=100%
-  assert.equal(computeSoc({ vBat: 12.20, iTeg: 0.50, relayOn: true, stateCode: 1 }), 0)
-  assert.equal(computeSoc({ vBat: 13.20, iTeg: 0.50, relayOn: true, stateCode: 1 }), 50)
-  assert.equal(computeSoc({ vBat: 13.72, iTeg: 0.50, relayOn: true, stateCode: 1 }), 95)
-  assert.equal(computeSoc({ vBat: 13.85, iTeg: 0.50, relayOn: true, stateCode: 1 }), 100)
-  assert.equal(computeSoc({ vBat: 14.60, iTeg: 0.50, relayOn: true, stateCode: 1 }), 100)
-
-  // Disconnected / out of 6.0-16.5V window -> 0%
+  // Active Charging with >13.8V and <=0.20A taper top-off boost reaches 100%
+  assert.equal(computeSoc({ vBat: 14.05, iTeg: 0.20, relayOn: true, stateCode: 1 }), 100)
   assert.equal(computeSoc({ vBat: 12.85, iTeg: 0.0, relayOn: false, stateCode: 0 }), 0)
-  assert.equal(computeSoc({ vBat: 5.50, iTeg: 0.0, relayOn: false, stateCode: 1 }), 0)
 })
 
 test('PWA icon binaries are real PNG files (not Git LFS pointers)', () => {

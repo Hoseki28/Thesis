@@ -244,66 +244,75 @@ export function resetFrontendSocFilter(): void {
   lastFrontendSocMs = 0
 }
 
+function interpCurve(x: number, xs: readonly number[], ys: readonly number[]): number {
+  if (x <= xs[0]) return ys[0]
+  if (x >= xs[xs.length - 1]) return ys[ys.length - 1]
+  for (let i = 0; i < xs.length - 1; i++) {
+    if (x >= xs[i] && x <= xs[i + 1]) {
+      const span = xs[i + 1] - xs[i]
+      if (span <= 0.0001) return ys[i + 1]
+      const frac = (x - xs[i]) / span
+      return ys[i] + frac * (ys[i + 1] - ys[i])
+    }
+  }
+  return ys[ys.length - 1]
+}
+
+const V_REST_CURVE = [11.50, 11.80, 12.05, 12.25, 12.45, 12.65, 12.75, 12.85] as const
+const SOC_REST_CURVE = [0.0, 10.0, 25.0, 50.0, 75.0, 90.0, 95.0, 100.0] as const
+
+const V_CHG_CURVE = [12.20, 12.70, 13.20, 13.60, 14.00] as const
+const SOC_CHG_CURVE = [0.0, 25.0, 50.0, 75.0, 92.0] as const
+
+const V_BAT_TAPER_MIN_V = 13.80
+const I_TAPER_MAX_A = 0.20
+
 /**
  * Pure Tianneng TNE12-15 (12V 15Ah VRLA / AGM-Gel) Target SoC (%) Calculator
+ * Exact 1:1 mirror of getBatteryPercent() in firmware/thesis_updated.ino:
  * - Valid battery window: 6.0 V to 16.5 V (stateCode === 0 outside this window -> 0%)
- * - Resting / Idle (0.00 A / iTeg < 0.08 A or relay OPEN / WAITING / FULL-HOLD):
- *     11.50 V = 0%, 11.80 V = 10%, 12.25 V = 50%, 12.75 V = 95%, 12.85 V-12.90 V+ = 100%
- * - Active Charging (relay CLOSED / CHARGING with current flowing iTeg >= 0.08 A):
- *     12.20 V = 0%, 13.20 V = 50%, 13.72 V = 95%, 13.85 V-14.60 V = 100%
+ * - Resting / Not-Charging OCV curve (!relayOn || !acsOK || iTeg <= 0):
+ *     11.50V=0%, 11.80V=10%, 12.05V=25%, 12.25V=50%, 12.45V=75%, 12.65V=90%, 12.75V=95%, 12.85V=100%
+ * - Active Charging curve (relayOn && iTeg > 0):
+ *     effV = vBat - (iTeg * 0.15), mapped across [12.20V..14.00V] -> [0%..92%],
+ *     plus up to +8% low-current taper boost when vBat > 13.80 V and iTeg tapers down to <= 0.20 A
  */
 export function computeTne1215TargetSoc(params: {
   vBat: number
   iTeg: number
   relayOn: boolean
   stateCode?: number
+  inaOk?: boolean
 }): number {
   const {
     vBat,
     iTeg,
     relayOn,
     stateCode = 1,
+    inaOk = true,
   } = params
 
-  // Valid battery detection window: 6.0 V to 16.5 V and state !== 0 (NO BATTERY)
   if (stateCode === 0 || !Number.isFinite(vBat) || vBat < 6.0 || vBat > 16.5) {
     return 0
   }
 
   const safeITeg = Number.isFinite(iTeg) ? iTeg : 0
-  const isActivelyCharging = Boolean(relayOn) && stateCode === 1 && safeITeg >= 0.08
+  const chargingActive = Boolean(relayOn) && inaOk !== false && safeITeg > 0.0
 
   let rawPct = 0
-  if (isActivelyCharging) {
-    // Active Charging Scale (relay CLOSED / CHARGING with current flowing):
-    // 12.20 V = 0%, 13.20 V = 50%, 13.72 V = 95%, 13.85 V-14.60 V = 100%
-    if (vBat <= 12.20) {
-      rawPct = 0
-    } else if (vBat <= 13.20) {
-      rawPct = ((vBat - 12.20) / 1.00) * 50
-    } else if (vBat <= 13.72) {
-      rawPct = 50 + ((vBat - 13.20) / 0.52) * 45
-    } else if (vBat < 13.85) {
-      rawPct = 95 + ((vBat - 13.72) / 0.13) * 5
-    } else {
-      rawPct = 100
+  if (chargingActive) {
+    const effV = vBat - safeITeg * 0.15
+    rawPct = interpCurve(effV, V_CHG_CURVE, SOC_CHG_CURVE)
+
+    const taperStartA = 0.35
+    if (vBat > V_BAT_TAPER_MIN_V && safeITeg < taperStartA) {
+      let taperFrac = (taperStartA - safeITeg) / (taperStartA - I_TAPER_MAX_A)
+      if (taperFrac < 0.0) taperFrac = 0.0
+      if (taperFrac > 1.0) taperFrac = 1.0
+      rawPct += 8.0 * taperFrac
     }
   } else {
-    // Resting / Idle Scale (0.00 A or relay OPEN / WAITING / FULL-HOLD):
-    // 11.50 V = 0%, 11.80 V = 10%, 12.25 V = 50%, 12.75 V = 95%, 12.85 V-12.90 V = 100%
-    if (vBat <= 11.50) {
-      rawPct = 0
-    } else if (vBat <= 11.80) {
-      rawPct = ((vBat - 11.50) / 0.30) * 10
-    } else if (vBat <= 12.25) {
-      rawPct = 10 + ((vBat - 11.80) / 0.45) * 40
-    } else if (vBat <= 12.75) {
-      rawPct = 50 + ((vBat - 12.25) / 0.50) * 45
-    } else if (vBat < 12.85) {
-      rawPct = 95 + ((vBat - 12.75) / 0.10) * 5
-    } else {
-      rawPct = 100
-    }
+    rawPct = interpCurve(vBat, V_REST_CURVE, SOC_REST_CURVE)
   }
 
   return Math.min(100, Math.max(0, rawPct))
@@ -400,6 +409,7 @@ export function applyCalibration(
       iTeg: iTegVal,
       relayOn: relayOnVal,
       stateCode: stateCodeVal,
+      inaOk: esp32Data?.inaOk ?? raw.inaOk ?? true,
     })
 
     const nowMs = Date.now()

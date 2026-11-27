@@ -63,9 +63,9 @@ function defaultStateReason(stateCode: number): string {
     case 1:
       return 'normal charging'
     case 2:
-      return 'reached full voltage limit'
+      return 'reached full voltage or taper limit'
     case 3:
-      return 'waiting for reconnect dwell timer'
+      return 'waiting for reconnect dwell or TEG voltage'
     case 4:
       return 'manually disabled (send a)'
     case 5:
@@ -951,7 +951,13 @@ export class HardwareBridge {
           this.esp32Cache.relayClosed = false
           this.esp32Cache.stateCode = 2
           this.esp32Cache.stateName = 'FULL-HOLD'
-          this.esp32Cache.stateReason = 'taper cutoff (>=13.80V & <0.10A for 5 min)'
+          this.esp32Cache.stateReason = 'taper cutoff (>13.80V & <=0.20A for 5 min)'
+          this.emitFromEsp32Cache(source)
+        } else if (msg.includes('TEG voltage below battery voltage')) {
+          this.esp32Cache.relayClosed = false
+          this.esp32Cache.stateCode = 3
+          this.esp32Cache.stateName = 'WAITING'
+          this.esp32Cache.stateReason = 'TEG voltage below battery voltage'
           this.emitFromEsp32Cache(source)
         } else if (msg.includes('Relay OPEN (holding)')) {
           this.esp32Cache.relayClosed = false
