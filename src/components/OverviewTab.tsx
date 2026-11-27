@@ -37,10 +37,12 @@ interface OverviewTabProps {
 function Battery4BarIcon({
   activeBars,
   isDark,
+  isCharging = false,
   size = 24,
 }: {
   activeBars: number
   isDark: boolean
+  isCharging?: boolean
   size?: number
 }) {
   const activeColor =
@@ -51,7 +53,14 @@ function Battery4BarIcon({
       : '#00E676'
 
   const inactiveColor = isDark ? '#272F38' : '#e4e4e7'
-  const strokeColor = activeBars === 0 ? (isDark ? '#4b5563' : '#a1a1aa') : activeColor
+  const strokeColor =
+    activeBars === 0
+      ? isCharging
+        ? '#00E676'
+        : isDark
+        ? '#4b5563'
+        : '#a1a1aa'
+      : activeColor
 
   return (
     <svg
@@ -61,7 +70,7 @@ function Battery4BarIcon({
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
       className="flex-shrink-0"
-      aria-label={`${activeBars} of 4 bars`}
+      aria-label={`${activeBars} of 4 bars${isCharging ? ' (charging)' : ''}`}
     >
       <rect
         x="1"
@@ -110,6 +119,20 @@ function Battery4BarIcon({
         rx="0.8"
         fill={activeBars >= 4 ? activeColor : inactiveColor}
       />
+      {isCharging && (
+        <g className="animate-pulse">
+          <path
+            d="M13.3 1.7L9.2 7.5H12.0L10.7 12.3L14.8 6.5H12.0L13.3 1.7Z"
+            stroke={isDark ? '#13171B' : '#FFFFFF'}
+            strokeWidth="1.8"
+            strokeLinejoin="round"
+          />
+          <path
+            d="M13.3 1.7L9.2 7.5H12.0L10.7 12.3L14.8 6.5H12.0L13.3 1.7Z"
+            fill={isDark ? '#FFFFFF' : '#059669'}
+          />
+        </g>
+      )}
     </svg>
   )
 }
@@ -142,7 +165,8 @@ export function OverviewTab({
   const heldBarsRef = useRef<number>(0)
   const stateCode = telemetry.stateCode ?? telemetry.esp32?.stateCode ?? 0
   const iTegLive = isConnected ? (telemetry.iTeg ?? telemetry.iBat ?? telemetry.rawTegCurrent ?? 0.0) : 0.0
-  const isActivelyCharging = isRelayClosed && (stateCode === 1 || espStateName === 'CHARGING') && iTegLive >= 0.08
+  const isActivelyCharging =
+    isRelayClosed && (stateCode === 1 || espStateName === 'CHARGING') && iTegLive > 0
   const rawSocVal = telemetry.batPct ?? telemetry.batteryPct ?? 0
   const battPct =
     !isConnected || stateCode === 0 || espStateName === 'NO BATTERY' || vBatLive < 6.0 || vBatLive > 16.5
@@ -443,7 +467,12 @@ export function OverviewTab({
             aria-valuemax={4}
             aria-label={`Battery level ${activeBars} of 4 bars (${batteryStageBadge.label})`}
           >
-            <Battery4BarIcon activeBars={activeBars} isDark={isDark} size={92} />
+            <Battery4BarIcon
+              activeBars={activeBars}
+              isDark={isDark}
+              isCharging={isActivelyCharging}
+              size={92}
+            />
           </div>
         </div>
 
