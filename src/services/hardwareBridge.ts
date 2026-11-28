@@ -49,6 +49,7 @@ function mapStateNameToCode(name: string): number {
   const clean = name.trim().toUpperCase()
   if (clean.startsWith('CHARGING')) return 1
   if (clean.startsWith('FULL-HOLD')) return 2
+  if (clean === 'FULL' || clean.startsWith('FULL ')) return 7
   if (clean.startsWith('WAITING')) return 3
   if (clean.startsWith('FORCED OFF')) return 4
   if (clean.startsWith('TEMP LOCKOUT') || clean.startsWith('BATTERY HOT')) return 5
@@ -63,15 +64,17 @@ function defaultStateReason(stateCode: number): string {
     case 1:
       return 'normal charging'
     case 2:
-      return 'reached full voltage or taper limit'
+      return 'post-cutoff stabilization hold'
     case 3:
-      return 'waiting for reconnect dwell or TEG voltage'
+      return 'waiting for TEG voltage or dwell timer'
     case 4:
       return 'manually disabled (send a)'
     case 5:
       return 'temperature sensor missing or battery area outside 0-40 C charge range'
     case 6:
       return 'current at or above 2.25 A (send r)'
+    case 7:
+      return 'battery full; waiting for discharge <= reconnect limit'
     default:
       return ''
   }
@@ -141,7 +144,7 @@ export class HardwareBridge {
     overcurrentLatched: false,
     batHot: false,
     vOpenNow: 14.6,
-    vCloseNow: 13.7,
+    vCloseNow: 12.9,
     vHardNow: 14.8,
     batTrim: 1.1011,
     tegTrim: 1.1679,
@@ -839,8 +842,10 @@ export class HardwareBridge {
     let note: string | undefined = undefined
 
     const notePatterns = [
+      '(TEG voltage too low to charge)',
       '(TEG voltage is too low to charge)',
       '(relay closed, no current yet)',
+      '(current sensor not OK: check GPIO35 wiring)',
       '(current sensor not OK: check GPIO35 wiring and the divider)',
     ]
     for (const pat of notePatterns) {
@@ -892,11 +897,11 @@ export class HardwareBridge {
     if (this.esp32Cache.dhtOk) {
       const tempDelta = this.esp32Cache.tAmb - 25.0
       this.esp32Cache.vOpenNow = Math.round((14.6 - tempDelta * 0.024) * 100) / 100
-      this.esp32Cache.vCloseNow = Math.round((13.7 - tempDelta * 0.018) * 100) / 100
+      this.esp32Cache.vCloseNow = Math.round((12.9 - tempDelta * 0.018) * 100) / 100
       this.esp32Cache.vHardNow = Math.round((14.8 - tempDelta * 0.024) * 100) / 100
     } else {
       this.esp32Cache.vOpenNow = 14.2
-      this.esp32Cache.vCloseNow = 13.7
+      this.esp32Cache.vCloseNow = 12.9
       this.esp32Cache.vHardNow = 14.8
     }
   }
@@ -947,25 +952,38 @@ export class HardwareBridge {
           this.esp32Cache.whHarv = 0
           this.esp32Cache.vTegPeak = 0
           this.emitFromEsp32Cache(source)
-        } else if (msg.includes('Relay OPEN (taper cutoff)')) {
+        } else if (msg.startsWith('OVERCURRENT LATCHED')) {
+          this.esp32Cache.overcurrentLatched = true
+          this.esp32Cache.relayClosed = false
+          this.esp32Cache.stateCode = 6
+          this.esp32Cache.stateName = 'OVERCURRENT'
+          this.esp32Cache.stateReason = defaultStateReason(6)
+          this.emitFromEsp32Cache(source)
+        } else if (
+          msg.includes('5-min FULL-HOLD') ||
+          msg.includes('Relay OPEN (taper cutoff)') ||
+          msg.includes('Relay OPEN (holding)')
+        ) {
           this.esp32Cache.relayClosed = false
           this.esp32Cache.stateCode = 2
           this.esp32Cache.stateName = 'FULL-HOLD'
-          this.esp32Cache.stateReason = 'taper cutoff (>13.80V & <=0.20A for 5 min)'
+          this.esp32Cache.batPct = 100
+          this.esp32Cache.stateReason = 'post-cutoff stabilization hold'
+          this.emitFromEsp32Cache(source)
+        } else if (msg.includes('FULL-HOLD complete') || msg.includes('Battery FULL')) {
+          this.esp32Cache.relayClosed = false
+          this.esp32Cache.stateCode = 7
+          this.esp32Cache.stateName = 'FULL'
+          this.esp32Cache.batPct = 100
+          this.esp32Cache.stateReason = 'battery full; waiting for discharge <= reconnect limit'
           this.emitFromEsp32Cache(source)
         } else if (msg.includes('TEG voltage below battery voltage')) {
           this.esp32Cache.relayClosed = false
           this.esp32Cache.stateCode = 3
           this.esp32Cache.stateName = 'WAITING'
-          this.esp32Cache.stateReason = 'TEG voltage below battery voltage'
+          this.esp32Cache.stateReason = 'waiting for TEG voltage or dwell timer'
           this.emitFromEsp32Cache(source)
-        } else if (msg.includes('Relay OPEN (holding)')) {
-          this.esp32Cache.relayClosed = false
-          this.esp32Cache.stateCode = 2
-          this.esp32Cache.stateName = 'FULL-HOLD'
-          this.esp32Cache.stateReason = 'reached full voltage limit'
-          this.emitFromEsp32Cache(source)
-        } else if (msg.includes('Relay CLOSED (charging)')) {
+        } else if (/Relay CLOSED/i.test(msg)) {
           this.esp32Cache.relayClosed = true
           this.esp32Cache.stateCode = 1
           this.esp32Cache.stateName = 'CHARGING'
@@ -1057,10 +1075,14 @@ export class HardwareBridge {
               }
             }
           } else if (seg.startsWith('BAT ')) {
-            const m = seg.match(/BAT\s+([-\d.]+)\s*V/i)
+            const m = seg.match(/BAT\s+([-\d.]+)\s*V(?:\s*\(\s*(\d+)\s*%\))?/i)
             if (m) {
               const v = parseFloat(m[1])
               if (Number.isFinite(v)) this.esp32Cache.vBat = v
+              if (m[2] !== undefined) {
+                const pct = parseInt(m[2], 10)
+                if (Number.isFinite(pct)) this.esp32Cache.batPct = pct
+              }
             }
           } else if (seg.startsWith('I ')) {
             const m = seg.match(/I\s+([-\d.]+)\s*A/i)
@@ -1086,11 +1108,20 @@ export class HardwareBridge {
             if (m) {
               const p = parseFloat(m[1])
               if (Number.isFinite(p)) {
-                this.esp32Cache.pHarvW = p
-                this.esp32Cache.pBatW =
-                  this.esp32Cache.vBat > 0 && this.esp32Cache.iBat > 0
-                    ? Math.round(this.esp32Cache.vBat * this.esp32Cache.iBat * 100) / 100
+                this.esp32Cache.pBatW = p
+                this.esp32Cache.pHarvW =
+                  this.esp32Cache.vTeg > 0 && this.esp32Cache.iBat > 0
+                    ? Math.round(this.esp32Cache.vTeg * this.esp32Cache.iBat * 100) / 100
                     : p
+              }
+            }
+          } else if (seg.startsWith('BATT_WH ')) {
+            const m = seg.match(/BATT_WH\s+([-\d.]+)\s*Wh/i)
+            if (m) {
+              const wh = parseFloat(m[1])
+              if (Number.isFinite(wh)) {
+                this.esp32Cache.whTotal = wh
+                this.esp32Cache.whHarv = wh
               }
             }
           } else if (seg.startsWith('IN-BAT ')) {
@@ -1187,7 +1218,7 @@ export class HardwareBridge {
           this.esp32Cache.stateCode = sCode
           this.esp32Cache.relayClosed = m[2].toUpperCase() === 'CLOSED'
           let reasonText = m[3].trim()
-          const trailingNote = reasonText.match(/\s*\(((?:TEG voltage is too low|relay closed, no current|current sensor not OK:)[^)]+)\)\s*$/i)
+          const trailingNote = reasonText.match(/\s*\(((?:TEG voltage (?:is )?too low|relay closed, no current|current sensor not OK:)[^)]+)\)\s*$/i)
           if (trailingNote && trailingNote.index !== undefined) {
             this.esp32Cache.note = trailingNote[1].trim()
             reasonText = reasonText.slice(0, trailingNote.index).trim()
@@ -1204,6 +1235,11 @@ export class HardwareBridge {
           const vb = parseFloat(m[2])
           if (Number.isFinite(vt)) this.esp32Cache.vTeg = vt
           if (Number.isFinite(vb)) this.esp32Cache.vBat = vb
+        }
+        const mSoc = line.match(/SoC\s*~?\s*(\d+)\s*%/i)
+        if (mSoc) {
+          const pct = parseInt(mSoc[1], 10)
+          if (Number.isFinite(pct)) this.esp32Cache.batPct = pct
         }
         return
       }
@@ -1223,7 +1259,7 @@ export class HardwareBridge {
       }
 
       if (line.startsWith('CURRENT   :')) {
-        const m = line.match(/CURRENT\s*:\s*(?:TEG\s*)?([-\d.]+)\s*A/i)
+        const m = line.match(/CURRENT\s*:\s*(?:(?:TEG|Batt)\s*)?([-\d.]+)\s*A/i)
         if (m) {
           const ib = parseFloat(m[1])
           if (Number.isFinite(ib)) {
@@ -1255,6 +1291,22 @@ export class HardwareBridge {
       }
 
       if (line.startsWith('POWER     :')) {
+        const mBatt = line.match(/Batt power\s*([-\d.]+)\s*W\s+delivered energy\s*([-\d.]+)\s*Wh\s+peak TEG\s*([-\d.]+)\s*V/i)
+        if (mBatt) {
+          const pb = parseFloat(mBatt[1])
+          const wh = parseFloat(mBatt[2])
+          const pk = parseFloat(mBatt[3])
+          if (Number.isFinite(pb)) {
+            this.esp32Cache.pBatW = pb
+            this.esp32Cache.pHarvW = pb
+          }
+          if (Number.isFinite(wh)) {
+            this.esp32Cache.whTotal = wh
+            this.esp32Cache.whHarv = wh
+          }
+          if (Number.isFinite(pk)) this.esp32Cache.vTegPeak = pk
+          return
+        }
         const m = line.match(/into battery\s*([-\d.]+)\s*W\s*\(([-\d.]+)\s*Wh\)\s*harvested from TEG\s*([-\d.]+)\s*W\s*\(([-\d.]+)\s*Wh\)\s*peak TEG\s*([-\d.]+)\s*V/i)
         if (m) {
           const pb = parseFloat(m[1])

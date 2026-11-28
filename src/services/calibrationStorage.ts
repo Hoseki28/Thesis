@@ -219,7 +219,7 @@ export function getOfflineTelemetry(cal: CalibrationConfig = loadCalibration()):
       overcurrentLatched: false,
       batHot: false,
       vOpenNow: 14.6,
-      vCloseNow: 13.7,
+      vCloseNow: 12.9,
       vHardNow: 14.8,
       batTrim: 1.1011,
       tegTrim: 1.1679,
@@ -288,6 +288,7 @@ export function computeTne1215TargetSoc(params: {
   relayOn: boolean
   stateCode?: number
   inaOk?: boolean
+  vOpenNow?: number
 }): number {
   const {
     vBat,
@@ -295,10 +296,15 @@ export function computeTne1215TargetSoc(params: {
     relayOn,
     stateCode = 1,
     inaOk = true,
+    vOpenNow = 14.6,
   } = params
 
   if (stateCode === 0 || !Number.isFinite(vBat) || vBat < 6.0 || vBat > 16.5) {
     return 0
+  }
+
+  if (stateCode === 2 || stateCode === 7) {
+    return 100
   }
 
   const safeITeg = Number.isFinite(iTeg) ? iTeg : 0
@@ -310,12 +316,13 @@ export function computeTne1215TargetSoc(params: {
     rawPct = interpCurve(effV, V_CHG_CURVE, SOC_CHG_CURVE)
 
     const taperStartA = 0.35
-    if (vBat > V_BAT_TAPER_MIN_V && safeITeg < taperStartA) {
+    if (vBat >= vOpenNow - 0.15 && safeITeg < taperStartA) {
       let taperFrac = (taperStartA - safeITeg) / (taperStartA - I_TAPER_MAX_A)
       if (taperFrac < 0.0) taperFrac = 0.0
       if (taperFrac > 1.0) taperFrac = 1.0
       rawPct += 8.0 * taperFrac
     }
+    if (vBat >= vOpenNow) rawPct = 100
   } else {
     rawPct = interpCurve(vBat, V_REST_CURVE, SOC_REST_CURVE)
   }
@@ -381,7 +388,7 @@ export function applyCalibration(
     : Math.round((safeRawBattV * cal.batteryVoltageGain) * 100) / 100
   const vMin = Math.min(cal.batteryVMin, cal.batteryVMax - 1.0)
   const vMax = Math.max(cal.batteryVMax, vMin + 1.0)
-  const vCloseStage = esp32Data?.vCloseNow ?? 13.7
+  const vCloseStage = esp32Data?.vCloseNow ?? 12.9
   const vOpenStage = esp32Data?.vOpenNow ?? vMax
   const stateCodeVal = esp32Data?.stateCode ?? (Boolean(esp32Data?.relayClosed ?? raw.relays.dcBus) ? 1 : 4)
   const relayOnVal = Boolean(esp32Data?.relayClosed ?? raw.relays.dcBus)
@@ -399,23 +406,26 @@ export function applyCalibration(
   if (stateCodeVal === 0 || batteryVoltage < 6.0 || batteryVoltage > 16.5) {
     resetFrontendSocFilter()
     batteryPct = 0
+  } else if (stateCodeVal === 2 || stateCodeVal === 7) {
+    filtFrontendSoc = 100
+    firstFrontendSoc = false
+    lastFrontendSocMs = Date.now()
+    batteryPct = 100
   } else if (esp32Data?.batPct !== undefined && Number.isFinite(esp32Data.batPct)) {
-    // Use ESP32's dual-curve & taper-aware batPct directly when provided in JSON telemetry
-    // (already smoothed with 0.90/0.10 EMA and 2.0%/sec rate limit in firmware)
+    // Use ESP32's dual-curve & taper-aware batPct directly when provided
     const directPct = Math.min(100, Math.max(0, Math.round(esp32Data.batPct)))
     filtFrontendSoc = directPct
     firstFrontendSoc = false
     lastFrontendSocMs = Date.now()
     batteryPct = directPct
   } else {
-    // Fallback for text-mode telemetry where batPct is not in the serial line:
-    // matches firmware's dual-curve TNE12-15 SoC with 0.90/0.10 EMA + 2.0%/sec rate limiter
     const targetPct = computeTne1215TargetSoc({
       vBat: batteryVoltage,
       iTeg: iTegVal,
       relayOn: relayOnVal,
       stateCode: stateCodeVal,
       inaOk: esp32Data?.inaOk ?? raw.inaOk ?? true,
+      vOpenNow: vOpenStage,
     })
 
     const nowMs = Date.now()
@@ -609,7 +619,7 @@ export function applyCalibration(
     tegTrim: esp32Data?.tegTrim ?? (cal.tegVoltageGain ?? 1.1679),
     curTrim: esp32Data?.curTrim ?? cal.tegCurrentGain,
     vOpenNow: esp32Data?.vOpenNow ?? 14.6,
-    vCloseNow: esp32Data?.vCloseNow ?? 13.7,
+    vCloseNow: esp32Data?.vCloseNow ?? 12.9,
     vHardNow: esp32Data?.vHardNow ?? 14.8,
     inaOk: esp32Data?.inaOk ?? raw.inaOk ?? true,
 
@@ -680,7 +690,7 @@ const float CUR_TRIM_DEFAULT       = ${cal.tegCurrentGain.toFixed(4)}f;
 
 // Tianneng TNE12-15 (12V 15Ah AGM-GEL) charge protection limits (@ 25 C, -24 mV/C cycle / -18 mV/C float)
 const float V_BAT_OPEN             = 14.60f;
-const float V_BAT_CLOSE            = 13.70f;
+const float V_BAT_CLOSE            = 12.90f;
 const float V_BAT_HARD             = 14.80f;
 const float V_BAT_LOW_WARN         = 11.80f;
 const float V_BAT_CUTOFF           = ${cal.batteryVMin.toFixed(2)}f; // 1.80 V/cell = 10.80 V (20hr 100% DOD)

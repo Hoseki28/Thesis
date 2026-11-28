@@ -49,8 +49,8 @@ function Battery4BarIcon({
     activeBars === 1
       ? '#ef4444'
       : activeBars === 2
-      ? '#f59e0b'
-      : '#00E676'
+        ? '#f59e0b'
+        : '#00E676'
 
   const inactiveColor = isDark ? '#272F38' : '#e4e4e7'
   const strokeColor =
@@ -58,8 +58,8 @@ function Battery4BarIcon({
       ? isCharging
         ? '#00E676'
         : isDark
-        ? '#4b5563'
-        : '#a1a1aa'
+          ? '#4b5563'
+          : '#a1a1aa'
       : activeColor
 
   return (
@@ -156,7 +156,7 @@ export function OverviewTab({
   const pHarvLive = isConnected
     ? (telemetry.pHarv ?? (telemetry.tegPower > 0 ? telemetry.tegPower : Math.round(vTegLive * iBatLive * 10) / 10))
     : 0.0
-  const whHarvLive = isConnected ? (telemetry.whHarv ?? 0.0) : 0.0
+  const whHarvLive = isConnected ? (telemetry.whTotal ?? telemetry.whHarv ?? 0.0) : 0.0
   const isRelayClosed = isConnected ? Boolean(telemetry.relayOn ?? telemetry.relays.dcBus) : false
 
   // Tianneng TNE12-15 (12V 15Ah VRLA/AGM-Gel) Smooth & State-Aware 4-Bar Indicator
@@ -186,8 +186,10 @@ export function OverviewTab({
     (iTegLive > 0 || vTegLive >= vBatLive - 0.15 || vBatLive >= 13.0)
   const rawSocVal = telemetry.batPct ?? telemetry.batteryPct ?? 0
   const battPct =
-    !isConnected || stateCode === 0 || espStateName === 'NO BATTERY' || vBatLive < 6.0 || vBatLive > 16.5
+    !hasValidBattery
       ? 0
+      : stateCode === 2 || stateCode === 7 || espStateName === 'FULL-HOLD' || espStateName === 'FULL'
+      ? 100
       : Math.min(100, Math.max(0, Math.round(rawSocVal)))
 
   const batteryStageBadge = (() => {
@@ -197,6 +199,7 @@ export function OverviewTab({
     }
     if (stateCode === 6 || espStateName === 'OVERCURRENT') return { label: 'OVER-I', tone: 'danger' as const }
     if (stateCode === 5 || espStateName === 'TEMP LOCKOUT') return { label: 'TEMP LOCK', tone: 'warn' as const }
+    if (stateCode === 7 || espStateName === 'FULL') return { label: 'FULL', tone: 'full' as const }
     if (stateCode === 2 || espStateName === 'FULL-HOLD') return { label: 'FULL-HOLD', tone: 'full' as const }
     if (stateCode === 3 || espStateName === 'WAITING') return { label: 'WAITING', tone: 'hold' as const }
     if (isActivelyCharging) return { label: 'CHARGING', tone: 'charging' as const }
@@ -229,27 +232,24 @@ export function OverviewTab({
   return (
     <div className="flex flex-col gap-3 font-sans">
       <section
-        className={`rounded-2xl p-4 border flex flex-col gap-3 shadow-md transition-all ${
-          isDark
-            ? 'bg-[#13171B] border-[#1E242B] ring-1 ring-white/[0.04]'
-            : 'bg-white border-zinc-200/90 shadow-sm'
-        }`}
+        className={`rounded-2xl p-4 border flex flex-col gap-3 shadow-md transition-all ${isDark
+          ? 'bg-[#13171B] border-[#1E242B] ring-1 ring-white/[0.04]'
+          : 'bg-white border-zinc-200/90 shadow-sm'
+          }`}
         aria-labelledby="charger-relay-heading"
       >
         <div className="flex items-center justify-between gap-3">
           <div className="flex-1 min-w-0">
             <h2
               id="charger-relay-heading"
-              className={`text-xs font-black uppercase tracking-wider truncate ${
-                isDark ? 'text-white' : 'text-zinc-950'
-              }`}
+              className={`text-xs font-black uppercase tracking-wider truncate ${isDark ? 'text-white' : 'text-zinc-950'
+                }`}
             >
               {isFil ? 'KONTROL NG CHARGER RELAY (GPIO14)' : 'CHARGER RELAY (GPIO14)'}
             </h2>
             <span
-              className={`text-[10px] mt-0.5 block truncate ${
-                isDark ? 'text-[#9CA3AF]' : 'text-zinc-600'
-              }`}
+              className={`text-[10px] mt-0.5 block truncate ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-600'
+                }`}
             >
               {telemetry.stateReason ||
                 (isRelayClosed
@@ -257,31 +257,29 @@ export function OverviewTab({
                     ? 'Konektado ang TEG · Nagkakarga'
                     : 'TEG Connected · Charging Active'
                   : isFil
-                  ? 'Nakabukas ang relay · Nakahiwalay'
-                  : 'Relay Open · Disconnected')}
+                    ? 'Nakabukas ang relay · Nakahiwalay'
+                    : 'Relay Open · Disconnected')}
             </span>
           </div>
 
           <div
-            className={`px-3 py-1.5 rounded-full border text-[10px] font-mono font-black uppercase tracking-wider flex items-center gap-1.5 flex-shrink-0 select-none ${
-              isRelayClosed
-                ? isDark
-                  ? 'bg-[#00E676]/15 border-[#00E676]/40 text-[#00E676]'
-                  : 'bg-emerald-100 border-emerald-300 text-emerald-800'
-                : isDark
+            className={`px-3 py-1.5 rounded-full border text-[10px] font-mono font-black uppercase tracking-wider flex items-center gap-1.5 flex-shrink-0 select-none ${isRelayClosed
+              ? isDark
+                ? 'bg-[#00E676]/15 border-[#00E676]/40 text-[#00E676]'
+                : 'bg-emerald-100 border-emerald-300 text-emerald-800'
+              : isDark
                 ? 'bg-[#1E242B] border-zinc-700 text-zinc-400'
                 : 'bg-zinc-100 border-zinc-300 text-zinc-600'
-            }`}
+              }`}
             aria-label={`Charger Relay GPIO14 is ${isRelayClosed ? 'Closed' : 'Open'}`}
           >
             <span
-              className={`w-2 h-2 rounded-full ${
-                isRelayClosed
-                  ? isDark
-                    ? 'bg-[#00E676] animate-pulse'
-                    : 'bg-emerald-600 animate-pulse'
-                  : 'bg-zinc-500'
-              }`}
+              className={`w-2 h-2 rounded-full ${isRelayClosed
+                ? isDark
+                  ? 'bg-[#00E676] animate-pulse'
+                  : 'bg-emerald-600 animate-pulse'
+                : 'bg-zinc-500'
+                }`}
             />
             <span>
               {isRelayClosed
@@ -289,40 +287,36 @@ export function OverviewTab({
                   ? 'SARADO (ON)'
                   : 'CLOSED'
                 : isFil
-                ? 'BUKAS (OFF)'
-                : 'OPEN'}
+                  ? 'BUKAS (OFF)'
+                  : 'OPEN'}
             </span>
           </div>
         </div>
 
         {/* ESP32 State Machine Row */}
         <div
-          className={`p-2.5 rounded-xl border flex items-center justify-between transition-colors ${
-            isDark ? 'bg-[#0B0F12] border-emerald-500/30' : 'bg-emerald-50/70 border-emerald-200'
-          }`}
+          className={`p-2.5 rounded-xl border flex items-center justify-between transition-colors ${isDark ? 'bg-[#0B0F12] border-emerald-500/30' : 'bg-emerald-50/70 border-emerald-200'
+            }`}
         >
           <div className="flex items-center gap-2 min-w-0">
             <span
-              className={`w-2 h-2 rounded-full flex-shrink-0 ${
-                isRelayClosed
-                  ? isDark
-                    ? 'bg-[#00E676] animate-pulse'
-                    : 'bg-emerald-600 animate-pulse'
-                  : 'bg-zinc-500'
-              }`}
+              className={`w-2 h-2 rounded-full flex-shrink-0 ${isRelayClosed
+                ? isDark
+                  ? 'bg-[#00E676] animate-pulse'
+                  : 'bg-emerald-600 animate-pulse'
+                : 'bg-zinc-500'
+                }`}
             />
             <div className="truncate">
               <span
-                className={`text-[11px] font-bold block leading-tight ${
-                  isDark ? 'text-white' : 'text-zinc-950'
-                }`}
+                className={`text-[11px] font-bold block leading-tight ${isDark ? 'text-white' : 'text-zinc-950'
+                  }`}
               >
                 ESP32 State Machine
               </span>
               <span
-                className={`text-[9px] font-mono font-bold tracking-tight ${
-                  isDark ? 'text-[#00E676]' : 'text-emerald-700'
-                }`}
+                className={`text-[9px] font-mono font-bold tracking-tight ${isDark ? 'text-[#00E676]' : 'text-emerald-700'
+                  }`}
               >
                 {espStateName || (isRelayClosed ? 'CHARGING' : 'STANDBY')} (GPIO14:{' '}
                 {isRelayClosed ? 'CLOSED' : 'OPEN'})
@@ -330,27 +324,31 @@ export function OverviewTab({
             </div>
           </div>
           <span
-            className={`text-[9px] font-mono px-2 py-0.5 rounded font-black uppercase flex-shrink-0 ${
-              isRelayClosed
-                ? isDark
-                  ? 'bg-emerald-500/20 text-[#00E676]'
-                  : 'bg-emerald-100 text-emerald-800'
-                : isDark
+            className={`text-[9px] font-mono px-2 py-0.5 rounded font-black uppercase flex-shrink-0 ${isRelayClosed
+              ? isDark
+                ? 'bg-emerald-500/20 text-[#00E676]'
+                : 'bg-emerald-100 text-emerald-800'
+              : isDark
                 ? 'bg-[#1E242B] text-zinc-300'
                 : 'bg-zinc-200 text-zinc-700'
-            }`}
+              }`}
           >
-            {isRelayClosed ? 'CHARGING' : 'HOLD/OFF'}
+            {isRelayClosed
+              ? 'CHARGING'
+              : stateCode === 7 || espStateName === 'FULL'
+              ? 'FULL'
+              : stateCode === 2 || espStateName === 'FULL-HOLD'
+              ? 'FULL-HOLD'
+              : 'HOLD/OFF'}
           </span>
         </div>
       </section>
 
       <section
-        className={`rounded-2xl p-3.5 border flex flex-col gap-2.5 shadow-md transition-all ${
-          isDark
-            ? 'bg-[#13171B] border-[#1E242B] ring-1 ring-white/[0.04]'
-            : 'bg-white border-zinc-200/90 shadow-sm'
-        }`}
+        className={`rounded-2xl p-3.5 border flex flex-col gap-2.5 shadow-md transition-all ${isDark
+          ? 'bg-[#13171B] border-[#1E242B] ring-1 ring-white/[0.04]'
+          : 'bg-white border-zinc-200/90 shadow-sm'
+          }`}
         aria-labelledby="harvested-energy-heading"
       >
         <div className="flex items-center justify-between">
@@ -358,25 +356,22 @@ export function OverviewTab({
             <IconFlame size={16} className={isDark ? 'text-[#00E676]' : 'text-emerald-700'} />
             <h2
               id="harvested-energy-heading"
-              className={`text-xs font-bold uppercase tracking-wider ${
-                isDark ? 'text-white' : 'text-zinc-950'
-              }`}
+              className={`text-xs font-bold uppercase tracking-wider ${isDark ? 'text-white' : 'text-zinc-950'
+                }`}
             >
               {isFil ? 'NA-HARVEST NA ENERHIYA' : 'HARVESTED ENERGY'}
             </h2>
           </div>
           <div className="flex items-baseline">
             <span
-              className={`text-lg font-black font-mono tabular-nums ${
-                isDark ? 'text-[#00E676]' : 'text-emerald-700'
-              }`}
+              className={`text-lg font-black font-mono tabular-nums ${isDark ? 'text-[#00E676]' : 'text-emerald-700'
+                }`}
             >
               {whHarvLive.toFixed(3)}
             </span>
             <span
-              className={`text-[10px] font-bold ml-1 ${
-                isDark ? 'text-[#9CA3AF]' : 'text-zinc-600'
-              }`}
+              className={`text-[10px] font-bold ml-1 ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-600'
+                }`}
             >
               WH
             </span>
@@ -384,20 +379,17 @@ export function OverviewTab({
         </div>
 
         <div
-          className={`w-full h-2 rounded-full overflow-hidden ${
-            isDark ? 'bg-[#1E242B]' : 'bg-zinc-200'
-          }`}
+          className={`w-full h-2 rounded-full overflow-hidden ${isDark ? 'bg-[#1E242B]' : 'bg-zinc-200'
+            }`}
         >
           <div
-            className={`h-full rounded-full transition-all duration-500 ${
-              isDark ? 'bg-[#00E676]' : 'bg-emerald-600'
-            }`}
+            className={`h-full rounded-full transition-all duration-500 ${isDark ? 'bg-[#00E676]' : 'bg-emerald-600'
+              }`}
             style={{
-              width: `${
-                isConnected
-                  ? Math.min(100, Math.round((vBatLive / (telemetry.vOpenNow ?? 14.6)) * 100))
-                  : 0
-              }%`,
+              width: `${isConnected
+                ? Math.min(100, Math.round((vBatLive / (telemetry.vOpenNow ?? 14.6)) * 100))
+                : 0
+                }%`,
             }}
             role="progressbar"
             aria-valuenow={
@@ -414,43 +406,40 @@ export function OverviewTab({
       <div className="grid grid-cols-2 gap-3">
         {/* TILE 1: BATTERY (GPIO32 · 12V 15Ah SLA) */}
         <div
-          className={`rounded-2xl p-3.5 border flex flex-col justify-between min-h-[112px] shadow-md transition-all ${
-            isDark
-              ? 'bg-[#13171B] border-[#1E242B] ring-1 ring-white/[0.04]'
-              : 'bg-white border-zinc-200/90 shadow-sm'
-          }`}
+          className={`rounded-2xl p-3.5 border flex flex-col justify-between min-h-[112px] shadow-md transition-all ${isDark
+            ? 'bg-[#13171B] border-[#1E242B] ring-1 ring-white/[0.04]'
+            : 'bg-white border-zinc-200/90 shadow-sm'
+            }`}
         >
           <div>
             <div className="flex items-center justify-between gap-1">
               <span
-                className={`text-[10px] font-bold uppercase tracking-wider truncate ${
-                  isDark ? 'text-white' : 'text-zinc-950'
-                }`}
+                className={`text-[10px] font-bold uppercase tracking-wider truncate ${isDark ? 'text-white' : 'text-zinc-950'
+                  }`}
               >
                 {isFil ? 'BATERYA (GPIO32)' : 'BATTERY (GPIO32)'}
               </span>
               <span
-                className={`text-[8px] font-mono px-1.5 py-0.5 rounded font-black uppercase flex-shrink-0 inline-flex items-center gap-0.5 ${
-                  batteryStageBadge.tone === 'charging' || batteryStageBadge.tone === 'full'
-                    ? isDark
-                      ? 'bg-[#00E676]/15 text-[#00E676]'
-                      : 'bg-emerald-100 text-emerald-800'
-                    : batteryStageBadge.tone === 'hold'
+                className={`text-[8px] font-mono px-1.5 py-0.5 rounded font-black uppercase flex-shrink-0 inline-flex items-center gap-0.5 ${batteryStageBadge.tone === 'charging' || batteryStageBadge.tone === 'full'
+                  ? isDark
+                    ? 'bg-[#00E676]/15 text-[#00E676]'
+                    : 'bg-emerald-100 text-emerald-800'
+                  : batteryStageBadge.tone === 'hold'
                     ? isDark
                       ? 'bg-sky-500/15 text-sky-400'
                       : 'bg-sky-100 text-sky-800'
                     : batteryStageBadge.tone === 'warn'
-                    ? isDark
-                      ? 'bg-amber-500/15 text-amber-400'
-                      : 'bg-amber-100 text-amber-800'
-                    : batteryStageBadge.tone === 'danger'
-                    ? isDark
-                      ? 'bg-rose-500/15 text-rose-400'
-                      : 'bg-rose-100 text-rose-800'
-                    : isDark
-                    ? 'bg-[#1E242B] text-zinc-400'
-                    : 'bg-zinc-100 text-zinc-600'
-                }`}
+                      ? isDark
+                        ? 'bg-amber-500/15 text-amber-400'
+                        : 'bg-amber-100 text-amber-800'
+                      : batteryStageBadge.tone === 'danger'
+                        ? isDark
+                          ? 'bg-rose-500/15 text-rose-400'
+                          : 'bg-rose-100 text-rose-800'
+                        : isDark
+                          ? 'bg-[#1E242B] text-zinc-400'
+                          : 'bg-zinc-100 text-zinc-600'
+                  }`}
               >
                 {batteryStageBadge.tone === 'charging' && <IconZap size={9} className="flex-shrink-0" />}
                 {batteryStageBadge.label}
@@ -458,16 +447,14 @@ export function OverviewTab({
             </div>
             <div className="flex items-center gap-1.5 mt-0.5">
               <span
-                className={`text-xs font-mono font-black ${
-                  isDark ? 'text-white' : 'text-zinc-900'
-                }`}
+                className={`text-xs font-mono font-black ${isDark ? 'text-white' : 'text-zinc-900'
+                  }`}
               >
                 {vBatLive.toFixed(2)}V
               </span>
               <span
-                className={`text-[8.5px] font-mono px-1 rounded font-bold ${
-                  isDark ? 'bg-[#00E676]/15 text-[#00E676]' : 'bg-emerald-100 text-emerald-800'
-                }`}
+                className={`text-[8.5px] font-mono px-1 rounded font-bold ${isDark ? 'bg-[#00E676]/15 text-[#00E676]' : 'bg-emerald-100 text-emerald-800'
+                  }`}
               >
                 12V 15Ah
               </span>
@@ -493,33 +480,30 @@ export function OverviewTab({
 
         {/* TILE 2: TEG INPUT VOLTAGE (GPIO33) */}
         <div
-          className={`rounded-2xl p-3.5 border flex flex-col justify-between min-h-[112px] shadow-md transition-all ${
-            isDark
-              ? 'bg-[#13171B] border-[#1E242B] ring-1 ring-white/[0.04]'
-              : 'bg-white border-zinc-200/90 shadow-sm'
-          }`}
+          className={`rounded-2xl p-3.5 border flex flex-col justify-between min-h-[112px] shadow-md transition-all ${isDark
+            ? 'bg-[#13171B] border-[#1E242B] ring-1 ring-white/[0.04]'
+            : 'bg-white border-zinc-200/90 shadow-sm'
+            }`}
         >
           <div>
             <div className="flex items-center justify-between">
               <span
-                className={`text-[10px] font-bold uppercase tracking-wider ${
-                  isDark ? 'text-white' : 'text-zinc-950'
-                }`}
+                className={`text-[10px] font-bold uppercase tracking-wider ${isDark ? 'text-white' : 'text-zinc-950'
+                  }`}
               >
                 TEG INPUT (GPIO33)
               </span>
               <IconFlame size={16} className={isDark ? 'text-[#00E676]' : 'text-emerald-700'} />
             </div>
             <span
-              className={`text-[9.5px] font-mono block mt-0.5 ${
-                isConnected && vTegLive < 1.0 && activeBars > 0 && activeBars <= 2
-                  ? isDark
-                    ? 'text-amber-400 font-bold'
-                    : 'text-amber-700 font-bold'
-                  : isDark
+              className={`text-[9.5px] font-mono block mt-0.5 ${isConnected && vTegLive < 1.0 && activeBars > 0 && activeBars <= 2
+                ? isDark
+                  ? 'text-amber-400 font-bold'
+                  : 'text-amber-700 font-bold'
+                : isDark
                   ? 'text-[#9CA3AF]'
                   : 'text-zinc-600'
-              }`}
+                }`}
             >
               Peak: {(telemetry.vTegPeak ?? vTegLive).toFixed(1)}V ·{' '}
               {isConnected && vTegLive < 1.0 && activeBars > 0 && activeBars <= 2
@@ -530,16 +514,14 @@ export function OverviewTab({
 
           <div className="flex items-baseline mt-2">
             <span
-              className={`text-2xl sm:text-3xl font-black font-mono tabular-nums tracking-tight ${
-                isDark ? 'text-white' : 'text-zinc-950'
-              }`}
+              className={`text-2xl sm:text-3xl font-black font-mono tabular-nums tracking-tight ${isDark ? 'text-white' : 'text-zinc-950'
+                }`}
             >
               {vTegLive.toFixed(2)}
             </span>
             <span
-              className={`text-xs font-semibold ml-1 ${
-                isDark ? 'text-[#9CA3AF]' : 'text-zinc-600'
-              }`}
+              className={`text-xs font-semibold ml-1 ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-600'
+                }`}
             >
               V
             </span>
@@ -548,18 +530,16 @@ export function OverviewTab({
 
         {/* TILE 3: CHARGE CURRENT (ACS712-5A · GPIO35) */}
         <div
-          className={`rounded-2xl p-3.5 border flex flex-col justify-between min-h-[112px] shadow-md transition-all ${
-            isDark
-              ? 'bg-[#13171B] border-[#1E242B] ring-1 ring-white/[0.04]'
-              : 'bg-white border-zinc-200/90 shadow-sm'
-          }`}
+          className={`rounded-2xl p-3.5 border flex flex-col justify-between min-h-[112px] shadow-md transition-all ${isDark
+            ? 'bg-[#13171B] border-[#1E242B] ring-1 ring-white/[0.04]'
+            : 'bg-white border-zinc-200/90 shadow-sm'
+            }`}
         >
           <div>
             <div className="flex items-center justify-between">
               <span
-                className={`text-[10px] font-bold uppercase tracking-wider ${
-                  isDark ? 'text-white' : 'text-zinc-950'
-                }`}
+                className={`text-[10px] font-bold uppercase tracking-wider ${isDark ? 'text-white' : 'text-zinc-950'
+                  }`}
               >
                 {isFil ? 'KURYENTE (GPIO35)' : 'CURRENT (GPIO35)'}
               </span>
@@ -571,21 +551,20 @@ export function OverviewTab({
                       ? 'text-amber-400'
                       : 'text-amber-700'
                     : isDark
-                    ? 'text-[#00E676]'
-                    : 'text-emerald-700'
+                      ? 'text-[#00E676]'
+                      : 'text-emerald-700'
                 }
               />
             </div>
             <span
-              className={`text-[9.5px] font-mono block mt-0.5 truncate ${
-                telemetry.inaOk === false
-                  ? isDark
-                    ? 'text-amber-400 font-bold'
-                    : 'text-amber-700 font-bold'
-                  : isDark
+              className={`text-[9.5px] font-mono block mt-0.5 truncate ${telemetry.inaOk === false
+                ? isDark
+                  ? 'text-amber-400 font-bold'
+                  : 'text-amber-700 font-bold'
+                : isDark
                   ? 'text-[#9CA3AF]'
                   : 'text-zinc-600'
-              }`}
+                }`}
             >
               {telemetry.inaOk === false
                 ? 'ACS712 fault'
@@ -595,16 +574,14 @@ export function OverviewTab({
 
           <div className="flex items-baseline mt-2">
             <span
-              className={`text-2xl sm:text-3xl font-black font-mono tabular-nums tracking-tight ${
-                isDark ? 'text-white' : 'text-zinc-950'
-              }`}
+              className={`text-2xl sm:text-3xl font-black font-mono tabular-nums tracking-tight ${isDark ? 'text-white' : 'text-zinc-950'
+                }`}
             >
               {iBatLive.toFixed(2)}
             </span>
             <span
-              className={`text-xs font-semibold ml-1 ${
-                isDark ? 'text-[#9CA3AF]' : 'text-zinc-600'
-              }`}
+              className={`text-xs font-semibold ml-1 ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-600'
+                }`}
             >
               A
             </span>
@@ -613,27 +590,24 @@ export function OverviewTab({
 
         {/* TILE 4: CHARGING POWER (IN-BATTERY vs TEG HARVEST) */}
         <div
-          className={`rounded-2xl p-3.5 border flex flex-col justify-between min-h-[112px] shadow-md transition-all ${
-            isDark
-              ? 'bg-[#13171B] border-[#1E242B] ring-1 ring-white/[0.04]'
-              : 'bg-white border-zinc-200/90 shadow-sm'
-          }`}
+          className={`rounded-2xl p-3.5 border flex flex-col justify-between min-h-[112px] shadow-md transition-all ${isDark
+            ? 'bg-[#13171B] border-[#1E242B] ring-1 ring-white/[0.04]'
+            : 'bg-white border-zinc-200/90 shadow-sm'
+            }`}
         >
           <div>
             <div className="flex items-center justify-between">
               <span
-                className={`text-[10px] font-bold uppercase tracking-wider ${
-                  isDark ? 'text-white' : 'text-zinc-950'
-                }`}
+                className={`text-[10px] font-bold uppercase tracking-wider ${isDark ? 'text-white' : 'text-zinc-950'
+                  }`}
               >
                 {isFil ? 'LAKAS NG KARGA' : 'CHARGE POWER'}
               </span>
               <IconZap size={16} className={isDark ? 'text-[#00E676]' : 'text-emerald-700'} />
             </div>
             <span
-              className={`text-[9.5px] font-mono block mt-0.5 truncate ${
-                isDark ? 'text-[#9CA3AF]' : 'text-zinc-600'
-              }`}
+              className={`text-[9.5px] font-mono block mt-0.5 truncate ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-600'
+                }`}
             >
               Bat: {pBatLive.toFixed(1)}W · TEG: {pHarvLive.toFixed(1)}W
             </span>
@@ -641,16 +615,14 @@ export function OverviewTab({
 
           <div className="flex items-baseline mt-2">
             <span
-              className={`text-2xl sm:text-3xl font-black font-mono tabular-nums tracking-tight ${
-                isDark ? 'text-white' : 'text-zinc-950'
-              }`}
+              className={`text-2xl sm:text-3xl font-black font-mono tabular-nums tracking-tight ${isDark ? 'text-white' : 'text-zinc-950'
+                }`}
             >
               {pBatLive.toFixed(1)}
             </span>
             <span
-              className={`text-xs font-semibold ml-1 ${
-                isDark ? 'text-[#9CA3AF]' : 'text-zinc-600'
-              }`}
+              className={`text-xs font-semibold ml-1 ${isDark ? 'text-[#9CA3AF]' : 'text-zinc-600'
+                }`}
             >
               W
             </span>

@@ -42,7 +42,7 @@ export function SensorsTab({ telemetry, lang, theme = 'dark' }: SensorsTabProps)
       ambTemp < 0)
 
   const vOpen = telemetry.vOpenNow ?? 14.6
-  const vClose = telemetry.vCloseNow ?? 13.7
+  const vClose = telemetry.vCloseNow ?? 12.9
   const vHard = telemetry.vHardNow ?? 14.8
 
   return (

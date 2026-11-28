@@ -6,10 +6,10 @@ import path from 'node:path'
 // Pure logic helpers mirroring Tianneng TNE12-15 & MAX31855 firmware/PWA specs
 function computeTne1215TempLimits(ambientC, dhtOk = true) {
   const V_OPEN = 14.6
-  const V_CLOSE = 13.7
+  const V_CLOSE = 12.9
   const V_HARD = 14.8
-  if (!dhtOk) return { vOpen: 14.4, vClose: V_CLOSE, vHard: V_HARD }
-  if (ambientC > 25.0) {
+  if (!dhtOk) return { vOpen: 14.2, vClose: V_CLOSE, vHard: V_HARD }
+  if (ambientC !== 25.0) {
     const dt = ambientC - 25.0
     return {
       vOpen: Number((V_OPEN - dt * 0.024).toFixed(3)),
@@ -30,17 +30,17 @@ function computePowerMetrics(vBat, vTeg, iCharge) {
 test('Tianneng TNE12-15 temperature-compensated charging limits', () => {
   assert.deepEqual(computeTne1215TempLimits(25.0, true), {
     vOpen: 14.6,
-    vClose: 13.7,
+    vClose: 12.9,
     vHard: 14.8,
   })
   // At 35 C (+10 C above 25 C): -0.24V cycle, -0.18V float
   assert.deepEqual(computeTne1215TempLimits(35.0, true), {
     vOpen: 14.36,
-    vClose: 13.52,
+    vClose: 12.72,
     vHard: 14.56,
   })
-  // DHT22 fault falls back to conservative 14.4V
-  assert.equal(computeTne1215TempLimits(35.0, false).vOpen, 14.4)
+  // DHT22 fault falls back to conservative 14.2V
+  assert.equal(computeTne1215TempLimits(35.0, false).vOpen, 14.2)
 })
 
 test('Power calculation separates In-Battery Power (Vbat*I) from TEG Harvest (Vteg*I)', () => {
@@ -68,8 +68,9 @@ test('Tianneng TNE12-15 SoC curve matches ESP32 interpCurve (resting OCV vs IR-c
     return ys[ys.length - 1]
   }
 
-  function computeSoc({ vBat, iTeg, relayOn, stateCode = 1 }) {
+  function computeSoc({ vBat, iTeg, relayOn, stateCode = 1, vOpenNow = 14.6 }) {
     if (stateCode === 0 || vBat < 6.0 || vBat > 16.5) return 0
+    if (stateCode === 2 || stateCode === 7) return 100
     const chargingActive = Boolean(relayOn) && iTeg > 0.0
     let rawPct = 0
     if (chargingActive) {
@@ -77,10 +78,11 @@ test('Tianneng TNE12-15 SoC curve matches ESP32 interpCurve (resting OCV vs IR-c
       rawPct = interpCurve(effV, vChg, socChg)
       const taperStartA = 0.35
       const taperMaxA = 0.20
-      if (vBat > 13.80 && iTeg < taperStartA) {
+      if (vBat >= vOpenNow - 0.15 && iTeg < taperStartA) {
         const taperFrac = Math.min(1.0, Math.max(0.0, (taperStartA - iTeg) / (taperStartA - taperMaxA)))
         rawPct += 8.0 * taperFrac
       }
+      if (vBat >= vOpenNow) rawPct = 100
     } else {
       rawPct = interpCurve(vBat, vRest, socRest)
     }
@@ -92,10 +94,13 @@ test('Tianneng TNE12-15 SoC curve matches ESP32 interpCurve (resting OCV vs IR-c
   assert.equal(computeSoc({ vBat: 11.80, iTeg: 0.0, relayOn: false, stateCode: 4 }), 10)
   assert.equal(computeSoc({ vBat: 12.25, iTeg: 0.0, relayOn: false, stateCode: 4 }), 50)
   assert.equal(computeSoc({ vBat: 12.65, iTeg: 0.0, relayOn: true, stateCode: 1 }), 90)
-  assert.equal(computeSoc({ vBat: 12.85, iTeg: 0.0, relayOn: false, stateCode: 2 }), 100)
+  assert.equal(computeSoc({ vBat: 12.85, iTeg: 0.0, relayOn: false, stateCode: 3 }), 100)
+  // FULL-HOLD (state 2) & FULL (state 7) clamp immediately to 100%
+  assert.equal(computeSoc({ vBat: 12.60, iTeg: 0.0, relayOn: false, stateCode: 2 }), 100)
+  assert.equal(computeSoc({ vBat: 12.95, iTeg: 0.0, relayOn: false, stateCode: 7 }), 100)
 
-  // Active Charging with >13.8V and <=0.20A taper top-off boost reaches 100%
-  assert.equal(computeSoc({ vBat: 14.05, iTeg: 0.20, relayOn: true, stateCode: 1 }), 100)
+  // Active Charging near vOpenNow (14.60 - 0.15 = 14.45V) with <=0.20A taper reaches 100%
+  assert.equal(computeSoc({ vBat: 14.45, iTeg: 0.20, relayOn: true, stateCode: 1, vOpenNow: 14.6 }), 100)
   assert.equal(computeSoc({ vBat: 12.85, iTeg: 0.0, relayOn: false, stateCode: 0 }), 0)
 })
 
@@ -183,6 +188,7 @@ test('Charging indicator appears only while charging and hides when idle/open/di
   // Relay open / non-charging / disconnected states -> hide bolt
   for (const [stateCode, stateName] of [
     [2, 'FULL-HOLD'],
+    [7, 'FULL'],
     [3, 'WAITING'],
     [4, 'FORCED OFF'],
     [5, 'TEMP LOCKOUT'],
